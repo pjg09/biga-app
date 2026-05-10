@@ -120,7 +120,7 @@ Para la primera versión de la aplicación se priorizan las siguientes notificac
 | **Base de datos** | PostgreSQL |
 | **Backend** | Python (sin framework web adicional) |
 | **API** | FastAPI |
-| **Frontend** | Preact |
+| **Frontend** | React |
 | **Deploy** | Por definir |
 
 ---
