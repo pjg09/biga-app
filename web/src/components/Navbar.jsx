@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { useNavScroll } from '../hooks/useNavScroll';
 import '../styles/navbar.css';
 
@@ -51,13 +52,13 @@ export default function Navbar() {
             ))}
           </ul>
 
-          <a
-            href="#cta"
+          <Link
+            to="/login"
             className="btn btn--primary navbar__cta"
-            onClick={(e) => handleNavClick(e, '#cta')}
+            onClick={closeMenu}
           >
-            Solicitar demo
-          </a>
+            Iniciar sesión
+          </Link>
         </nav>
 
         <button

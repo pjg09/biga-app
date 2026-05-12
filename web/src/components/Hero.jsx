@@ -17,12 +17,6 @@ export default function Hero() {
       </div>
 
       <div className="container hero__container">
-        {/* Badge */}
-        <div className="hero__badge">
-          <span className="hero__badge-dot" />
-          Plataforma educativa integral
-        </div>
-
         {/* Headline */}
         <h1 className="hero__title">
           <span className="hero__brand gradient-text">BIGA</span>
