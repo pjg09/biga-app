@@ -1,0 +1,128 @@
+.mission {
+  position: relative;
+  background: var(--clr-white);
+  padding-block: var(--section-py);
+  overflow: hidden;
+}
+
+.mission__accent-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--clr-purple-700) 0%, var(--clr-purple-400) 50%, transparent 100%);
+}
+
+.mission__container {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr;
+  gap: clamp(3rem, 6vw, 6rem);
+  align-items: start;
+}
+
+/* ── Left ────────────────────────────────────────────── */
+.mission__left {
+  position: sticky;
+  top: 6rem;
+}
+
+.section-label {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--clr-purple-600);
+  margin-bottom: 1.25rem;
+}
+
+.mission__title {
+  font-family: var(--font-display);
+  font-size: clamp(2.25rem, 5vw, 3.5rem);
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  color: var(--clr-gray-900);
+}
+
+.mission__divider {
+  margin-top: 2.5rem;
+  width: 48px;
+  height: 3px;
+  background: linear-gradient(90deg, var(--clr-purple-600), var(--clr-purple-300));
+  border-radius: 2px;
+}
+
+/* ── Right ───────────────────────────────────────────── */
+.mission__right {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding-top: 0.5rem;
+}
+
+.mission__text {
+  font-size: clamp(1rem, 1.8vw, 1.1rem);
+  line-height: 1.8;
+  color: var(--clr-gray-700);
+}
+
+.mission__text--lead {
+  font-size: clamp(1.05rem, 2vw, 1.2rem);
+  color: var(--clr-gray-900);
+  font-weight: 400;
+}
+
+.mission__text--lead strong {
+  color: var(--clr-purple-700);
+  font-weight: 600;
+}
+
+/* ── Pills ───────────────────────────────────────────── */
+.mission__pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: clamp(3rem, 5vw, 4rem);
+}
+
+.mission__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.625rem 1.25rem;
+  border-radius: 100px;
+  background: var(--clr-purple-50);
+  border: 1px solid var(--clr-purple-100);
+  color: var(--clr-purple-700);
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: background var(--transition-fast), transform var(--transition-fast),
+    border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.mission__pill:hover {
+  background: var(--clr-purple-100);
+  border-color: var(--clr-purple-200);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(124, 58, 237, 0.15);
+}
+
+.mission__pill-icon {
+  display: flex;
+  align-items: center;
+  color: var(--clr-purple-600);
+}
+
+/* ── Responsive ──────────────────────────────────────── */
+@media (max-width: 768px) {
+  .mission__container {
+    grid-template-columns: 1fr;
+    gap: 2.5rem;
+  }
+
+  .mission__left {
+    position: static;
+  }
+}

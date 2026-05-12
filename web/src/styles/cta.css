@@ -1,0 +1,228 @@
+.cta {
+  position: relative;
+  background: var(--clr-dark);
+  padding-block: var(--section-py);
+  overflow: hidden;
+}
+
+/* ── Background ──────────────────────────────────────── */
+.cta__bg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.cta__orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  will-change: transform;
+}
+
+.cta__orb--1 {
+  width: clamp(300px, 40vw, 500px);
+  height: clamp(300px, 40vw, 500px);
+  background: radial-gradient(circle, rgba(109, 40, 217, 0.6) 0%, transparent 70%);
+  top: -20%;
+  left: -5%;
+  animation: orbDrift1 16s ease-in-out infinite;
+}
+
+.cta__orb--2 {
+  width: clamp(250px, 35vw, 420px);
+  height: clamp(250px, 35vw, 420px);
+  background: radial-gradient(circle, rgba(79, 29, 193, 0.5) 0%, transparent 70%);
+  bottom: -15%;
+  right: -5%;
+  animation: orbDrift2 20s ease-in-out infinite;
+}
+
+.cta__grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse 80% 70% at center, black 20%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse 80% 70% at center, black 20%, transparent 100%);
+}
+
+/* ── Container ───────────────────────────────────────── */
+.cta__container {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+/* ── Badge ───────────────────────────────────────────── */
+.cta__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 1rem;
+  border-radius: 100px;
+  border: 1px solid rgba(168, 85, 247, 0.35);
+  background: rgba(124, 58, 237, 0.12);
+  color: var(--clr-purple-200);
+  font-size: 0.8rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 2rem;
+}
+
+.cta__badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--clr-purple-400);
+  box-shadow: 0 0 8px var(--clr-purple-400);
+  animation: pulse 2s ease-in-out infinite; /* keyframe defined in index.css */
+}
+
+/* ── Heading ─────────────────────────────────────────── */
+.cta__title {
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 5vw, 3.5rem);
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+  color: var(--clr-white);
+  margin-bottom: 1.25rem;
+}
+
+.cta__sub {
+  max-width: 500px;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: clamp(0.9rem, 1.8vw, 1.05rem);
+  line-height: 1.7;
+  margin-bottom: 2.5rem;
+}
+
+/* ── Form ────────────────────────────────────────────── */
+.cta__form {
+  width: 100%;
+  max-width: 520px;
+}
+
+.cta__input-wrap {
+  display: flex;
+  gap: 0.75rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 100px;
+  padding: 0.375rem 0.375rem 0.375rem 1.5rem;
+  transition: border-color var(--transition-base), background var(--transition-base);
+}
+
+.cta__input-wrap:focus-within {
+  border-color: rgba(168, 85, 247, 0.5);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.cta__input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--clr-white);
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  caret-color: var(--clr-purple-400);
+}
+
+.cta__input::placeholder {
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.cta__input--error {
+  color: #f87171;
+}
+
+.cta__submit {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.7rem 1.375rem;
+  border-radius: 100px;
+  font-family: var(--font-display);
+  font-size: 0.9rem;
+  font-weight: 600;
+  background: var(--clr-purple-600);
+  color: var(--clr-white);
+  transition: background var(--transition-fast), transform var(--transition-fast),
+    box-shadow var(--transition-fast);
+  box-shadow: 0 2px 12px rgba(124, 58, 237, 0.4);
+}
+
+.cta__submit:hover {
+  background: var(--clr-purple-500);
+  box-shadow: 0 4px 20px rgba(124, 58, 237, 0.55);
+  transform: translateY(-1px);
+}
+
+.cta__submit svg {
+  transition: transform var(--transition-fast);
+}
+
+.cta__submit:hover svg {
+  transform: translateX(3px);
+}
+
+/* ── Feedback ────────────────────────────────────────── */
+.cta__feedback {
+  margin-top: 0.875rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.cta__feedback--success {
+  color: #86efac;
+}
+
+.cta__feedback--error {
+  color: #f87171;
+}
+
+/* ── Note ────────────────────────────────────────────── */
+.cta__note {
+  margin-top: 1.5rem;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.25);
+  letter-spacing: 0.02em;
+}
+
+/* ── Utility ─────────────────────────────────────────── */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* ── Responsive ──────────────────────────────────────── */
+@media (max-width: 520px) {
+  .cta__input-wrap {
+    flex-direction: column;
+    border-radius: var(--radius-md);
+    padding: 1rem 1.25rem;
+    gap: 0.875rem;
+  }
+
+  .cta__submit {
+    width: 100%;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+  }
+}
