@@ -35,6 +35,15 @@ Restricciones que no deben violarse:
 - **Strategy**: módulo PAE usa `PAEIdentificationStrategy` (documento en MVP, facial recognition en fase 2).
 - **Adapter**: email y storage se abstraen detrás de un Protocol. Nunca se llama directamente al SDK del proveedor desde un Service.
 
+## Convenciones de base de datos
+
+- Todos los IDs son `UUID` generados en la aplicación. Nunca usar `SERIAL` o `BIGSERIAL`.
+- Todo cambio al esquema debe reflejarse en `docs/database-schema.md` antes de escribir la migración.
+
+## Pitfalls conocidos
+
+- El build backend en cualquier `pyproject.toml` de este repo debe ser `setuptools.build_meta`. `setuptools.backends.legacy:build` no existe en `python:3.12-slim` y rompe el build de Docker.
+
 ## Principios SOLID
 
 S, O, I y D aplican. Liskov aplica únicamente donde hay polimorfismo real (los Adapters). No forzar LSP donde no hay jerarquías de herencia.
