@@ -55,10 +55,11 @@ El `institution_id` siempre proviene del token JWT del usuario autenticado (`cur
 - `docker compose logs -f api` — logs en tiempo real
 - `curl http://localhost:8000/health` — verificar que la API responde
 - `http://localhost:8000/docs` — OpenAPI UI (Swagger)
+- `docker compose exec api alembic check` — verificar que no hay drift entre modelos y BD
 
 ## Tests
 
-Correr desde el directorio `api/` (o dentro del contenedor con `docker compose exec api`):
+Correr desde el directorio `api/` (requiere virtualenv local con `requirements-dev.txt`), o en el contenedor tras instalar dev deps:
 
 ```bash
 pytest                                         # suite completa
@@ -81,14 +82,18 @@ El `asyncio_mode = "auto"` en `pyproject.toml` hace que todos los tests `async d
 
 ## Módulos del dominio
 
-Los módulos planeados (routers/services/repositories/schemas/models) son: `pae`, `attendance`, `agendatorio`, `departures`, `auth`, `imports`. Cada módulo sigue el mismo patrón de archivos paralelos en cada capa.
+Módulos implementados: `auth`. Pendientes: `pae`, `attendance`, `agendatorio`, `departures`, `imports`.
+Cada módulo sigue el mismo patrón de archivos paralelos en cada capa.
+
+Para proteger un endpoint con autenticación: `current_user: User = Depends(get_current_user)` desde `app.core.dependencies`. El `current_user.institution_id` es la fuente del tenant para todos los queries.
 
 ## Pitfalls conocidos
 
 - El build backend en cualquier `pyproject.toml` de este repo debe ser `setuptools.build_meta`. `setuptools.backends.legacy:build` no existe en `python:3.12-slim` y rompe el build de Docker.
 - La variable `DATABASE_URL` en `.env` usa el hostname `postgres` (nombre del servicio Docker). Para conectar desde fuera de Docker (TablePlus, psql local) usar `localhost:5433`.
 - El `DATABASE_URL` requiere el driver `postgresql+asyncpg://` — no `postgresql://` ni `postgres://`.
+- `passlib` es incompatible con `bcrypt>=4.0`. Este proyecto usa `bcrypt` directamente (sin passlib). No reintroducir `passlib[bcrypt]`.
+- En SQLAlchemy 2.x, nombrar una columna `date` en un modelo que también importa `from datetime import date` causa `MappedAnnotationError`. Solución: `from datetime import date as PyDate`.
+- El dummy hash para prevención de timing en login (`AuthService._DUMMY_HASH`) debe ser un bcrypt válido pre-computado. Un string malformado lanza `ValueError: Invalid salt` en bcrypt.
+- `pytest` no está en la imagen Docker de producción. Para correr tests en el contenedor: `docker compose exec api pip install -r requirements-dev.txt` primero.
 
-## Principios SOLID
-
-S, O, I y D aplican. Liskov aplica únicamente donde hay polimorfismo real (los Adapters). No forzar LSP donde no hay jerarquías de herencia.

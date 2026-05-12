@@ -70,3 +70,19 @@ async def test_login_unknown_email_same_error_as_wrong_password():
         await service_wrong_pass.login("docente@biga.app", "wrong")
 
     assert e1.value.status_code == e2.value.status_code == 401
+    assert e1.value.detail == e2.value.detail
+
+
+async def test_login_always_runs_bcrypt_for_unknown_email():
+    """verify_password debe llamarse incluso cuando el usuario no existe,
+    para evitar enumeración por timing."""
+    from unittest.mock import patch
+
+    repo = AsyncMock()
+    repo.get_by_email.return_value = None
+    service = AuthService(repo)
+
+    with patch("app.services.auth_service.verify_password", return_value=False) as mock_verify:
+        with pytest.raises(HTTPException):
+            await service.login("noexiste@biga.app", "pass")
+        mock_verify.assert_called_once()
