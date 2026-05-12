@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
-from jose import jwt
+from fastapi import HTTPException, status
+from jose import JWTError, jwt
 from passlib.context import CryptContext
 
 from app.core.config import settings
@@ -26,5 +27,8 @@ def create_access_token(subject: str) -> str:
 
 
 def decode_access_token(token: str) -> str:
-    payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
-    return payload["sub"]
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+        return payload["sub"]
+    except JWTError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido o expirado")

@@ -40,6 +40,12 @@ Restricciones que no deben violarse:
 - Todos los IDs son `UUID` generados en la aplicación. Nunca usar `SERIAL` o `BIGSERIAL`.
 - Todo cambio al esquema debe reflejarse en `docs/database-schema.md` antes de escribir la migración.
 
+## Aislamiento multi-tenant — regla crítica
+
+Todo método de Repository que acceda a una tabla operativa **debe recibir `institution_id` como parámetro y filtrarlo en el WHERE**. El ORM no lo hace automáticamente. Omitirlo expone datos de todas las instituciones.
+
+El `institution_id` siempre proviene del token JWT del usuario autenticado (`current_user.institution_id`), nunca de parámetros de la request. Ver `docs/implementation-notes.md` para el patrón completo con ejemplos.
+
 ## Comandos frecuentes
 
 - `docker compose up -d` — levantar el stack

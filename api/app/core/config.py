@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,6 +12,13 @@ class Settings(BaseSettings):
 
     secret_key: str
     algorithm: str = "HS256"
+
+    @field_validator("secret_key")
+    @classmethod
+    def secret_key_min_length(cls, v: str) -> str:
+        if len(v) < 32:
+            raise ValueError("secret_key must be at least 32 characters")
+        return v
     access_token_expire_minutes: int = 480
 
     storage_endpoint_url: str
