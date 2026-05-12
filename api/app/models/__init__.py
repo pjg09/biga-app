@@ -1,7 +1,17 @@
 from app.core.database import Base  # noqa: F401
 
-# Registrar todos los modelos aquí para que Alembic los detecte en autogenerate.
-# Descomentar a medida que se creen los modelos:
-# from app.models.institution import Institution
-# from app.models.student import Student
-# from app.models.user import User
+from app.models.institution import Institution  # noqa: F401
+from app.models.grade import Grade  # noqa: F401
+from app.models.group import Group  # noqa: F401
+from app.models.class_period import ClassPeriod  # noqa: F401
+from app.models.user import User  # noqa: F401
+from app.models.user_group import UserGroup  # noqa: F401
+from app.models.student import Student  # noqa: F401
+from app.models.student_group import StudentGroup  # noqa: F401
+from app.models.guardian import Guardian  # noqa: F401
+from app.models.pae import PAEEnrollment, PAEDelivery  # noqa: F401
+from app.models.attendance import AttendanceRecord, AttendanceToken, AttendanceJustification  # noqa: F401
+from app.models.agendatorio import ConvivenciaArticle, DisciplineRecord, DisciplineRecordArticle  # noqa: F401
+from app.models.departure import EarlyDeparture  # noqa: F401
+from app.models.notification import NotificationLog  # noqa: F401
+from app.models.import_job import ImportJob  # noqa: F401

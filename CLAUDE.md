@@ -40,9 +40,48 @@ Restricciones que no deben violarse:
 - Todos los IDs son `UUID` generados en la aplicación. Nunca usar `SERIAL` o `BIGSERIAL`.
 - Todo cambio al esquema debe reflejarse en `docs/database-schema.md` antes de escribir la migración.
 
+## Comandos frecuentes
+
+- `docker compose up -d` — levantar el stack
+- `docker compose up -d --build` — rebuild + levantar
+- `docker compose exec api alembic upgrade head` — aplicar migraciones pendientes
+- `docker compose exec api alembic revision --autogenerate -m "desc"` — generar migración
+- `docker compose logs -f api` — logs en tiempo real
+- `curl http://localhost:8000/health` — verificar que la API responde
+- `http://localhost:8000/docs` — OpenAPI UI (Swagger)
+
+## Tests
+
+Correr desde el directorio `api/` (o dentro del contenedor con `docker compose exec api`):
+
+```bash
+pytest                                         # suite completa
+pytest tests/unit/                             # solo unitarios
+pytest tests/integration/                      # solo integración
+pytest tests/unit/test_foo.py::test_bar -xvs  # test único con output completo
+```
+
+El `asyncio_mode = "auto"` en `pyproject.toml` hace que todos los tests `async def` sean recogidos automáticamente sin necesidad de `@pytest.mark.asyncio`.
+
+## Gestión de dependencias
+
+- Producción: `api/requirements.txt`
+- Desarrollo y tests: `api/requirements-dev.txt` — `pip install -r requirements-dev.txt`
+- `api/pyproject.toml` contiene únicamente config de pytest (`asyncio_mode`). No es el gestor de dependencias.
+
+## Invariantes de la sesión de base de datos
+
+`get_db()` en `app/core/database.py` hace auto-commit al salir limpio y rollback automático en excepción. Los Repositories no deben llamar `session.commit()` ni `session.rollback()` — eso rompe la unidad de trabajo del request.
+
+## Módulos del dominio
+
+Los módulos planeados (routers/services/repositories/schemas/models) son: `pae`, `attendance`, `agendatorio`, `departures`, `auth`, `imports`. Cada módulo sigue el mismo patrón de archivos paralelos en cada capa.
+
 ## Pitfalls conocidos
 
 - El build backend en cualquier `pyproject.toml` de este repo debe ser `setuptools.build_meta`. `setuptools.backends.legacy:build` no existe en `python:3.12-slim` y rompe el build de Docker.
+- La variable `DATABASE_URL` en `.env` usa el hostname `postgres` (nombre del servicio Docker). Para conectar desde fuera de Docker (TablePlus, psql local) usar `localhost:5433`.
+- El `DATABASE_URL` requiere el driver `postgresql+asyncpg://` — no `postgresql://` ni `postgres://`.
 
 ## Principios SOLID
 
