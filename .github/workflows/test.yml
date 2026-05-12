@@ -1,0 +1,39 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://biga:biga@localhost:5432/biga
+      REDIS_URL: redis://localhost:6379/0
+      SECRET_KEY: test-secret-key-minimum-32-characters-long
+      STORAGE_ENDPOINT_URL: http://localhost:9000
+      STORAGE_ACCESS_KEY: minioadmin
+      STORAGE_SECRET_KEY: minioadmin
+      STORAGE_BUCKET_NAME: biga
+      RESEND_API_KEY: re_test
+      EMAIL_FROM: test@biga.app
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: api/requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+        working-directory: api
+
+      - name: Run unit tests
+        run: pytest tests/unit/ -v --tb=short
+        working-directory: api
