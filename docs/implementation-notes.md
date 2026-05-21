@@ -74,4 +74,41 @@ async def list_students(current_user: User = Depends(get_current_user), ...):
 
 ---
 
+## Creación de estudiantes — acudiente primario obligatorio
+
+### La regla
+
+Todo estudiante debe tener exactamente un acudiente con `is_primary = True` desde el momento de su creación. No puede existir un `Student` en BD sin al menos un `Guardian` primario asociado.
+
+### Enforcement
+
+La constraint no se puede expresar en SQL de forma simple (cruza dos tablas). Se enforza en la capa de Service:
+
+- `POST /students` debe recibir en el mismo request al menos un acudiente. El Service crea el `Student` y el/los `Guardian` en la misma transacción. Si no viene ningún acudiente, el endpoint retorna `422`.
+- El Service valida que exactamente uno de los acudientes del request tenga `is_primary = True`.
+- Al eliminar un acudiente, el Service debe verificar que el estudiante no quede sin acudiente primario. Si es el último o el único primario, la operación retorna `409`.
+
+### Patrón de creación atómica
+
+```python
+async def create_student(self, student_data: StudentCreate, institution_id: UUID) -> Student:
+    if not student_data.guardians:
+        raise HTTPException(status_code=422, detail="Se requiere al menos un acudiente")
+    primaries = [g for g in student_data.guardians if g.is_primary]
+    if len(primaries) != 1:
+        raise HTTPException(status_code=422, detail="Exactamente un acudiente debe ser primario")
+
+    student = await self.student_repo.create(student_data, institution_id)
+    for guardian_data in student_data.guardians:
+        await self.guardian_repo.create(guardian_data, student_id=student.id)
+    return student
+    # get_db() hace commit al salir — student y guardians se persisten juntos
+```
+
+### Implicación en agendatorio
+
+Si `create_record` no encuentra acudiente primario para un estudiante, es un estado inválido del sistema (nunca debería ocurrir si el invariante se cumple). El comportamiento correcto es: crear el registro disciplinario, loguear el error, y omitir la notificación — no bloquear al docente.
+
+---
+
 *Notas de implementación — BIGA APP | Mayo 2026*

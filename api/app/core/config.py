@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 480
 
     storage_endpoint_url: str
+    storage_public_url: str = ""  # URL accesible desde el browser; si vacía usa storage_endpoint_url
     storage_access_key: str
     storage_secret_key: str
     storage_bucket_name: str
