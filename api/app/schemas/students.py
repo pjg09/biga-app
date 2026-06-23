@@ -4,6 +4,15 @@ from uuid import UUID
 from pydantic import BaseModel, Field, field_validator
 
 
+class StudentSearchResult(BaseModel):
+    id: UUID
+    full_name: str
+    document_number: str
+    photo_url: str | None
+    group_name: str | None
+    grade_name: str | None
+
+
 class StudentCreate(BaseModel):
     document_number: str = Field(min_length=3, max_length=20)
     first_name: str = Field(min_length=1, max_length=100)

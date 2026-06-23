@@ -48,7 +48,7 @@ El `institution_id` siempre proviene del token JWT del usuario autenticado (`cur
 
 ## Comandos frecuentes
 
-- `docker compose up -d` — levantar el stack
+- `docker compose up -d` — levantar el stack (el servicio `storage-init` crea el bucket en MinIO automáticamente)
 - `docker compose up -d --build` — rebuild + levantar
 - `docker compose exec api alembic upgrade head` — aplicar migraciones pendientes
 - `docker compose exec api alembic revision --autogenerate -m "desc"` — generar migración
@@ -56,6 +56,8 @@ El `institution_id` siempre proviene del token JWT del usuario autenticado (`cur
 - `curl http://localhost:8000/health` — verificar que la API responde
 - `http://localhost:8000/docs` — OpenAPI UI (Swagger)
 - `docker compose exec api alembic check` — verificar que no hay drift entre modelos y BD
+- `docker compose exec api python -m scripts.seed_base` — crear institución y usuario demo (BD limpia)
+- `docker compose exec api python -m scripts.seed_agendatorio` — crear estudiante y acudiente de prueba
 
 ## Tests
 
@@ -82,7 +84,7 @@ El `asyncio_mode = "auto"` en `pyproject.toml` hace que todos los tests `async d
 
 ## Módulos del dominio
 
-Módulos implementados: `auth`, `students` (registro append-only), `pae` (inscripción, entrega, reporte semanal, auditoría). Pendientes: `attendance`, `agendatorio`, `departures`, `imports`.
+Módulos implementados: `auth`, `agendatorio`, `students` (registro append-only + búsqueda), `pae` (inscripción, entrega, reporte semanal, auditoría). Pendientes: `attendance`, `departures`, `imports`.
 Cada módulo sigue el mismo patrón de archivos paralelos en cada capa.
 
 Para proteger un endpoint con autenticación: `current_user: User = Depends(get_current_user)` desde `app.core.dependencies`. El `current_user.institution_id` es la fuente del tenant para todos los queries.
@@ -98,6 +100,13 @@ Funciones en `app/core/security.py`. `register_delivery` verifica la capa 1 ante
 
 - Los `created_at`/`enrolled_at` de estos dos modelos se fijan en la app (no `server_default`) porque entran en el hash. No cambiar a `server_default` sin ajustar el cálculo del hash.
 
+## Convenciones del frontend
+
+- Cada componente tiene su propio archivo CSS en `web/src/styles/` con el mismo nombre: `Hero.jsx` → `styles/hero.css`.
+- Los estilos globales y variables van en `web/src/index.css`.
+- Las páginas viven en `web/src/pages/`, los componentes reutilizables en `web/src/components/`.
+- Los hooks personalizados van en `web/src/hooks/`.
+
 ## Pitfalls conocidos
 
 - El build backend en cualquier `pyproject.toml` de este repo debe ser `setuptools.build_meta`. `setuptools.backends.legacy:build` no existe en `python:3.12-slim` y rompe el build de Docker.
@@ -107,4 +116,7 @@ Funciones en `app/core/security.py`. `register_delivery` verifica la capa 1 ante
 - En SQLAlchemy 2.x, nombrar una columna `date` en un modelo que también importa `from datetime import date` causa `MappedAnnotationError`. Solución: `from datetime import date as PyDate`.
 - El dummy hash para prevención de timing en login (`AuthService._DUMMY_HASH`) debe ser un bcrypt válido pre-computado. Un string malformado lanza `ValueError: Invalid salt` en bcrypt.
 - `pytest` no está en la imagen Docker de producción. Para correr tests en el contenedor: `docker compose exec api pip install -r requirements-dev.txt` primero.
+- `docker compose exec api python -c "..."` con código multiline falla por indentación al pegar. Crear scripts en `api/scripts/` y ejecutar con `python -m scripts.nombre`.
+- `STORAGE_PUBLIC_URL` en `.env` debe apuntar al hostname accesible desde el browser (`http://localhost:9000` en dev). `STORAGE_ENDPOINT_URL` es el hostname interno de Docker (`http://minio:9000`) — sin esta separación las URLs presignadas no son accesibles desde el frontend.
+- `docker stop` falla con "permission denied" por AppArmor. Workaround: `sudo kill -9 $(docker inspect --format '{{.State.Pid}}' <id>)`.
 

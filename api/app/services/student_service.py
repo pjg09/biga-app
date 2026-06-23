@@ -4,7 +4,7 @@ from fastapi import HTTPException, status
 
 from app.models.student import Student
 from app.repositories.student_repository import StudentRepository
-from app.schemas.student import StudentCreate, StudentResponse
+from app.schemas.students import StudentCreate, StudentResponse
 
 
 class StudentService:
