@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, Date, Enum as SAEnum, ForeignKey, Index, SmallInteger, UniqueConstraint, func
+from sqlalchemy import Boolean, Date, Enum as SAEnum, ForeignKey, Index, SmallInteger, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -21,7 +21,9 @@ class PAEEnrollment(Base):
     institution_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), ForeignKey("institutions.id"), nullable=False)
     academic_year: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    enrolled_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())
+    # Fijado explícitamente por la app (no server_default) para incluirlo en el hash.
+    enrolled_at: Mapped[datetime] = mapped_column(nullable=False)
+    enrollment_hash: Mapped[str] = mapped_column(String(64), nullable=False)
 
 
 class PAEDelivery(Base):
@@ -39,4 +41,5 @@ class PAEDelivery(Base):
     identification_method: Mapped[PAEIdentificationMethod] = mapped_column(
         SAEnum(PAEIdentificationMethod, native_enum=True, name="pae_identification_method"), nullable=False
     )
-    created_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())
+    delivery_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(nullable=False)

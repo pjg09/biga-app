@@ -237,12 +237,15 @@ Inscripción de un estudiante al programa PAE para un año académico. Define el
 | `institution_id` | UUID | NOT NULL, FK → institutions | Denormalizado |
 | `academic_year` | SMALLINT | NOT NULL | |
 | `is_active` | BOOLEAN | NOT NULL, DEFAULT TRUE | |
-| `enrolled_at` | TIMESTAMP | NOT NULL, DEFAULT NOW() | |
+| `enrolled_at` | TIMESTAMP | NOT NULL | Fijado explícitamente por la app (no server_default) para incluirlo en el hash. |
+| `enrollment_hash` | VARCHAR(64) | NOT NULL | HMAC-SHA256 hex de la inscripción (capa 1 de la cadena de integridad). Clave nunca almacenada en BD. |
 
 **Restricciones adicionales:**
 ```sql
 UNIQUE (student_id, academic_year)
 ```
+
+> `enrollment_hash` es la **capa 1** de la cadena de integridad del PAE. Firma `student_id : institution_id : academic_year : enrolled_at`. El `delivery_hash` de cada entrega encadena este valor (ver `pae_deliveries`), atando la entrega a la inscripción exacta que la habilitó. Si alguien fabrica o altera una inscripción directamente en la BD, su hash deja de coincidir y la auditoría (`GET /pae/audit`) lo marca; además `register_delivery` rechaza entregar contra una inscripción comprometida.
 
 ---
 
@@ -258,7 +261,8 @@ Registro de cada entrega PAE realizada. La constraint `UNIQUE (student_id, deliv
 | `delivered_by_user_id` | UUID | NOT NULL, FK → users | Docente que confirmó la entrega |
 | `delivery_date` | DATE | NOT NULL | |
 | `identification_method` | ENUM | NOT NULL | `DOCUMENT` (MVP), `FACIAL` (fase 2) |
-| `created_at` | TIMESTAMP | NOT NULL, DEFAULT NOW() | |
+| `delivery_hash` | VARCHAR(64) | NOT NULL | HMAC-SHA256 hex de la entrega (capa 2 de la cadena). Encadena el `enrollment_hash`. Clave nunca almacenada en BD. |
+| `created_at` | TIMESTAMP | NOT NULL | Fijado explícitamente por la app (no server_default) para incluirlo en el hash. |
 
 **ENUMs:**
 ```sql
@@ -269,6 +273,8 @@ CREATE TYPE pae_identification_method AS ENUM ('DOCUMENT', 'FACIAL');
 ```sql
 UNIQUE (student_id, delivery_date)
 ```
+
+> `delivery_hash` es la **capa 2** de la cadena de integridad. Firma `student_id : delivery_date : delivered_by_user_id : created_at : enrollment_hash`. Al incluir el `enrollment_hash` de la inscripción, cualquier manipulación de la inscripción **o** de la entrega rompe la verificación. La auditoría comprueba ambas capas por separado (`enrollment_hash_valid`, `delivery_hash_valid`) y reporta `hash_valid` como la conjunción de ambas.
 
 **Lógica del job de notificación PAE:**
 ```

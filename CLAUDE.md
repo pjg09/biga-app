@@ -82,10 +82,21 @@ El `asyncio_mode = "auto"` en `pyproject.toml` hace que todos los tests `async d
 
 ## Módulos del dominio
 
-Módulos implementados: `auth`. Pendientes: `pae`, `attendance`, `agendatorio`, `departures`, `imports`.
+Módulos implementados: `auth`, `students` (registro append-only), `pae` (inscripción, entrega, reporte semanal, auditoría). Pendientes: `attendance`, `agendatorio`, `departures`, `imports`.
 Cada módulo sigue el mismo patrón de archivos paralelos en cada capa.
 
 Para proteger un endpoint con autenticación: `current_user: User = Depends(get_current_user)` desde `app.core.dependencies`. El `current_user.institution_id` es la fuente del tenant para todos los queries.
+
+## Integridad PAE — doble hash encadenado (regla crítica)
+
+Inscripciones (`pae_enrollments`) y entregas (`pae_deliveries`) son registros tipo libro contable: **no se modifican ni se borran vía API** (no hay `PUT`/`PATCH`/`DELETE`). Cada uno se firma con HMAC-SHA256 y la entrega encadena el hash de la inscripción:
+
+- `enrollment_hash` (capa 1) = `HMAC(student_id : institution_id : academic_year : enrolled_at)`
+- `delivery_hash` (capa 2) = `HMAC(student_id : delivery_date : delivered_by_user_id : created_at : enrollment_hash)`
+
+Funciones en `app/core/security.py`. `register_delivery` verifica la capa 1 antes de entregar y rechaza inscripciones comprometidas. `GET /pae/audit` recomputa ambas capas. La clave (`PAE_SIGNING_SECRET`) nunca vive en la BD. Detalle completo en `docs/architecture.md`.
+
+- Los `created_at`/`enrolled_at` de estos dos modelos se fijan en la app (no `server_default`) porque entran en el hash. No cambiar a `server_default` sin ajustar el cálculo del hash.
 
 ## Pitfalls conocidos
 

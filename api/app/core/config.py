@@ -6,14 +6,16 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     debug: bool = False
+    cors_origins: list[str] = ["http://localhost:5173"]
 
     database_url: str
     redis_url: str
 
     secret_key: str
     algorithm: str = "HS256"
+    pae_signing_secret: str
 
-    @field_validator("secret_key")
+    @field_validator("secret_key", "pae_signing_secret")
     @classmethod
     def secret_key_min_length(cls, v: str) -> str:
         if len(v) < 32:

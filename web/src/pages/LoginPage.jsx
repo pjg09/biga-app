@@ -1,13 +1,14 @@
 import { useState, useCallback, useId } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import '../styles/login.css';
 
 export default function LoginPage() {
   const [fields, setFields] = useState({ email: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
-  const [status, setStatus] = useState('idle'); // idle | loading | error
+  const [status, setStatus] = useState('idle'); // idle | loading | error | invalid_credentials | server_error
   const [errors, setErrors] = useState({});
 
+  const navigate   = useNavigate();
   const emailId    = useId();
   const passwordId = useId();
 
@@ -29,7 +30,7 @@ export default function LoginPage() {
   }, []);
 
   const handleSubmit = useCallback(
-    (e) => {
+    async (e) => {
       e.preventDefault();
       const next = validate();
       if (Object.keys(next).length) {
@@ -37,8 +38,35 @@ export default function LoginPage() {
         return;
       }
       setStatus('loading');
-      // Placeholder — conectar al endpoint real de auth
-      setTimeout(() => setStatus('error'), 1500);
+      const body = new URLSearchParams();
+      body.append('username', fields.email.trim());
+      body.append('password', fields.password);
+
+      try {
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body,
+        });
+
+        if (res.ok) {
+          const { access_token } = await res.json();
+          localStorage.setItem('token', access_token);
+
+          const meRes = await fetch(`${import.meta.env.VITE_API_URL}/auth/me`, {
+            headers: { Authorization: `Bearer ${access_token}` },
+          });
+          const user = await meRes.json();
+          localStorage.setItem('user', JSON.stringify(user));
+
+          navigate(user.role === 'PAE_OPERATOR' ? '/dashboard/pae' : '/dashboard/teacher');
+          return;
+        }
+
+        setStatus(res.status === 401 ? 'invalid_credentials' : 'server_error');
+      } catch {
+        setStatus('server_error');
+      }
     },
     [validate]
   );
@@ -177,10 +205,16 @@ export default function LoginPage() {
             </div>
 
             {/* Server error */}
-            {status === 'error' && (
+            {status === 'invalid_credentials' && (
               <div role="alert" className="form-alert">
                 <ErrorIcon />
                 Credenciales incorrectas. Verifica tu correo y contraseña.
+              </div>
+            )}
+            {status === 'server_error' && (
+              <div role="alert" className="form-alert">
+                <ErrorIcon />
+                Error de servidor. Intenta de nuevo en unos segundos.
               </div>
             )}
 

@@ -282,6 +282,28 @@ class PAEService:
 
 ---
 
+### Cadena de integridad PAE — doble hash
+
+Los registros del PAE son un libro contable: una vez creados no deben poder alterarse sin dejar rastro, ni siquiera por alguien con acceso de escritura directo a la base de datos. Para garantizarlo el módulo no expone endpoints de modificación (`PUT`/`PATCH`/`DELETE`) sobre inscripciones y entregas, y firma cada registro con **dos capas de HMAC-SHA256 encadenadas**:
+
+1. **`enrollment_hash` (capa 1)** — al inscribir un estudiante al PAE se firma `student_id : institution_id : academic_year : enrolled_at`.
+2. **`delivery_hash` (capa 2)** — al registrar una entrega se firma `student_id : delivery_date : delivered_by_user_id : created_at : enrollment_hash`. Incluir el hash de la inscripción **encadena** la entrega a la inscripción exacta que la habilitó.
+
+La clave de firma (`PAE_SIGNING_SECRET`) vive solo en variable de entorno, nunca en la BD. Un atacante con acceso a las tablas no puede regenerar hashes válidos tras manipular una fila.
+
+Garantías que esto produce:
+
+- Alterar una inscripción (p. ej. cambiar el `academic_year`) invalida su `enrollment_hash` **y** el `delivery_hash` de todas sus entregas.
+- Reescribir una entrega (cambiar fecha, estudiante u operador) invalida su `delivery_hash`.
+- Borrar una inscripción deja huérfanas sus entregas: la auditoría lo detecta como cadena rota.
+- `register_delivery` verifica la capa 1 **antes** de entregar: rechaza entregar contra una inscripción comprometida en lugar de encadenar sobre datos corruptos.
+
+`GET /pae/audit` recomputa ambas capas y devuelve `enrollment_hash_valid`, `delivery_hash_valid` y el consolidado `hash_valid` por cada entrega, más el total de registros manipulados. Las funciones viven en `app/core/security.py` (`compute_enrollment_hash`, `compute_delivery_hash` y sus `verify_*`).
+
+> Nota de diseño: un "doble hash" tipo `SHA256(SHA256(x))` no agrega seguridad real. El valor aquí viene de **encadenar** dos firmas HMAC con clave secreta sobre datos distintos pero dependientes, no de hashear dos veces el mismo dato.
+
+---
+
 ### Adapter — Servicios externos
 
 Email y storage son externos y pueden cambiar de proveedor. Se abstraen detrás de un Protocol para que el resto del código sea independiente de la implementación concreta.
