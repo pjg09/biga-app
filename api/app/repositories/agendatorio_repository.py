@@ -129,19 +129,27 @@ class AgendatorioRepository:
 
     async def list_records(
         self,
-        student_id: UUID,
         institution_id: UUID,
-        skip: int,
-        limit: int,
+        student_id: UUID | None = None,
+        article_id: UUID | None = None,
+        date_from: PyDate | None = None,
+        date_to: PyDate | None = None,
+        skip: int = 0,
+        limit: int = 20,
     ) -> list[DisciplineRecord]:
-        result = await self.session.execute(
-            select(DisciplineRecord)
-            .where(
-                DisciplineRecord.student_id == student_id,
-                DisciplineRecord.institution_id == institution_id,
-            )
-            .order_by(DisciplineRecord.date.desc())
-            .offset(skip)
-            .limit(limit)
-        )
+        query = select(DisciplineRecord).where(DisciplineRecord.institution_id == institution_id)
+        if student_id is not None:
+            query = query.where(DisciplineRecord.student_id == student_id)
+        if date_from is not None:
+            query = query.where(DisciplineRecord.date >= date_from)
+        if date_to is not None:
+            query = query.where(DisciplineRecord.date <= date_to)
+        if article_id is not None:
+            query = query.join(
+                DisciplineRecordArticle,
+                DisciplineRecordArticle.discipline_record_id == DisciplineRecord.id,
+            ).where(DisciplineRecordArticle.article_id == article_id)
+
+        query = query.order_by(DisciplineRecord.date.desc()).offset(skip).limit(limit)
+        result = await self.session.execute(query)
         return list(result.scalars().all())

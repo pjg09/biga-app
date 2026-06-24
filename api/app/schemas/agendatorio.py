@@ -14,9 +14,11 @@ class ArticleCreate(BaseModel):
 
 
 class ArticleUpdate(BaseModel):
+    code: str | None = None
     title: str | None = None
     description: str | None = None
     severity: ArticleSeverity | None = None
+    is_active: bool | None = None
 
 
 class ArticleResponse(BaseModel):

@@ -1,3 +1,4 @@
+from datetime import date
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
@@ -94,13 +95,24 @@ async def create_record(
 
 @router.get("/records", response_model=list[DisciplineRecordResponse])
 async def list_records(
-    student_id: UUID,
+    student_id: UUID | None = None,
+    article_id: UUID | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
     current_user: User = Depends(get_current_user),
     service: AgendatorioService = Depends(get_agendatorio_service),
 ):
-    return await service.list_records(student_id, current_user.institution_id, skip, limit)
+    return await service.list_records(
+        institution_id=current_user.institution_id,
+        student_id=student_id,
+        article_id=article_id,
+        date_from=date_from,
+        date_to=date_to,
+        skip=skip,
+        limit=limit,
+    )
 
 
 @router.get("/records/{record_id}", response_model=DisciplineRecordDetail)

@@ -1,4 +1,5 @@
 import logging
+from datetime import date as PyDate
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
@@ -54,6 +55,15 @@ class AgendatorioService:
         article = await self.agendatorio_repo.get_article(article_id, institution_id)
         if not article:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artículo no encontrado")
+
+        if data.code is not None and data.code != article.code:
+            existing = await self.agendatorio_repo.get_article_by_code(data.code, institution_id)
+            if existing and existing.id != article.id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Ya existe un artículo con el código '{data.code}'",
+                )
+
         return await self.agendatorio_repo.update_article(article, data.model_dump(exclude_unset=True))
 
     async def deactivate_article(self, article_id: UUID, institution_id: UUID) -> None:
@@ -90,6 +100,11 @@ class AgendatorioService:
         # Validar artículos: deben existir en la institución y estar activos.
         # Responder 400 (no 404/403) para no revelar info de otros tenants.
         unique_article_ids = list(dict.fromkeys(data.article_ids))
+        if not unique_article_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Se requiere al menos un artículo",
+            )
         articles = await self.agendatorio_repo.get_articles_by_ids(unique_article_ids, institution_id)
 
         if len(articles) != len(unique_article_ids):
@@ -125,7 +140,7 @@ class AgendatorioService:
         # para que el worker no lea el registro antes de que sea visible.
         guardian = await self.guardian_repo.get_primary(data.student_id)
         if guardian:
-            notify_discipline_record.delay(str(record.id))
+            notify_discipline_record.delay(str(record.id), str(institution_id))
         else:
             logger.error(
                 "No se encontró acudiente primario para el estudiante %s al crear registro disciplinario %s",
@@ -137,15 +152,32 @@ class AgendatorioService:
 
     async def list_records(
         self,
-        student_id: UUID,
         institution_id: UUID,
-        skip: int,
-        limit: int,
+        student_id: UUID | None = None,
+        article_id: UUID | None = None,
+        date_from: PyDate | None = None,
+        date_to: PyDate | None = None,
+        skip: int = 0,
+        limit: int = 20,
     ) -> list[DisciplineRecord]:
-        student = await self.student_repo.get_by_id(student_id, institution_id)
-        if not student:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Estudiante no encontrado")
-        return await self.agendatorio_repo.list_records(student_id, institution_id, skip, limit)
+        if date_from is not None and date_to is not None and date_from > date_to:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="date_from no puede ser posterior a date_to",
+            )
+        if student_id is not None:
+            student = await self.student_repo.get_by_id(student_id, institution_id)
+            if not student:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Estudiante no encontrado")
+        return await self.agendatorio_repo.list_records(
+            institution_id=institution_id,
+            student_id=student_id,
+            article_id=article_id,
+            date_from=date_from,
+            date_to=date_to,
+            skip=skip,
+            limit=limit,
+        )
 
     async def get_record(self, record_id: UUID, institution_id: UUID) -> DisciplineRecordDetail:
         record, articles = await self.agendatorio_repo.get_record(record_id, institution_id)

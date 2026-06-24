@@ -10,6 +10,7 @@ celery_app = Celery(
         "app.jobs.pae_jobs",
         "app.jobs.attendance_jobs",
         "app.jobs.departure_jobs",
+        "app.jobs.agendatorio_jobs",
     ],
 )
 

@@ -27,7 +27,7 @@ El agendatorio es el libro de convivencia digital. Reemplaza el registro en pape
 # Manual de convivencia
 GET    /agendatorio/articles                    Lista artículos activos (scope: institución)
 POST   /agendatorio/articles                    Crea artículo
-PATCH  /agendatorio/articles/{article_id}       Actualiza artículo
+PATCH  /agendatorio/articles/{article_id}       Actualiza artículo (incluye `code` e `is_active` — reactivación)
 DELETE /agendatorio/articles/{article_id}       Desactiva artículo (soft delete)
 
 # Búsqueda de estudiantes (compartido con PAE)
@@ -35,7 +35,7 @@ GET    /students/search?q=&group_id=&grade_id=  Busca estudiantes por nombre o d
 
 # Registros disciplinarios
 POST   /agendatorio/records                     Crea registro (multipart: JSON + archivo PNG)
-GET    /agendatorio/records?student_id=         Lista registros de un estudiante (paginado)
+GET    /agendatorio/records                     Lista registros (paginado). Filtros opcionales: student_id, article_id, date_from, date_to
 GET    /agendatorio/records/{record_id}         Detalle de un registro con artículos
 ```
 
@@ -69,6 +69,15 @@ GET    /agendatorio/records/{record_id}         Detalle de un registro con artí
 ### Paginación
 - Offset-based con parámetros `skip: int = 0` y `limit: int = 20` (máximo 100). Simple para el MVP.
 
+### Edición y reactivación de artículos
+- `PATCH /agendatorio/articles/{article_id}` permite modificar `code`, `title`, `description`, `severity` e `is_active`. No hay endpoint dedicado de reactivación: `is_active: true` por este mismo PATCH reactiva un artículo desactivado.
+- Cambiar `code` a uno ya usado por otro artículo de la institución (activo o inactivo) devuelve `409`. La unicidad de `code` aplica también a artículos inactivos (ya validado en `create_article` vía `get_article_by_code`), así que reactivar un artículo no puede generar un código duplicado.
+
+### Listado de registros — filtros
+- `student_id` ahora es opcional. Sin él, `GET /agendatorio/records` devuelve los registros de toda la institución (vista de coordinación), siempre filtrados por `institution_id`.
+- Filtros adicionales opcionales: `article_id` (registros que incluyen ese artículo), `date_from`/`date_to` (rango de fechas, inclusive). `date_from > date_to` es `400`.
+- Si se envía `student_id`, se sigue validando que el estudiante exista en la institución (`404` si no).
+
 ---
 
 ## Checklist de implementación
@@ -88,14 +97,14 @@ GET    /agendatorio/records/{record_id}         Detalle de un registro con artí
 ### Fase 4 — Service ✅
 - [x] `app/services/agendatorio_service.py` — flujo completo incluyendo validación de artículos, upload a storage, encolado del job y manejo del caso de acudiente ausente
 
-### Fase 5 — Job de notificación ⏳ PENDIENTE
+### Fase 5 — Job de notificación ✅
 - [x] `app/jobs/agendatorio_jobs.py` — stub (`pass`)
-- [ ] Implementar `notify_discipline_record`:
-  - [ ] Sesión de BD propia
-  - [ ] Cargar registro + estudiante + acudiente primario
-  - [ ] Enviar email via `EmailAdapter`
-  - [ ] Escribir en `notifications_log` (`SENT` o `FAILED`)
-  - [ ] En excepción: `status = FAILED`, no relanzar
+- [x] Implementar `notify_discipline_record`:
+  - [x] Sesión de BD propia (`AsyncSessionLocal`, no `get_db()`)
+  - [x] Cargar registro + estudiante + acudiente primario
+  - [x] Enviar email via `EmailAdapter`
+  - [x] Escribir en `notifications_log` (`SENT` o `FAILED`) — `app/repositories/notification_repository.py` (nuevo)
+  - [x] En excepción: `status = FAILED`, no relanzar
 
 ### Fase 6 — Router ✅
 - [x] `app/routers/agendatorio.py` — 7 endpoints
@@ -103,18 +112,20 @@ GET    /agendatorio/records/{record_id}         Detalle de un registro con artí
 - [x] Registrado en `app/main.py`
 
 ### Fase 7 — Tests ⏳ PENDIENTE
-- [ ] `tests/unit/test_agendatorio_service.py`
-  - [ ] `create_record` falla si `article_ids` está vacío
-  - [ ] `create_record` falla si algún `article_id` no pertenece a la institución
-  - [ ] `create_record` falla si algún `article_id` está inactivo
-  - [ ] `create_record` exitoso encola el job cuando hay acudiente primario
-  - [ ] `create_record` exitoso NO encola job cuando no hay acudiente primario
-  - [ ] `create_record` no persiste nada si `storage.upload` lanza excepción
-  - [ ] `deactivate_article` lanza 404 si el artículo no existe en la institución
+- [x] `tests/unit/test_agendatorio_service.py`
+  - [x] `create_record` falla si `article_ids` está vacío (requirió agregar el chequeo explícito en el Service — antes solo lo cubría `Field(min_length=1)` del schema)
+  - [x] `create_record` falla si algún `article_id` no pertenece a la institución
+  - [x] `create_record` falla si algún `article_id` está inactivo
+  - [x] `create_record` exitoso encola el job cuando hay acudiente primario
+  - [x] `create_record` exitoso NO encola job cuando no hay acudiente primario
+  - [x] `create_record` no persiste nada si `storage.upload` lanza excepción
+  - [x] `deactivate_article` lanza 404 si el artículo no existe en la institución
+- [x] `tests/unit/test_agendatorio_jobs.py` (no estaba en el checklist original, agregado por la lógica de ramas de `notify_discipline_record`)
 - [ ] `tests/unit/test_agendatorio_repository.py`
   - [ ] `create_record` inserta el registro y las filas M2M correctamente
   - [ ] `list_records` filtra por `institution_id` y `student_id`
   - [ ] `list_articles` no devuelve artículos inactivos
+  - **Pendiente de decisión**: estos tests requieren una sesión real contra Postgres (no se pueden mockear con sentido). No existe infraestructura de fixtures de BD para tests todavía — ver `tests/integration/` (vacío). Definir antes de implementar.
 
 ---
 

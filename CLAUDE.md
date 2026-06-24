@@ -46,6 +46,8 @@ Todo método de Repository que acceda a una tabla operativa **debe recibir `inst
 
 El `institution_id` siempre proviene del token JWT del usuario autenticado (`current_user.institution_id`), nunca de parámetros de la request. Ver `docs/implementation-notes.md` para el patrón completo con ejemplos.
 
+Los jobs de Celery que acceden a tablas operativas deben recibir `institution_id` explícitamente vía `.delay()` (ej. `.delay(str(record.id), str(institution_id))`) — el job corre fuera del contexto del request y no tiene acceso al JWT.
+
 ## Comandos frecuentes
 
 - `docker compose up -d` — levantar el stack (el servicio `storage-init` crea el bucket en MinIO automáticamente)
@@ -60,6 +62,8 @@ El `institution_id` siempre proviene del token JWT del usuario autenticado (`cur
 - `docker compose exec api python -m scripts.seed_agendatorio` — crear estudiante y acudiente de prueba
 - `docker compose exec -T postgres psql -U biga -d biga < scripts/seed_dev_users.sql` — **seed demo completo** (3 usuarios TEACHER/PAE_OPERATOR/ADMIN, grupo 11A con horario, 4 estudiantes + acudientes + matrículas, artículos de convivencia). Correr **después** de `alembic upgrade head`. Credenciales en `docs/databaseDev.md`.
 - `docker compose exec -T api python -m scripts.seed_pae` — inscribe los estudiantes demo al PAE y registra entregas de la semana con la cadena de doble hash válida. Es Python (no SQL) porque los hashes dependen de `PAE_SIGNING_SECRET`. Correr **después** del seed SQL.
+- Obtener token JWT para pruebas manuales (tras `seed_base`, form-urlencoded con `username`/`password`, no JSON):
+  `export TOKEN=$(curl -s -X POST http://localhost:8000/auth/login -d "username=demo@biga.app&password=Test1234!" | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")`
 
 ## Tests
 
@@ -73,6 +77,8 @@ pytest tests/unit/test_foo.py::test_bar -xvs  # test único con output completo
 ```
 
 El `asyncio_mode = "auto"` en `pyproject.toml` hace que todos los tests `async def` sean recogidos automáticamente sin necesidad de `@pytest.mark.asyncio`.
+
+Para testear una validación del Service que duplica una regla del schema Pydantic (ej. `Field(min_length=1)`), construir el input con `Schema.model_construct(...)` — bypassa la validación de Pydantic y permite llegar al chequeo del Service.
 
 ## Gestión de dependencias
 
@@ -131,4 +137,10 @@ Funciones en `app/core/security.py`. `register_delivery` verifica la capa 1 ante
 - `docker compose exec api python -c "..."` con código multiline falla por indentación al pegar. Crear scripts en `api/scripts/` y ejecutar con `python -m scripts.nombre`.
 - `STORAGE_PUBLIC_URL` en `.env` debe apuntar al hostname accesible desde el browser (`http://localhost:9000` en dev). `STORAGE_ENDPOINT_URL` es el hostname interno de Docker (`http://minio:9000`) — sin esta separación las URLs presignadas no son accesibles desde el frontend.
 - `docker stop` falla con "permission denied" por AppArmor. Workaround: `sudo kill -9 $(docker inspect --format '{{.State.Pid}}' <id>)`.
+- `POST /auth/login` espera `application/x-www-form-urlencoded` con campos `username`/`password` (OAuth2PasswordRequestForm), no JSON con `email`/`password`.
+- Si un curl a un endpoint con path param (ej. `/agendatorio/records/$RECORD_ID`) devuelve body vacío sin error visible, revisar que la variable no esté vacía: un segmento final vacío (`/records/`) dispara un 307 a `/records` que curl no sigue por defecto, devolviendo body vacío en silencio.
+- Los jobs de Celery son funciones sync pero `AsyncSessionLocal` es async: el patrón es `asyncio.run(_run(...))` donde `_run` hace `await _logica(...)` y luego `await engine.dispose()` **dentro del mismo `asyncio.run`** (mismo event loop). Sin el `dispose()`, la segunda ejecución del task en el mismo proceso worker reutiliza una conexión asyncpg de un loop ya cerrado y falla con `InterfaceError: cannot perform operation: another operation is in progress`. Si el `dispose()` se hace en un `asyncio.run` separado, falla con `RuntimeError: ... attached to a different loop` al cerrar la conexión. Ver `app/jobs/agendatorio_jobs.py` como referencia para `pae`, `attendance`, `departures`.
+- El `worker` de Celery no tiene autoreload (a diferencia de `uvicorn --reload` en `api`). Tras cambiar código en `app/jobs/`, recargar con `docker compose exec worker python -c "import os, signal; os.kill(1, signal.SIGHUP)"` (SIGHUP reinicia el worker) — `docker compose restart worker` choca con el problema de AppArmor de `docker stop`.
+- Al crear un módulo de job nuevo en `app/jobs/`, agregarlo al `include` de `app/core/celery.py` — si no, el worker nunca registra el task y `.delay()` encola mensajes que nadie ejecuta nunca (sin error visible).
+- Los tests de repository (queries SQL reales, joins, M2M) no se pueden mockear con sentido. No existe infraestructura de fixtures contra Postgres real (`tests/integration/` vacío) — definir esa infraestructura antes de escribir `test_*_repository.py` en cualquier módulo.
 
