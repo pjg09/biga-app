@@ -3,6 +3,8 @@ import LandingPage      from './pages/LandingPage';
 import LoginPage        from './pages/LoginPage';
 import TeacherDashboard from './pages/TeacherDashboard';
 import PAEDashboard     from './pages/PAEDashboard';
+import AdminDashboard   from './pages/AdminDashboard';
+import JustifyPage      from './pages/JustifyPage';
 import ProtectedRoute   from './components/ProtectedRoute';
 
 export default function App() {
@@ -10,6 +12,7 @@ export default function App() {
     <Routes>
       <Route path="/"       element={<LandingPage />} />
       <Route path="/login"  element={<LoginPage />} />
+      <Route path="/justificar/:token" element={<JustifyPage />} />
 
       <Route
         path="/dashboard/teacher"
@@ -27,6 +30,14 @@ export default function App() {
           </ProtectedRoute>
         }
       />
+      <Route
+        path="/dashboard/admin"
+        element={
+          <ProtectedRoute allowedRoles={['ADMIN']}>
+            <AdminDashboard />
+          </ProtectedRoute>
+        }
+      />
 
       {/* Redirige /dashboard al dashboard correcto según rol */}
       <Route path="/dashboard" element={<DashboardRedirect />} />
@@ -36,8 +47,14 @@ export default function App() {
   );
 }
 
+const DASH_BY_ROLE = {
+  ADMIN: '/dashboard/admin',
+  PAE_OPERATOR: '/dashboard/pae',
+  TEACHER: '/dashboard/teacher',
+};
+
 function DashboardRedirect() {
   const user = JSON.parse(localStorage.getItem('user') || 'null');
   if (!user) return <Navigate to="/login" replace />;
-  return <Navigate to={user.role === 'PAE_OPERATOR' ? '/dashboard/pae' : '/dashboard/teacher'} replace />;
+  return <Navigate to={DASH_BY_ROLE[user.role] ?? '/dashboard/teacher'} replace />;
 }

@@ -1,6 +1,11 @@
 # Plan de implementación — Módulo PAE
 
-> Documento de trabajo. Marcar cada ítem con `[x]` al completarlo.
+> ⚠️ **Documento histórico y desactualizado.** El módulo PAE ya está implementado,
+> pero con un diseño distinto al de este plan (request por `student_id` en vez de
+> `document_number`, cadena de doble hash de integridad, endpoints
+> `/pae/students/today`, `/pae/enrollments`, `/pae/report/weekly`, `/pae/audit`).
+> La documentación funcional vigente está en **`docs/pae.md`**. Este archivo se
+> conserva solo como referencia del plan original.
 
 ---
 

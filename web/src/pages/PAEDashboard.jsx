@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { paeService } from '../services/pae';
 import { studentService } from '../services/students';
+import { AttendanceView, DeparturesView, ScheduleView, ConvivenciaView, MensajesView } from './TeacherDashboard';
 import '../styles/dashboard.css';
 
 const AVATARS = [
@@ -16,8 +17,9 @@ const NAV_TITLES = {
   'pae-register': 'Registro PAE',
   'pae-report':   'Reporte diario',
   'pae-enrolled': 'Matriculados',
-  attendance:     'Asistencia',
   students:       'Estudiantes',
+  attendance:     'Asistencia',
+  departures:     'Salidas tempranas',
   schedule:       'Horario',
   conduct:        'Convivencia',
   messages:       'Mensajes',
@@ -70,10 +72,11 @@ export default function PAEDashboard() {
             <NavItem id="pae-enrolled" active={activeNav} icon={<ListCheckIcon />} label="Matriculados"   onClick={setActiveNav} pae />
           </div>
           <div className="dash__nav-section">
-            <p className="dash__nav-label">General</p>
-            <NavItem id="attendance" active={activeNav} icon={<ClipboardIcon />} label="Asistencia"  onClick={setActiveNav} />
-            <NavItem id="students"   active={activeNav} icon={<UsersIcon />}     label="Estudiantes" onClick={setActiveNav} />
-            <NavItem id="schedule"   active={activeNav} icon={<CalendarIcon />}  label="Horario"     onClick={setActiveNav} />
+            <p className="dash__nav-label">Aula</p>
+            <NavItem id="attendance" active={activeNav} icon={<ClipboardIcon />} label="Asistencia"        onClick={setActiveNav} />
+            <NavItem id="departures" active={activeNav} icon={<LogoutIcon />}    label="Salidas tempranas" onClick={setActiveNav} />
+            <NavItem id="schedule"   active={activeNav} icon={<CalendarIcon />}  label="Horario"           onClick={setActiveNav} />
+            <NavItem id="students"   active={activeNav} icon={<UsersIcon />}     label="Estudiantes"       onClick={setActiveNav} />
           </div>
           <div className="dash__nav-section">
             <p className="dash__nav-label">Seguimiento</p>
@@ -110,11 +113,12 @@ export default function PAEDashboard() {
           {activeNav === 'pae-register' && <PAERegisterView />}
           {activeNav === 'pae-report'   && <PAEReportView />}
           {activeNav === 'pae-enrolled' && <PAEEnrolledView />}
-          {activeNav === 'attendance'   && <Empty icon={<ClipboardIcon />} label="Asistencia" />}
           {activeNav === 'students'     && <StudentsView />}
-          {activeNav === 'schedule'     && <Empty icon={<CalendarIcon />}  label="Horario" />}
-          {activeNav === 'conduct'      && <Empty icon={<ShieldIcon />}    label="Convivencia" />}
-          {activeNav === 'messages'     && <Empty icon={<MessageIcon />}   label="Mensajes" />}
+          {activeNav === 'attendance'   && <AttendanceView />}
+          {activeNav === 'departures'   && <DeparturesView />}
+          {activeNav === 'schedule'     && <ScheduleView />}
+          {activeNav === 'conduct'      && <ConvivenciaView />}
+          {activeNav === 'messages'     && <MensajesView />}
         </main>
       </div>
     </div>
@@ -504,7 +508,7 @@ function PAEEnrolledView() {
 /* ── Estudiantes: registro + inscripción PAE ──────────────────────── */
 const EMPTY_FORM = { document_number: '', first_name: '', last_name: '', birth_date: '', photo_url: '' };
 
-function StudentsView() {
+export function StudentsView() {
   const [students, setStudents]   = useState([]);
   const [enrolledIds, setEnrolled] = useState(new Set());
   const [loading, setLoading]     = useState(true);

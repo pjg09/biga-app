@@ -1,0 +1,22 @@
+import { api } from './api';
+
+export const adminService = {
+  getStats: () => api.get('/admin/stats'),
+
+  // Personal (usuarios)
+  listUsers:  () => api.get('/admin/users'),
+  createUser: (u) => api.post('/admin/users', u),
+
+  // Académico
+  listGrades:  () => api.get('/admin/grades'),
+  createGrade: (g) => api.post('/admin/grades', g),
+  listGroups:  () => api.get('/admin/groups'),
+  createGroup: (g) => api.post('/admin/groups', g),
+  enrollStudentInGroup: (sg) => api.post('/admin/student-groups', sg),
+
+  // Horarios
+  listClassPeriods: (group_id) => api.get(`/admin/class-periods?group_id=${group_id}`),
+  createClassPeriod: (cp) => api.post('/admin/class-periods', cp),
+  listAssignments: () => api.get('/admin/teacher-assignments'),
+  assignTeacher:   (a) => api.post('/admin/teacher-assignments', a),
+};

@@ -6,7 +6,8 @@ export default function ProtectedRoute({ children, allowedRoles }) {
 
   if (!token || !user) return <Navigate to="/login" replace />;
   if (allowedRoles && !allowedRoles.includes(user.role)) {
-    return <Navigate to={user.role === 'PAE_OPERATOR' ? '/dashboard/pae' : '/dashboard/teacher'} replace />;
+    const home = { ADMIN: '/dashboard/admin', PAE_OPERATOR: '/dashboard/pae', TEACHER: '/dashboard/teacher' };
+    return <Navigate to={home[user.role] ?? '/dashboard/teacher'} replace />;
   }
 
   return children;

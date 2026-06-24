@@ -145,10 +145,10 @@ minio     → Object storage local
 
 | Job | Trigger | Descripción |
 |---|---|---|
-| `notify_absent_first_hour` | Inmediato al guardar ausencia en primera hora | Notifica al acudiente e incluye enlace único de justificación |
-| `notify_pae_no_claim` | Cron al cierre del horario PAE | Notifica acudientes de estudiantes PAE que no reclamaron |
+| `notify_absence_first_hour` | Diferido tras tomar lista (`countdown = ATTENDANCE_GRACE_MINUTES`); al disparar relee el estado y solo notifica si sigue `ABSENT` | Notifica al acudiente e incluye enlace único de justificación |
+| `notify_pae_no_claim` | Cron al cierre del horario PAE (stub, pendiente) | Notifica acudientes de estudiantes PAE que no reclamaron |
 | `notify_early_departure` | Inmediato al registrar salida temprana | Notifica al acudiente |
-| `notify_discipline_record` | Inmediato al guardar registro agendatorio | Notifica al acudiente |
+| `notify_discipline_record` | Inmediato al guardar registro agendatorio (stub, pendiente) | Notifica al acudiente |
 
 ---
 
@@ -160,20 +160,20 @@ Todas las tablas operativas incluyen `institution_id` desde el inicio, aunque el
 
 ```
 institutions
-  └── schools
-       └── grades
-            └── groups
-                 └── students ──── guardians
-                                      │
-                                   (email de notificación)
+  └── grades
+       └── groups
+            └── students ──── guardians
+                                 │
+                              (email de notificación)
 
-users (docentes)
-  └── asignados a groups
+users (docentes / operadores PAE / admin)
+  └── asignados a groups (user_groups)
 
-pae_deliveries          → student, user (docente), fecha, método de registro
+pae_enrollments         → student, institución, año académico, enrollment_hash (capa 1)
+pae_deliveries          → student, user, fecha, método, delivery_hash (capa 2)
 attendance_records      → student, group, fecha, clase, estado
-attendance_tokens       → token único por inasistencia, expira a medianoche
-discipline_records      → student, user, artículos, observaciones, firma (base64)
+attendance_tokens       → token UUID único por inasistencia, expira a medianoche
+discipline_records      → student, user, artículos, observaciones, firma (PNG en storage: signature_url)
 early_departures        → student, user, fecha, hora
 notifications_log       → registro de cada correo enviado (estado, timestamp)
 import_jobs             → estado de cargas masivas (pendiente/procesando/completado/error)
@@ -181,9 +181,9 @@ import_jobs             → estado de cargas masivas (pendiente/procesando/compl
 
 ### Tokens de justificación de inasistencia
 
-- JWT firmado con expiración a medianoche del día actual.
-- Adicionalmente almacenado en BD con estado `used/unused`.
-- Un token válido criptográficamente pero marcado como `used` se rechaza. Esto impide que el mismo enlace se use más de una vez.
+- Token **UUID** aleatorio (no JWT), almacenado en `attendance_tokens` con `expires_at` a medianoche del día siguiente y `used_at`.
+- El enlace `FRONTEND_URL/justificar/{token}` lleva al formulario público (sin login): el token es la autorización.
+- Un token expirado o ya usado (`used_at` no nulo) se rechaza aunque exista. Al justificar, el registro pasa a `JUSTIFIED`.
 
 ---
 

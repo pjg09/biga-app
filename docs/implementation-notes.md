@@ -60,10 +60,10 @@ async def get_by_id(self, student_id: UUID) -> Student | None:
 El `institution_id` llega desde el token JWT del usuario autenticado. El dependency de FastAPI lo extrae y lo pasa al Service, que lo pasa al Repository. Nunca debe tomarse de los parámetros de la request directamente.
 
 ```python
-# En el dependency de auth (cuando se implemente):
+# En el dependency de auth (ya implementado en app/core/dependencies.py):
 async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db)):
     user_id = decode_access_token(token)
-    user = await user_repo.get_by_id(UUID(user_id), ...)
+    user = await UserRepository(db).get_by_id(UUID(user_id))  # excepción a la regla: resuelve el tenant
     return user  # user.institution_id es la fuente de verdad del tenant
 
 # En el router:

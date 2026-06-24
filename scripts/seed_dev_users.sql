@@ -43,6 +43,22 @@ VALUES (
 )
 ON CONFLICT (id) DO NOTHING;
 
+-- Usuario ADMIN  (contraseña: password123)
+INSERT INTO users (id, institution_id, document_number, first_name, last_name, email, hashed_password, role, is_active, created_at)
+VALUES (
+  'b0000000-0000-0000-0000-000000000003',
+  'a0000000-0000-0000-0000-000000000001',
+  '10000003',
+  'Sofía',
+  'Admin',
+  'admin@iedemo.edu.co',
+  '$2b$12$tGQtfPX82SqMR/wn99nk3u64.mvm/gaAyNfBGCtpvzjthA2uA0p6O',
+  'ADMIN',
+  true,
+  NOW()
+)
+ON CONFLICT (id) DO NOTHING;
+
 -- Estudiantes demo. No se siembran inscripciones PAE aquí: el enrollment_hash
 -- depende de PAE_SIGNING_SECRET y del timestamp, así que la inscripción se hace
 -- desde la app (vista Estudiantes → "Inscribir en PAE"), lo que ejercita la
@@ -53,4 +69,68 @@ VALUES
   ('c0000000-0000-0000-0000-000000000002', 'a0000000-0000-0000-0000-000000000001', '1010100002', 'Santiago', 'Rodríguez', '2013-07-25', NULL, true, NOW()),
   ('c0000000-0000-0000-0000-000000000003', 'a0000000-0000-0000-0000-000000000001', '1010100003', 'Valentina', 'López',    '2015-11-03', NULL, true, NOW()),
   ('c0000000-0000-0000-0000-000000000004', 'a0000000-0000-0000-0000-000000000001', '1010100004', 'Mateo', 'Martínez',      '2014-01-19', NULL, true, NOW())
+ON CONFLICT (id) DO NOTHING;
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- Datos para asistencia y salidas tempranas (academic_year 2026).
+-- Crea grado/grupo, primera hora para lun–vie (period_order=1) para que el
+-- docente siempre tenga "primera clase hoy", asigna el docente y los 4
+-- estudiantes al grupo, y registra un acudiente primario por estudiante
+-- (destino del correo de inasistencia / salida anticipada).
+-- ───────────────────────────────────────────────────────────────────────────
+
+-- Grado "Once" (nivel 11)
+INSERT INTO grades (id, institution_id, name, level, created_at)
+VALUES ('d0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000001', 'Once', 11, NOW())
+ON CONFLICT (id) DO NOTHING;
+
+-- Grupo 11A, año académico 2026
+INSERT INTO groups (id, institution_id, grade_id, name, academic_year, created_at)
+VALUES ('e0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000001', 'd0000000-0000-0000-0000-000000000001', 'A', 2026, NOW())
+ON CONFLICT (id) DO NOTHING;
+
+-- Primera hora (period_order = 1) para lunes(1) a viernes(5): 07:00–07:50
+INSERT INTO class_periods (id, institution_id, group_id, name, period_order, start_time, end_time, day_of_week, created_at)
+VALUES
+  ('f0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000001', 'e0000000-0000-0000-0000-000000000001', 'Primera hora', 1, '07:00:00', '07:50:00', 1, NOW()),
+  ('f0000000-0000-0000-0000-000000000002', 'a0000000-0000-0000-0000-000000000001', 'e0000000-0000-0000-0000-000000000001', 'Primera hora', 1, '07:00:00', '07:50:00', 2, NOW()),
+  ('f0000000-0000-0000-0000-000000000003', 'a0000000-0000-0000-0000-000000000001', 'e0000000-0000-0000-0000-000000000001', 'Primera hora', 1, '07:00:00', '07:50:00', 3, NOW()),
+  ('f0000000-0000-0000-0000-000000000004', 'a0000000-0000-0000-0000-000000000001', 'e0000000-0000-0000-0000-000000000001', 'Primera hora', 1, '07:00:00', '07:50:00', 4, NOW()),
+  ('f0000000-0000-0000-0000-000000000005', 'a0000000-0000-0000-0000-000000000001', 'e0000000-0000-0000-0000-000000000001', 'Primera hora', 1, '07:00:00', '07:50:00', 5, NOW())
+ON CONFLICT (id) DO NOTHING;
+
+-- El docente demo (teacher@iedemo.edu.co) dicta la primera hora de 11A.
+-- El operador PAE (pae@iedemo.edu.co) también está asignado a 11A: es un docente
+-- con funciones extra del PAE, así que tiene horario, asistencia y convivencia.
+INSERT INTO user_groups (id, user_id, group_id, academic_year)
+VALUES
+  ('a1000000-0000-0000-0000-000000000001', 'b0000000-0000-0000-0000-000000000001', 'e0000000-0000-0000-0000-000000000001', 2026),
+  ('a1000000-0000-0000-0000-000000000002', 'b0000000-0000-0000-0000-000000000002', 'e0000000-0000-0000-0000-000000000001', 2026)
+ON CONFLICT (id) DO NOTHING;
+
+-- Los 4 estudiantes pertenecen a 11A en 2026
+INSERT INTO student_groups (id, student_id, group_id, academic_year, is_active)
+VALUES
+  ('a2000000-0000-0000-0000-000000000001', 'c0000000-0000-0000-0000-000000000001', 'e0000000-0000-0000-0000-000000000001', 2026, true),
+  ('a2000000-0000-0000-0000-000000000002', 'c0000000-0000-0000-0000-000000000002', 'e0000000-0000-0000-0000-000000000001', 2026, true),
+  ('a2000000-0000-0000-0000-000000000003', 'c0000000-0000-0000-0000-000000000003', 'e0000000-0000-0000-0000-000000000001', 2026, true),
+  ('a2000000-0000-0000-0000-000000000004', 'c0000000-0000-0000-0000-000000000004', 'e0000000-0000-0000-0000-000000000001', 2026, true)
+ON CONFLICT (id) DO NOTHING;
+
+-- Acudiente primario por estudiante (destino de las notificaciones).
+-- Reemplazar el email por uno real para probar el envío con Resend.
+INSERT INTO guardians (id, student_id, full_name, relationship, email, phone, is_primary, created_at)
+VALUES
+  ('a3000000-0000-0000-0000-000000000001', 'c0000000-0000-0000-0000-000000000001', 'Acudiente de Mariana',  'MADRE', 'acudiente1@example.com', NULL, true, NOW()),
+  ('a3000000-0000-0000-0000-000000000002', 'c0000000-0000-0000-0000-000000000002', 'Acudiente de Santiago', 'PADRE', 'acudiente2@example.com', NULL, true, NOW()),
+  ('a3000000-0000-0000-0000-000000000003', 'c0000000-0000-0000-0000-000000000003', 'Acudiente de Valentina','MADRE', 'acudiente3@example.com', NULL, true, NOW()),
+  ('a3000000-0000-0000-0000-000000000004', 'c0000000-0000-0000-0000-000000000004', 'Acudiente de Mateo',    'PADRE', 'acudiente4@example.com', NULL, true, NOW())
+ON CONFLICT (id) DO NOTHING;
+
+-- Artículos del manual de convivencia (para la vista Convivencia / agendatorio)
+INSERT INTO convivencia_articles (id, institution_id, code, title, description, severity, is_active, created_at)
+VALUES
+  ('a4000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000001', 'Art. 15', 'Uso del celular en clase', 'Uso de dispositivos móviles sin autorización durante la clase.', 'LEVE', true, NOW()),
+  ('a4000000-0000-0000-0000-000000000002', 'a0000000-0000-0000-0000-000000000001', 'Art. 22', 'Agresión verbal', 'Trato irrespetuoso o agresión verbal hacia un compañero o docente.', 'MODERADA', true, NOW()),
+  ('a4000000-0000-0000-0000-000000000003', 'a0000000-0000-0000-0000-000000000001', 'Art. 31', 'Agresión física', 'Agresión física a cualquier miembro de la comunidad educativa.', 'GRAVE', true, NOW())
 ON CONFLICT (id) DO NOTHING;

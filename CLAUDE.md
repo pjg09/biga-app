@@ -58,6 +58,8 @@ El `institution_id` siempre proviene del token JWT del usuario autenticado (`cur
 - `docker compose exec api alembic check` — verificar que no hay drift entre modelos y BD
 - `docker compose exec api python -m scripts.seed_base` — crear institución y usuario demo (BD limpia)
 - `docker compose exec api python -m scripts.seed_agendatorio` — crear estudiante y acudiente de prueba
+- `docker compose exec -T postgres psql -U biga -d biga < scripts/seed_dev_users.sql` — **seed demo completo** (3 usuarios TEACHER/PAE_OPERATOR/ADMIN, grupo 11A con horario, 4 estudiantes + acudientes + matrículas, artículos de convivencia). Correr **después** de `alembic upgrade head`. Credenciales en `docs/databaseDev.md`.
+- `docker compose exec -T api python -m scripts.seed_pae` — inscribe los estudiantes demo al PAE y registra entregas de la semana con la cadena de doble hash válida. Es Python (no SQL) porque los hashes dependen de `PAE_SIGNING_SECRET`. Correr **después** del seed SQL.
 
 ## Tests
 
@@ -84,10 +86,19 @@ El `asyncio_mode = "auto"` en `pyproject.toml` hace que todos los tests `async d
 
 ## Módulos del dominio
 
-Módulos implementados: `auth`, `agendatorio`, `students` (registro append-only + búsqueda), `pae` (inscripción, entrega, reporte semanal, auditoría). Pendientes: `attendance`, `departures`, `imports`.
+Módulos implementados: `auth`, `agendatorio`, `students` (registro append-only + búsqueda), `pae` (inscripción, entrega, reporte semanal, auditoría), `attendance` (primera hora + justificación por link), `departures` (salidas anticipadas), `admin` (estadísticas `GET /admin/stats` + consola de gestión: usuarios, grados, grupos, matrículas, horarios `class_periods` y asignación docente-grupo). Pendientes: `imports`.
+
+Roles (`user_role`): `TEACHER`, `PAE_OPERATOR`, `ADMIN`. El operador PAE es un docente con funciones extra del PAE — las funciones de aula usan `require_staff` (TEACHER+PAE_OPERATOR); la gestión y estadísticas usan `require_admin`. Inscripción PAE y listado del día admiten PAE_OPERATOR o ADMIN (`require_pae_or_admin` en el router PAE). Dependencies en `app/core/dependencies.py`.
 Cada módulo sigue el mismo patrón de archivos paralelos en cada capa.
 
 Para proteger un endpoint con autenticación: `current_user: User = Depends(get_current_user)` desde `app.core.dependencies`. El `current_user.institution_id` es la fuente del tenant para todos los queries.
+
+## Asistencia, salidas y jobs de notificación
+
+- **Asistencia de primera hora**: el docente toma lista de su clase con `period_order=1` del día (resuelta vía `user_groups` → `class_periods`). Por cada `ABSENT` se encola `notify_absence_first_hour` con `countdown = ATTENDANCE_GRACE_MINUTES * 60` (default 50, bajar en dev). Si el alumno llega dentro de la ventana, el docente lo marca tardanda (`POST /attendance/records/{id}/arrived` → `LATE`) y el job, al disparar, relee el estado y no notifica.
+- **Justificación por link**: el correo de inasistencia lleva un enlace de un solo uso `FRONTEND_URL/justificar/{token}` (tabla `attendance_tokens`, vence a medianoche). Los endpoints `GET/POST /attendance/justify/{token}` son **públicos** (sin JWT): el token UUID es la autorización. Al justificar, el registro pasa a `JUSTIFIED`.
+- **Salidas anticipadas**: `POST /departures` crea el registro y encola `notify_early_departure` (correo informativo, sin token).
+- **Jobs Celery + BD async**: las tareas son síncronas pero la BD es async. `app/jobs/runner.py::run_db_job` levanta un engine `NullPool` propio por tarea, hace commit/rollback y lo descarta. Cada job arma su notifier (`AttendanceNotifier`/`DepartureNotifier`) con esa sesión y un `EmailAdapter`. Un fallo de correo se registra en `notifications_log` como `FAILED` y **no** relanza. Sin una API key real de Resend el correo no sale, pero el enlace de justificación queda en los logs del worker.
 
 ## Integridad PAE — doble hash encadenado (regla crítica)
 
@@ -116,6 +127,7 @@ Funciones en `app/core/security.py`. `register_delivery` verifica la capa 1 ante
 - En SQLAlchemy 2.x, nombrar una columna `date` en un modelo que también importa `from datetime import date` causa `MappedAnnotationError`. Solución: `from datetime import date as PyDate`.
 - El dummy hash para prevención de timing en login (`AuthService._DUMMY_HASH`) debe ser un bcrypt válido pre-computado. Un string malformado lanza `ValueError: Invalid salt` en bcrypt.
 - `pytest` no está en la imagen Docker de producción. Para correr tests en el contenedor: `docker compose exec api pip install -r requirements-dev.txt` primero.
+- Agregar un valor a un enum nativo de PostgreSQL (`ALTER TYPE ... ADD VALUE`) no corre dentro del bloque transaccional de Alembic. Hay que envolverlo en `with op.get_context().autocommit_block():` (ver migración `c3e8f1a6b9d2`).
 - `docker compose exec api python -c "..."` con código multiline falla por indentación al pegar. Crear scripts en `api/scripts/` y ejecutar con `python -m scripts.nombre`.
 - `STORAGE_PUBLIC_URL` en `.env` debe apuntar al hostname accesible desde el browser (`http://localhost:9000` en dev). `STORAGE_ENDPOINT_URL` es el hostname interno de Docker (`http://minio:9000`) — sin esta separación las URLs presignadas no son accesibles desde el frontend.
 - `docker stop` falla con "permission denied" por AppArmor. Workaround: `sudo kill -9 $(docker inspect --format '{{.State.Pid}}' <id>)`.

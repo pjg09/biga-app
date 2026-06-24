@@ -4,6 +4,7 @@ import enum
 class UserRole(str, enum.Enum):
     TEACHER = "TEACHER"
     PAE_OPERATOR = "PAE_OPERATOR"
+    ADMIN = "ADMIN"
 
 
 class GuardianRelationship(str, enum.Enum):

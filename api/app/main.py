@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
-from app.routers import agendatorio, auth, pae, students
+from app.routers import admin, agendatorio, attendance, auth, departures, pae, students
 
 app = FastAPI(title="BIGA API", debug=settings.debug)
 
@@ -17,6 +17,9 @@ app.include_router(auth.router)
 app.include_router(agendatorio.router)
 app.include_router(students.router)
 app.include_router(pae.router)
+app.include_router(attendance.router)
+app.include_router(departures.router)
+app.include_router(admin.router)
 
 
 @app.get("/health")

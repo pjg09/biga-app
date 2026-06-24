@@ -1,17 +1,13 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { attendanceService } from '../services/attendance';
+import { departureService } from '../services/departures';
+import { studentService } from '../services/students';
+import { agendatorioService } from '../services/agendatorio';
 import '../styles/dashboard.css';
 
-const MOCK_STUDENTS = [
-  { id: 1, name: 'Valentina Ríos',   group: '7A', status: 'PRESENT', time: '07:12' },
-  { id: 2, name: 'Sebastián Mora',   group: '7A', status: 'ABSENT',  time: '—'     },
-  { id: 3, name: 'Isabella Castaño', group: '7A', status: 'LATE',    time: '07:48' },
-  { id: 4, name: 'Tomás Herrera',    group: '7A', status: 'PRESENT', time: '07:09' },
-  { id: 5, name: 'Luciana Vargas',   group: '7B', status: 'PRESENT', time: '07:15' },
-];
-
-const STATUS_LABEL = { PRESENT: 'Presente', ABSENT: 'Ausente', LATE: 'Tardanza' };
-const STATUS_CLASS  = { PRESENT: 'green',   ABSENT: 'red',     LATE: 'yellow'   };
+const STATUS_LABEL = { PRESENT: 'Presente', ABSENT: 'Ausente', LATE: 'Tardanza', JUSTIFIED: 'Justificada' };
+const STATUS_CLASS  = { PRESENT: 'green',   ABSENT: 'red',     LATE: 'yellow',   JUSTIFIED: 'blue' };
 
 const AVATARS = [
   { bg: '#ede9fe', color: '#6d28d9' },
@@ -23,11 +19,21 @@ const AVATARS = [
 
 const NAV_TITLES = {
   attendance: 'Asistencia',
+  departures: 'Salidas tempranas',
   students:   'Mis estudiantes',
   schedule:   'Horario',
   conduct:    'Convivencia',
   messages:   'Mensajes',
 };
+
+function initials(first, last) {
+  return `${first?.[0] ?? ''}${last?.[0] ?? ''}`.toUpperCase();
+}
+
+function nowTime() {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
 
 function greeting() {
   const h = new Date().getHours();
@@ -63,9 +69,10 @@ export default function TeacherDashboard() {
         <nav className="dash__nav" aria-label="Navegación">
           <div className="dash__nav-section">
             <p className="dash__nav-label">General</p>
-            <NavItem id="attendance" active={activeNav} icon={<ClipboardIcon />} label="Asistencia"  onClick={setActiveNav} />
-            <NavItem id="students"   active={activeNav} icon={<UsersIcon />}     label="Estudiantes" onClick={setActiveNav} />
-            <NavItem id="schedule"   active={activeNav} icon={<CalendarIcon />}  label="Horario"     onClick={setActiveNav} />
+            <NavItem id="attendance" active={activeNav} icon={<ClipboardIcon />} label="Asistencia"        onClick={setActiveNav} />
+            <NavItem id="departures" active={activeNav} icon={<LogoutIcon />}    label="Salidas tempranas" onClick={setActiveNav} />
+            <NavItem id="students"   active={activeNav} icon={<UsersIcon />}     label="Estudiantes"       onClick={setActiveNav} />
+            <NavItem id="schedule"   active={activeNav} icon={<CalendarIcon />}  label="Horario"           onClick={setActiveNav} />
           </div>
           <div className="dash__nav-section">
             <p className="dash__nav-label">Seguimiento</p>
@@ -100,10 +107,11 @@ export default function TeacherDashboard() {
 
         <main className="dash__content">
           {activeNav === 'attendance' && <AttendanceView />}
-          {activeNav === 'students'   && <Empty icon={<UsersIcon />}    label="Estudiantes" />}
-          {activeNav === 'schedule'   && <Empty icon={<CalendarIcon />} label="Horario" />}
-          {activeNav === 'conduct'    && <Empty icon={<ShieldIcon />}   label="Convivencia" />}
-          {activeNav === 'messages'   && <Empty icon={<MessageIcon />}  label="Mensajes" />}
+          {activeNav === 'departures' && <DeparturesView />}
+          {activeNav === 'students'   && <TeacherStudentsView />}
+          {activeNav === 'schedule'   && <ScheduleView />}
+          {activeNav === 'conduct'    && <ConvivenciaView />}
+          {activeNav === 'messages'   && <MensajesView />}
         </main>
       </div>
     </div>
@@ -111,157 +119,683 @@ export default function TeacherDashboard() {
 }
 
 /* ── Attendance view ─────────────────────────────────────────── */
-function AttendanceView() {
-  const present = MOCK_STUDENTS.filter(s => s.status === 'PRESENT').length;
-  const absent  = MOCK_STUDENTS.filter(s => s.status === 'ABSENT').length;
-  const late    = MOCK_STUDENTS.filter(s => s.status === 'LATE').length;
-  const total   = MOCK_STUDENTS.length;
-  const pct     = Math.round(present / total * 100);
+export function AttendanceView() {
+  const [data, setData]       = useState(null);
+  const [marks, setMarks]     = useState({});   // student_id -> 'PRESENT' | 'ABSENT'
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState(null);
+  const [saving, setSaving]   = useState(false);
+  const [arrivingId, setArrivingId] = useState(null);
+  const [toast, setToast]     = useState(null);
 
-  const r    = 60;
-  const circ = 2 * Math.PI * r;
-  const gap  = 5;
+  const showToast = useCallback((msg, type = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3500);
+  }, []);
 
-  const presArc = Math.max(0, (present / total) * circ - gap);
-  const lateArc = Math.max(0, (late    / total) * circ - gap);
-  const absArc  = Math.max(0, (absent  / total) * circ - gap);
-  const lateOff = -((present / total) * circ);
-  const absOff  = -(((present + late) / total) * circ);
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await attendanceService.getFirstClass();
+      setData(res);
+      if (res.has_class && !res.already_taken) {
+        const init = {};
+        res.students.forEach(s => { init[s.student_id] = 'PRESENT'; });
+        setMarks(init);
+      }
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const toggle = useCallback((id) => {
+    setMarks(prev => ({ ...prev, [id]: prev[id] === 'PRESENT' ? 'ABSENT' : 'PRESENT' }));
+  }, []);
+
+  const submit = useCallback(async () => {
+    if (!data) return;
+    setSaving(true);
+    try {
+      const entries = data.students.map(s => ({ student_id: s.student_id, status: marks[s.student_id] }));
+      await attendanceService.submit(data.class_period_id, entries);
+      showToast('Asistencia registrada. Los ausentes serán notificados.');
+      await load();
+    } catch (e) {
+      showToast(e.message, 'error');
+    } finally {
+      setSaving(false);
+    }
+  }, [data, marks, showToast, load]);
+
+  const markArrived = useCallback(async (student) => {
+    if (!student.record_id) return;
+    setArrivingId(student.student_id);
+    try {
+      await attendanceService.markArrived(student.record_id);
+      setData(prev => ({
+        ...prev,
+        students: prev.students.map(s =>
+          s.student_id === student.student_id ? { ...s, status: 'LATE' } : s),
+      }));
+      showToast(`${student.first_name} marcado como tardanza`);
+    } catch (e) {
+      showToast(e.message, 'error');
+    } finally {
+      setArrivingId(null);
+    }
+  }, [showToast]);
+
+  if (loading) return <div className="dash__empty"><Spinner /><span>Cargando tu primera clase…</span></div>;
+  if (error) {
+    return (
+      <div className="dash__empty">
+        <AlertIcon color="#ef4444" /><span>{error}</span>
+        <button className="btn--secondary" style={{ width: 'auto', marginTop: 8 }} onClick={load}>Reintentar</button>
+      </div>
+    );
+  }
+  if (!data.has_class) {
+    return (
+      <div className="dash__empty">
+        <CalendarIcon />
+        <span>No tienes una primera hora asignada para hoy.</span>
+      </div>
+    );
+  }
+
+  const present = data.students.filter(s => marksOrStatus(s, marks) === 'PRESENT').length;
+  const absent  = data.students.filter(s => marksOrStatus(s, marks) === 'ABSENT').length;
+  const late    = data.students.filter(s => marksOrStatus(s, marks) === 'LATE').length;
+  const total   = data.students.length;
 
   return (
     <>
-      {/* Bento: donut hero + stat stack */}
-      <div className="dash__bento">
-
-        {/* Donut hero card */}
-        <div className="card dash__donut-hero">
-          <div className="dash__donut-wrap">
-            <svg width="148" height="148" viewBox="0 0 148 148">
-              <circle cx="74" cy="74" r={r} fill="none" stroke="#F2F1F8" strokeWidth="13" />
-              <circle cx="74" cy="74" r={r} fill="none" stroke="#6d28d9" strokeWidth="13"
-                strokeDasharray={`${presArc} ${circ}`} strokeDashoffset="0" strokeLinecap="butt" />
-              {late > 0 && (
-                <circle cx="74" cy="74" r={r} fill="none" stroke="#f59e0b" strokeWidth="13"
-                  strokeDasharray={`${lateArc} ${circ}`} strokeDashoffset={lateOff} strokeLinecap="butt" />
-              )}
-              {absent > 0 && (
-                <circle cx="74" cy="74" r={r} fill="none" stroke="#ef4444" strokeWidth="13"
-                  strokeDasharray={`${absArc} ${circ}`} strokeDashoffset={absOff} strokeLinecap="butt" />
-              )}
-            </svg>
-            <div className="dash__donut-text">
-              <span className="dash__donut-pct">{pct}%</span>
-              <span className="dash__donut-sub">hoy</span>
-            </div>
-          </div>
-
-          <div className="dash__donut-info">
-            <p className="dash__donut-title">Asistencia del grupo</p>
-            <p className="dash__donut-date">{new Date().toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
-
-            <div className="dash__donut-legend">
-              {[
-                { color: '#6d28d9', label: 'Presentes', val: present, fill: present/total*100 },
-                { color: '#f59e0b', label: 'Tardanzas', val: late,    fill: late/total*100    },
-                { color: '#ef4444', label: 'Ausentes',  val: absent,  fill: absent/total*100  },
-              ].map(item => (
-                <div key={item.label}>
-                  <div className="dash__legend-row">
-                    <div className="dash__legend-dot" style={{ background: item.color }} />
-                    <span className="dash__legend-label">{item.label}</span>
-                    <span className="dash__legend-val">{item.val}</span>
-                  </div>
-                  <div className="dash__legend-bar">
-                    <div className="dash__legend-bar-fill" style={{ width: `${item.fill}%`, background: item.color }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+      {toast && (
+        <div className={`dash__toast dash__toast--${toast.type}`} role="alert">
+          {toast.type === 'success' ? <CheckIcon /> : <AlertIcon />}{toast.msg}
         </div>
+      )}
 
-        {/* Stat stack */}
-        <div className="card dash__stat-stack">
-          <p className="dash__stat-stack-title">Resumen</p>
-
-          <div className="dash__stat-item">
-            <div className="dash__stat-item-icon" style={{ background: '#ede9fe' }}>
-              <UsersIcon color="#6d28d9" />
-            </div>
-            <div className="dash__stat-item-body">
-              <p className="dash__stat-item-label">Total estudiantes</p>
-              <div className="dash__stat-item-bar">
-                <div className="dash__stat-item-bar-fill" style={{ width: '100%', background: '#6d28d9' }} />
-              </div>
-            </div>
-            <span className="dash__stat-item-val">{total}</span>
-          </div>
-
-          <div className="dash__stat-item">
-            <div className="dash__stat-item-icon" style={{ background: '#d1fae5' }}>
-              <CheckIcon color="#059669" />
-            </div>
-            <div className="dash__stat-item-body">
-              <p className="dash__stat-item-label">Presentes</p>
-              <div className="dash__stat-item-bar">
-                <div className="dash__stat-item-bar-fill" style={{ width: `${present/total*100}%`, background: '#059669' }} />
-              </div>
-            </div>
-            <span className="dash__stat-item-val">{present}</span>
-          </div>
-
-          <div className="dash__stat-item">
-            <div className="dash__stat-item-icon" style={{ background: '#fef3c7' }}>
-              <ClockIcon color="#b45309" />
-            </div>
-            <div className="dash__stat-item-body">
-              <p className="dash__stat-item-label">Tardanzas</p>
-              <div className="dash__stat-item-bar">
-                <div className="dash__stat-item-bar-fill" style={{ width: `${late/total*100}%`, background: '#f59e0b' }} />
-              </div>
-            </div>
-            <span className="dash__stat-item-val">{late}</span>
-          </div>
-
-          <div className="dash__stat-item">
-            <div className="dash__stat-item-icon" style={{ background: '#fee2e2' }}>
-              <AlertIcon color="#991b1b" />
-            </div>
-            <div className="dash__stat-item-body">
-              <p className="dash__stat-item-label">Ausentes</p>
-              <div className="dash__stat-item-bar">
-                <div className="dash__stat-item-bar-fill" style={{ width: `${absent/total*100}%`, background: '#ef4444' }} />
-              </div>
-            </div>
-            <span className="dash__stat-item-val">{absent}</span>
-          </div>
+      <div className="att-head card">
+        <div>
+          <p className="att-head__period">{data.period_name} · Grupo {data.group_name}</p>
+          <p className="att-head__sub">
+            {data.start_time?.slice(0, 5)}–{data.end_time?.slice(0, 5)} · {total} estudiantes
+          </p>
+        </div>
+        <div className="att-head__counts">
+          <span className="dash__badge dash__badge--green">{present} presentes</span>
+          {late > 0   && <span className="dash__badge dash__badge--yellow">{late} tardanzas</span>}
+          <span className="dash__badge dash__badge--red">{absent} ausentes</span>
         </div>
       </div>
 
-      {/* Student list */}
       <div className="card dash__list-card">
         <div className="dash__list-header">
-          <span className="dash__list-title">Registro de hoy</span>
-          <button className="dash__list-action">Exportar</button>
+          <span className="dash__list-title">
+            {data.already_taken ? 'Registro de hoy' : 'Toma de asistencia'}
+          </span>
+          {!data.already_taken && (
+            <button className="btn--confirm" style={{ flex: '0 0 auto' }} onClick={submit} disabled={saving} aria-busy={saving}>
+              {saving ? 'Guardando…' : 'Guardar asistencia'}
+            </button>
+          )}
         </div>
-        {MOCK_STUDENTS.map((s, i) => {
+
+        {data.students.map((s, i) => {
           const av = AVATARS[i % AVATARS.length];
+          const status = marksOrStatus(s, marks);
           return (
-            <div className="dash__student-row" key={s.id}>
-              <div className="dash__student-avatar" style={{ background: av.bg, color: av.color }}>
-                {s.name.split(' ').map(w => w[0]).join('').slice(0, 2)}
-              </div>
+            <div className="dash__student-row" key={s.student_id}>
+              {s.photo_url
+                ? <img className="dash__table-photo" src={s.photo_url} alt="" />
+                : <div className="dash__student-avatar" style={{ background: av.bg, color: av.color }}>{initials(s.first_name, s.last_name)}</div>}
               <div className="dash__student-info">
-                <p className="dash__student-name">{s.name}</p>
-                <p className="dash__student-group">Grupo {s.group}</p>
+                <p className="dash__student-name">{s.first_name} {s.last_name}</p>
+                <p className="dash__student-group">Doc. {s.document_number}</p>
               </div>
-              <span className="dash__student-time">{s.time}</span>
-              <span className={`dash__badge dash__badge--${STATUS_CLASS[s.status]}`}>
-                {STATUS_LABEL[s.status]}
-              </span>
+
+              {data.already_taken ? (
+                <>
+                  <span className={`dash__badge dash__badge--${STATUS_CLASS[s.status] || 'green'}`}>
+                    {STATUS_LABEL[s.status] || s.status}
+                  </span>
+                  {s.status === 'ABSENT' && (
+                    <button
+                      className="dash__table-register-btn"
+                      style={{ marginLeft: 10 }}
+                      onClick={() => markArrived(s)}
+                      disabled={arrivingId === s.student_id}
+                    >
+                      {arrivingId === s.student_id ? 'Marcando…' : 'Llegó (tardanza)'}
+                    </button>
+                  )}
+                </>
+              ) : (
+                <button
+                  className={`att-toggle att-toggle--${status === 'PRESENT' ? 'present' : 'absent'}`}
+                  onClick={() => toggle(s.student_id)}
+                >
+                  {status === 'PRESENT' ? 'Presente' : 'Ausente'}
+                </button>
+              )}
             </div>
           );
         })}
+      </div>
+    </>
+  );
+}
+
+function marksOrStatus(student, marks) {
+  return marks[student.student_id] ?? student.status ?? 'PRESENT';
+}
+
+/* ── Early departures view ───────────────────────────────────── */
+export function DeparturesView() {
+  const [query, setQuery]       = useState('');
+  const [results, setResults]   = useState([]);
+  const [selected, setSelected] = useState(null);
+  const [time, setTime]         = useState(nowTime());
+  const [reason, setReason]     = useState('');
+  const [saving, setSaving]     = useState(false);
+  const [list, setList]         = useState([]);
+  const [toast, setToast]       = useState(null);
+
+  const showToast = useCallback((msg, type = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3500);
+  }, []);
+
+  const loadList = useCallback(async () => {
+    try {
+      setList(await departureService.listToday());
+    } catch { /* lista vacía si falla */ }
+  }, []);
+
+  useEffect(() => { loadList(); }, [loadList]);
+
+  useEffect(() => {
+    if (selected || query.trim().length < 2) { setResults([]); return; }
+    let active = true;
+    const t = setTimeout(async () => {
+      try {
+        const r = await studentService.search(query.trim());
+        if (active) setResults(r);
+      } catch { /* ignore */ }
+    }, 250);
+    return () => { active = false; clearTimeout(t); };
+  }, [query, selected]);
+
+  const submit = useCallback(async (e) => {
+    e.preventDefault();
+    if (!selected) { showToast('Selecciona un estudiante', 'error'); return; }
+    setSaving(true);
+    try {
+      await departureService.create({ student_id: selected.id, departure_time: `${time}:00`, reason });
+      showToast(`Salida registrada para ${selected.full_name}. Se notificó al acudiente.`);
+      setSelected(null); setQuery(''); setReason(''); setTime(nowTime());
+      await loadList();
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      setSaving(false);
+    }
+  }, [selected, time, reason, showToast, loadList]);
+
+  return (
+    <>
+      {toast && (
+        <div className={`dash__toast dash__toast--${toast.type}`} role="alert">
+          {toast.type === 'success' ? <CheckIcon /> : <AlertIcon />}{toast.msg}
+        </div>
+      )}
+
+      <form className="card att-form" onSubmit={submit}>
+        <p className="dash__list-title" style={{ marginBottom: 4 }}>Registrar salida anticipada</p>
+
+        {selected ? (
+          <div className="att-selected">
+            <span className="dash__student-name">{selected.full_name}</span>
+            <span className="dash__student-group">Doc. {selected.document_number}{selected.group_name ? ` · ${selected.group_name}` : ''}</span>
+            <button type="button" className="att-selected__clear" onClick={() => setSelected(null)} aria-label="Cambiar">✕</button>
+          </div>
+        ) : (
+          <div className="att-search">
+            <input
+              className="dash__field-input"
+              placeholder="Buscar estudiante por nombre o documento…"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              autoComplete="off"
+            />
+            {results.length > 0 && (
+              <div className="att-search__results">
+                {results.map(r => (
+                  <button type="button" key={r.id} className="att-search__item" onClick={() => { setSelected(r); setResults([]); }}>
+                    <span className="dash__student-name">{r.full_name}</span>
+                    <span className="dash__student-group">Doc. {r.document_number}{r.group_name ? ` · ${r.group_name}` : ''}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="att-form__row">
+          <label className="dash__field" style={{ maxWidth: 160 }}>
+            <span className="dash__field-label">Hora de salida</span>
+            <input className="dash__field-input" type="time" value={time} onChange={e => setTime(e.target.value)} required />
+          </label>
+        </div>
+
+        <label className="dash__field">
+          <span className="dash__field-label">Motivo <span className="dash__field-optional">(opcional)</span></span>
+          <textarea
+            className="dash__field-input"
+            style={{ minHeight: 80, resize: 'vertical' }}
+            value={reason}
+            onChange={e => setReason(e.target.value)}
+            maxLength={2000}
+            placeholder="Ej: Cita médica"
+          />
+        </label>
+
+        <button className="btn--confirm" type="submit" disabled={saving || !selected} aria-busy={saving}>
+          {saving ? 'Registrando…' : 'Registrar y notificar'}
+        </button>
+      </form>
+
+      <div className="card dash__list-card">
+        <div className="dash__list-header">
+          <span className="dash__list-title">Salidas de hoy</span>
+          <span className="dash__student-group">{list.length}</span>
+        </div>
+        {list.length === 0 ? (
+          <div className="dash__empty" style={{ padding: '32px 20px' }}>
+            <LogoutIcon /><span>Sin salidas registradas hoy.</span>
+          </div>
+        ) : list.map((d, i) => {
+          const av = AVATARS[i % AVATARS.length];
+          return (
+            <div className="dash__student-row" key={d.id}>
+              <div className="dash__student-avatar" style={{ background: av.bg, color: av.color }}>
+                {(d.student_name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+              </div>
+              <div className="dash__student-info">
+                <p className="dash__student-name">{d.student_name || d.student_id}</p>
+                <p className="dash__student-group">{d.reason || 'Sin motivo'}</p>
+              </div>
+              <span className="dash__student-time">{d.departure_time?.slice(0, 5)}</span>
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+function Spinner({ color = '#6d28d9', size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true" className="dash__spinner">
+      <circle cx="12" cy="12" r="10" stroke="rgba(0,0,0,0.1)" strokeWidth="2.5" />
+      <path d="M12 2a10 10 0 0110 10" stroke={color} strokeWidth="2.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/* ── Students view (lista real) ──────────────────────────────── */
+function TeacherStudentsView() {
+  const [students, setStudents] = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [error, setError]       = useState(null);
+  const [query, setQuery]       = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setStudents(await studentService.list());
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (loading) return <div className="dash__empty"><Spinner /><span>Cargando estudiantes…</span></div>;
+  if (error) {
+    return (
+      <div className="dash__empty">
+        <AlertIcon color="#ef4444" /><span>{error}</span>
+        <button className="btn--secondary" style={{ width: 'auto', marginTop: 8 }} onClick={load}>Reintentar</button>
+      </div>
+    );
+  }
+
+  const filtered = students.filter(s => {
+    if (!query.trim()) return true;
+    const q = query.toLowerCase();
+    return s.first_name.toLowerCase().includes(q)
+      || s.last_name.toLowerCase().includes(q)
+      || s.document_number.includes(q);
+  });
+
+  return (
+    <div className="card dash__list-card">
+      <div className="dash__list-header">
+        <span className="dash__list-title">Estudiantes de la institución</span>
+        <span className="dash__student-group">{filtered.length}</span>
+      </div>
+
+      <div style={{ padding: '0 18px 12px' }}>
+        <input
+          className="dash__field-input"
+          type="search"
+          placeholder="Buscar por nombre o documento…"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          autoComplete="off"
+        />
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="dash__empty" style={{ padding: '32px 20px' }}>
+          <UsersIcon /><span>{students.length === 0 ? 'Aún no hay estudiantes registrados.' : `Sin resultados para "${query}"`}</span>
+        </div>
+      ) : filtered.map((s, i) => {
+        const av = AVATARS[i % AVATARS.length];
+        return (
+          <div className="dash__student-row" key={s.id}>
+            {s.photo_url
+              ? <img className="dash__table-photo" src={s.photo_url} alt="" />
+              : <div className="dash__student-avatar" style={{ background: av.bg, color: av.color }}>{initials(s.first_name, s.last_name)}</div>}
+            <div className="dash__student-info">
+              <p className="dash__student-name">{s.first_name} {s.last_name}</p>
+              <p className="dash__student-group">Doc. {s.document_number}</p>
+            </div>
+            <span className={`dash__badge dash__badge--${s.is_active ? 'green' : 'red'}`}>
+              {s.is_active ? 'Activo' : 'Inactivo'}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ── Horario ─────────────────────────────────────────────────── */
+const DAY_NAMES = { 1: 'Lunes', 2: 'Martes', 3: 'Miércoles', 4: 'Jueves', 5: 'Viernes' };
+
+export function ScheduleView() {
+  const [items, setItems]   = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]   = useState(null);
+
+  useEffect(() => {
+    attendanceService.schedule()
+      .then(setItems)
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <div className="dash__empty"><Spinner /><span>Cargando horario…</span></div>;
+  if (error)   return <div className="dash__empty"><AlertIcon color="#ef4444" /><span>{error}</span></div>;
+  if (items.length === 0) {
+    return <div className="dash__empty"><CalendarIcon /><span>No tienes clases asignadas este año.</span></div>;
+  }
+
+  const byDay = {};
+  items.forEach(it => { (byDay[it.day_of_week] ??= []).push(it); });
+
+  return (
+    <div className="sched">
+      {[1, 2, 3, 4, 5].map(day => (
+        <div className="card sched__col" key={day}>
+          <p className="sched__day">{DAY_NAMES[day]}</p>
+          {(byDay[day] || []).length === 0 ? (
+            <p className="sched__free">Sin clases</p>
+          ) : byDay[day].map(it => (
+            <div className="sched__slot" key={it.class_period_id}>
+              <span className="sched__time">{it.start_time.slice(0, 5)}–{it.end_time.slice(0, 5)}</span>
+              <span className="sched__name">{it.name}</span>
+              <span className="sched__group">{it.grade_name} {it.group_name}{it.period_order === 1 ? ' · 1ª hora' : ''}</span>
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ── Mensajes: excusas de los acudientes ─────────────────────── */
+export function MensajesView() {
+  const [msgs, setMsgs]     = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]   = useState(null);
+
+  useEffect(() => {
+    attendanceService.justifications()
+      .then(setMsgs)
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <div className="dash__empty"><Spinner /><span>Cargando mensajes…</span></div>;
+  if (error)   return <div className="dash__empty"><AlertIcon color="#ef4444" /><span>{error}</span></div>;
+  if (msgs.length === 0) {
+    return <div className="dash__empty"><MessageIcon /><span>Aún no hay excusas enviadas por los acudientes.</span></div>;
+  }
+
+  return (
+    <div className="card dash__list-card">
+      <div className="dash__list-header">
+        <span className="dash__list-title">Excusas de los acudientes</span>
+        <span className="dash__student-group">{msgs.length}</span>
+      </div>
+      {msgs.map((m, i) => {
+        const av = AVATARS[i % AVATARS.length];
+        return (
+          <div className="msg" key={m.record_id}>
+            <div className="dash__student-avatar" style={{ background: av.bg, color: av.color }}>
+              {(m.student_name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+            </div>
+            <div className="msg__body">
+              <div className="msg__head">
+                <span className="dash__student-name">{m.student_name}</span>
+                <span className="msg__date">Inasistencia {fmtShort(m.date)}{m.group_name ? ` · ${m.group_name}` : ''}</span>
+              </div>
+              <p className="msg__reason">{m.reason}</p>
+              <span className="msg__meta">Justificada el {fmtShort(m.submitted_at)}</span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function fmtShort(iso) {
+  if (!iso) return '';
+  const d = new Date(iso.length <= 10 ? `${iso}T00:00:00` : iso);
+  return d.toLocaleDateString('es-CO', { day: 'numeric', month: 'short' });
+}
+
+/* ── Convivencia (agendatorio) ───────────────────────────────── */
+const SEVERITY_CLASS = { LEVE: 'green', MODERADA: 'yellow', GRAVE: 'red' };
+
+export function ConvivenciaView() {
+  const [articles, setArticles] = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [error, setError]       = useState(null);
+
+  const [query, setQuery]       = useState('');
+  const [results, setResults]   = useState([]);
+  const [student, setStudent]   = useState(null);
+  const [picked, setPicked]     = useState([]);   // article ids
+  const [obs, setObs]           = useState('');
+  const [saving, setSaving]     = useState(false);
+  const [toast, setToast]       = useState(null);
+  const canvasRef = useRef(null);
+  const drawing   = useRef(false);
+  const hasInk    = useRef(false);
+
+  const showToast = useCallback((msg, type = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3500);
+  }, []);
+
+  useEffect(() => {
+    agendatorioService.listArticles()
+      .then(setArticles)
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (student || query.trim().length < 2) { setResults([]); return; }
+    let active = true;
+    const t = setTimeout(async () => {
+      try { const r = await studentService.search(query.trim()); if (active) setResults(r); }
+      catch { /* ignore */ }
+    }, 250);
+    return () => { active = false; clearTimeout(t); };
+  }, [query, student]);
+
+  const toggleArticle = (id) =>
+    setPicked(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+
+  // --- Firma en canvas ---
+  const pos = (e) => {
+    const c = canvasRef.current;
+    const rect = c.getBoundingClientRect();
+    const t = e.touches ? e.touches[0] : e;
+    return { x: (t.clientX - rect.left) * (c.width / rect.width), y: (t.clientY - rect.top) * (c.height / rect.height) };
+  };
+  const start = (e) => { e.preventDefault(); drawing.current = true; const ctx = canvasRef.current.getContext('2d'); const p = pos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); };
+  const move = (e) => {
+    if (!drawing.current) return;
+    e.preventDefault();
+    const ctx = canvasRef.current.getContext('2d');
+    ctx.lineWidth = 2.5; ctx.lineCap = 'round'; ctx.strokeStyle = '#1a1730';
+    const p = pos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); hasInk.current = true;
+  };
+  const end = () => { drawing.current = false; };
+  const clearCanvas = () => {
+    const c = canvasRef.current; c.getContext('2d').clearRect(0, 0, c.width, c.height); hasInk.current = false;
+  };
+
+  const submit = useCallback(async () => {
+    if (!student)        { showToast('Selecciona un estudiante', 'error'); return; }
+    if (picked.length === 0) { showToast('Selecciona al menos un artículo', 'error'); return; }
+    if (!obs.trim())     { showToast('Escribe las observaciones', 'error'); return; }
+    if (!hasInk.current) { showToast('Falta la firma del estudiante', 'error'); return; }
+
+    setSaving(true);
+    try {
+      const blob = await new Promise(res => canvasRef.current.toBlob(res, 'image/png'));
+      const today = new Date().toISOString().slice(0, 10);
+      await agendatorioService.createRecord(
+        { student_id: student.id, article_ids: picked, observations: obs.trim(), date: today },
+        blob,
+      );
+      showToast(`Registro creado para ${student.full_name}`);
+      setStudent(null); setQuery(''); setPicked([]); setObs(''); clearCanvas();
+    } catch (e) {
+      showToast(e.message, 'error');
+    } finally {
+      setSaving(false);
+    }
+  }, [student, picked, obs, showToast]);
+
+  if (loading) return <div className="dash__empty"><Spinner /><span>Cargando convivencia…</span></div>;
+  if (error)   return <div className="dash__empty"><AlertIcon color="#ef4444" /><span>{error}</span></div>;
+
+  return (
+    <>
+      {toast && (
+        <div className={`dash__toast dash__toast--${toast.type}`} role="alert">
+          {toast.type === 'success' ? <CheckIcon /> : <AlertIcon />}{toast.msg}
+        </div>
+      )}
+
+      <div className="card att-form">
+        <p className="dash__list-title" style={{ marginBottom: 4 }}>Nuevo registro de convivencia</p>
+
+        {student ? (
+          <div className="att-selected">
+            <span className="dash__student-name">{student.full_name}</span>
+            <span className="dash__student-group">Doc. {student.document_number}{student.group_name ? ` · ${student.group_name}` : ''}</span>
+            <button type="button" className="att-selected__clear" onClick={() => setStudent(null)} aria-label="Cambiar">✕</button>
+          </div>
+        ) : (
+          <div className="att-search">
+            <input className="dash__field-input" placeholder="Buscar estudiante…" value={query}
+              onChange={e => setQuery(e.target.value)} autoComplete="off" />
+            {results.length > 0 && (
+              <div className="att-search__results">
+                {results.map(r => (
+                  <button type="button" key={r.id} className="att-search__item" onClick={() => { setStudent(r); setResults([]); }}>
+                    <span className="dash__student-name">{r.full_name}</span>
+                    <span className="dash__student-group">Doc. {r.document_number}{r.group_name ? ` · ${r.group_name}` : ''}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div>
+          <span className="dash__field-label">Artículos del manual infringidos</span>
+          {articles.length === 0 ? (
+            <p className="sched__free">No hay artículos cargados en el manual.</p>
+          ) : (
+            <div className="conv-articles">
+              {articles.map(a => (
+                <button type="button" key={a.id}
+                  className={`conv-article${picked.includes(a.id) ? ' conv-article--on' : ''}`}
+                  onClick={() => toggleArticle(a.id)}>
+                  <span className={`dash__badge dash__badge--${SEVERITY_CLASS[a.severity] || 'yellow'}`}>{a.severity}</span>
+                  <span className="conv-article__code">{a.code}</span>
+                  <span className="conv-article__title">{a.title}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <label className="dash__field">
+          <span className="dash__field-label">Observaciones</span>
+          <textarea className="dash__field-input" style={{ minHeight: 80, resize: 'vertical' }}
+            value={obs} onChange={e => setObs(e.target.value)} maxLength={2000}
+            placeholder="Describe el hecho…" />
+        </label>
+
+        <div>
+          <div className="conv-sign-head">
+            <span className="dash__field-label" style={{ margin: 0 }}>Firma del estudiante</span>
+            <button type="button" className="conv-clear" onClick={clearCanvas}>Limpiar</button>
+          </div>
+          <canvas
+            ref={canvasRef}
+            width={600}
+            height={160}
+            className="conv-canvas"
+            onMouseDown={start} onMouseMove={move} onMouseUp={end} onMouseLeave={end}
+            onTouchStart={start} onTouchMove={move} onTouchEnd={end}
+          />
+        </div>
+
+        <button className="btn--confirm" onClick={submit} disabled={saving} aria-busy={saving}>
+          {saving ? 'Guardando…' : 'Crear registro'}
+        </button>
       </div>
     </>
   );

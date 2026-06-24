@@ -24,13 +24,15 @@ Para la primera versión de la aplicación se priorizan las siguientes notificac
 
 ## 2. Perfiles de Usuario
 
-| Perfil | Descripción |
+| Perfil (rol) | Descripción |
 |---|---|
-| **Docente** | Usuario operativo principal. Registra asistencia, gestiona entregas del PAE y crea registros en el agendatorio desde su dispositivo móvil. |
-| **Acudiente** | Padre de familia o responsable del estudiante. Recibe notificaciones por correo electrónico e interactúa con la plataforma únicamente a través de enlaces únicos para justificar inasistencias. |
+| **Docente** (`TEACHER`) | Usuario operativo de aula. Registra asistencia, salidas tempranas y registros de convivencia desde su dispositivo móvil. |
+| **Operador PAE** (`PAE_OPERATOR`) | Es un docente con funciones extra del PAE: además de todo lo de aula, gestiona inscripciones y entregas del PAE. Comparte los endpoints de aula vía `require_staff`. |
+| **Administrador** (`ADMIN`) | Consulta estadísticas institucionales (`GET /admin/stats`): población, PAE, asistencia, salidas, convivencia y notificaciones. |
+| **Acudiente** | Padre de familia o responsable del estudiante. Recibe notificaciones por correo e interactúa solo a través de enlaces únicos para justificar inasistencias. |
 | **Estudiante** | Referente pasivo dentro del sistema. Es identificado en los módulos de PAE y asistencia, y firma registros en el agendatorio. |
 
-> Los perfiles de administración institucional (rector, coordinador, secretaria) quedan fuera del alcance del MVP y serán evaluados en fases posteriores.
+> El perfil **Administrador** se incorporó con un dashboard de estadísticas. Perfiles institucionales más finos (rector, coordinador, secretaría con permisos diferenciados) quedan para fases posteriores.
 
 ---
 

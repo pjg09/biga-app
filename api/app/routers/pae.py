@@ -36,9 +36,19 @@ def require_pae_operator(current_user: User = Depends(get_current_user)) -> User
     return current_user
 
 
+# El admin también gestiona inscripciones PAE y consulta el listado del día.
+def require_pae_or_admin(current_user: User = Depends(get_current_user)) -> User:
+    if current_user.role not in (UserRole.PAE_OPERATOR, UserRole.ADMIN):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo operadores PAE o administradores pueden acceder a este recurso",
+        )
+    return current_user
+
+
 @router.get("/students/today", response_model=list[PAEStudentListItem])
 async def list_students_today(
-    current_user: User = Depends(require_pae_operator),
+    current_user: User = Depends(require_pae_or_admin),
     service: PAEService = Depends(get_pae_service),
 ):
     return await service.list_students_today(
@@ -51,7 +61,7 @@ async def list_students_today(
 @router.post("/enrollments", response_model=PAEEnrollmentResponse, status_code=status.HTTP_201_CREATED)
 async def enroll_student(
     body: PAEEnrollmentCreate,
-    current_user: User = Depends(require_pae_operator),
+    current_user: User = Depends(require_pae_or_admin),
     service: PAEService = Depends(get_pae_service),
 ):
     return await service.enroll_student(

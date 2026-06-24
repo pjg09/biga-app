@@ -124,13 +124,13 @@ Docentes de la institución. Único perfil operativo del MVP.
 | `last_name` | VARCHAR(100) | NOT NULL | |
 | `email` | VARCHAR(255) | NOT NULL, UNIQUE | Usado para login |
 | `hashed_password` | VARCHAR(255) | NOT NULL | bcrypt |
-| `role` | ENUM | NOT NULL | `TEACHER`, `PAE_OPERATOR` |
+| `role` | ENUM | NOT NULL | `TEACHER`, `PAE_OPERATOR`, `ADMIN` |
 | `is_active` | BOOLEAN | NOT NULL, DEFAULT TRUE | |
 | `created_at` | TIMESTAMP | NOT NULL, DEFAULT NOW() | |
 
 **ENUMs:**
 ```sql
-CREATE TYPE user_role AS ENUM ('TEACHER', 'PAE_OPERATOR');
+CREATE TYPE user_role AS ENUM ('TEACHER', 'PAE_OPERATOR', 'ADMIN');
 ```
 
 ---
@@ -313,7 +313,7 @@ CREATE TYPE attendance_status AS ENUM ('PRESENT', 'ABSENT', 'LATE', 'JUSTIFIED')
 UNIQUE (student_id, class_period_id, date)
 ```
 
-**Trigger de notificación:** se activa cuando `status = ABSENT` y el `class_period` tiene `period_order = 1` para el `day_of_week` correspondiente a `date`.
+**Trigger de notificación:** al tomar lista de la primera hora (`period_order = 1`), cada registro `ABSENT` encola una tarea Celery con `countdown = ATTENDANCE_GRACE_MINUTES` (default 50 min). Al disparar, la tarea relee el `status`: si sigue `ABSENT`, notifica al acudiente con un enlace de justificación de un solo uso; si el docente ya lo marcó `LATE` (llegó tarde), no notifica. La justificación del acudiente lo pasa a `JUSTIFIED`.
 
 ---
 

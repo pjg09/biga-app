@@ -23,6 +23,15 @@ class Settings(BaseSettings):
         return v
     access_token_expire_minutes: int = 480
 
+    # URL pública del frontend. Se usa para construir los enlaces de
+    # justificación de inasistencia que se envían por correo al acudiente.
+    frontend_url: str = "http://localhost:5173"
+
+    # Minutos de gracia tras tomar lista en la primera hora antes de notificar
+    # la inasistencia. Si el estudiante llega dentro de la ventana, el docente
+    # lo marca como tardanza y no se envía correo. Bajar en dev para probar.
+    attendance_grace_minutes: int = 50
+
     storage_endpoint_url: str
     storage_public_url: str = ""  # URL accesible desde el browser; si vacía usa storage_endpoint_url
     storage_access_key: str
