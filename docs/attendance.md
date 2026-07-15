@@ -1,6 +1,6 @@
 # Módulo Asistencia y Salidas tempranas — Referencia funcional
 
-> Cómo funcionan la toma de asistencia de primera hora, las tardanzas, la
+> Cómo funcionan la toma de asistencia clase a clase, las tardanzas, la
 > justificación por enlace y las salidas anticipadas, tal como están
 > implementados. Modelo de datos en `docs/database-schema.md`.
 
@@ -8,9 +8,11 @@
 
 ## Qué resuelve
 
-- **Asistencia de primera hora**: el docente toma lista en su primera clase del
-  día. Los estudiantes que no llegan reciben (por su acudiente) un correo de
-  inasistencia con un enlace para justificarla.
+- **Asistencia clase a clase**: el docente toma lista en **cualquier** clase del
+  día, no solo la primera hora. Todas se registran para historial. **Solo en la
+  primera hora** (`period_order = 1`) los estudiantes ausentes disparan al acudiente
+  un correo de inasistencia con un enlace para justificarla; las clases 2–N se
+  registran sin correo.
 - **Tardanzas**: si el estudiante aparece dentro de una ventana de gracia, el
   docente lo marca como tardanza y **no** se envía el correo.
 - **Salidas tempranas**: el docente registra que un estudiante se retira antes y
@@ -42,31 +44,36 @@ transiciones posteriores.
 ## Flujo de asistencia paso a paso
 
 ```
-1. Docente abre Asistencia          GET  /attendance/first-class/today
-   → el sistema resuelve su primera hora (period_order=1) de hoy + el listado del grupo
+1. Docente abre Asistencia          GET  /attendance/today
+   → lista todas sus clases de hoy (con badge already_taken e is_first_hour)
 
-2. Marca presente/ausente y guarda  POST /attendance/first-class
-   → por cada ABSENT encola notify_absence_first_hour con
-     countdown = ATTENDANCE_GRACE_MINUTES (default 50 min)
+2. Elige una clase                   GET  /attendance/classes/{class_period_id}
+   → roster del grupo + estado de hoy
 
-3a. El estudiante llega tarde        POST /attendance/records/{id}/arrived
+3. Marca presente/ausente y guarda   POST /attendance
+   → SOLO si es primera hora (period_order=1): por cada ABSENT encola
+     notify_absence_first_hour con countdown = ATTENDANCE_GRACE_MINUTES (default 50 min).
+     Clases 2–N: se registran sin encolar nada.
+
+4a. El estudiante llega tarde        POST /attendance/records/{id}/arrived
     → ABSENT pasa a LATE; cuando la tarea dispare verá LATE y no notifica
 
-3b. Pasa la ventana y sigue ausente  (la tarea Celery dispara)
+4b. Pasa la ventana y sigue ausente  (la tarea Celery dispara)
     → relee el estado: sigue ABSENT → crea token + envía correo al acudiente
 
-4. El acudiente abre el enlace       GET  /attendance/justify/{token}
+5. El acudiente abre el enlace       GET  /attendance/justify/{token}
    y envía la excusa                 POST /attendance/justify/{token}
    → el registro pasa a JUSTIFIED
 ```
 
-### Cómo se resuelve "la primera clase del día"
+### Cómo se resuelven "las clases de hoy"
 
-`AttendanceRepository.get_teacher_first_period` une
-`user_groups` (docente↔grupo) → `class_periods` filtrando
-`period_order = 1` y `day_of_week = hoy`, y toma la de menor `start_time`. Si es
-fin de semana o el docente no tiene primera hora asignada, el endpoint responde
-`has_class = false`.
+`AttendanceRepository.get_teacher_classes_for_day` une
+`user_groups` (docente↔grupo) → `class_periods` filtrando `day_of_week = hoy`
+(cualquier `period_order`), ordenadas por `start_time`. Fin de semana → lista
+vacía. La UNIQUE `(student_id, class_period_id, date)` permite un registro por
+estudiante por clase por día. **La notificación se encola solo cuando
+`period_order == 1`.**
 
 ### Por qué la notificación es diferida y idempotente
 
@@ -111,28 +118,32 @@ Docente ve las salidas de hoy GET  /departures
 
 | Método y ruta | Descripción |
 |---|---|
-| `GET /attendance/first-class/today` | Primera hora del docente hoy + listado + si ya se tomó |
-| `POST /attendance/first-class` | Toma de lista. Body `{ class_period_id, entries:[{student_id, status}] }` |
+| `GET /attendance/today` | Todas las clases del docente hoy (con `already_taken` e `is_first_hour`) |
+| `GET /attendance/classes/{class_period_id}` | Roster + estado de hoy de una clase específica |
+| `POST /attendance` | Toma de lista. Body `{ class_period_id, entries:[{student_id, status}] }` |
 | `POST /attendance/records/{record_id}/arrived` | Marca `ABSENT` → `LATE` (llegó tarde) |
 | `GET /attendance/schedule` | Horario semanal del docente (sus `class_periods`) |
 | `GET /attendance/justifications` | Excusas enviadas por los acudientes para los registros de este docente |
 
-`GET /attendance/first-class/today` (ejemplo):
+`GET /attendance/classes/{class_period_id}` (ejemplo):
 ```json
-{ "has_class": true, "class_period_id": "…", "group_name": "A", "grade_name": "Once",
-  "period_name": "Primera hora", "start_time": "07:00:00", "end_time": "07:50:00",
+{ "class_period_id": "…", "group_name": "A", "grade_name": "Once",
+  "period_name": "Primera hora", "period_order": 1, "is_first_hour": true,
+  "start_time": "07:00:00", "end_time": "07:50:00",
   "date": "2026-06-24", "already_taken": false,
   "students": [ { "student_id":"…", "document_number":"1010100001",
     "first_name":"Mariana", "last_name":"Gómez", "photo_url":null,
     "status": null, "record_id": null } ] }
 ```
 
-`POST /attendance/first-class` — validaciones:
+`POST /attendance` — validaciones:
 - status solo `PRESENT` o `ABSENT` → si no, `400`.
 - la clase debe pertenecer al docente → `404`.
-- debe ser `period_order = 1` → `400`.
-- no se puede haber tomado ya hoy → `409`.
+- no se puede haber tomado ya hoy (por clase) → `409`.
 - las entradas deben cubrir **exactamente** al grupo → `400`.
+
+(Ya **no** se exige `period_order = 1`: se toma lista de cualquier clase. La
+notificación solo se encola en primera hora.)
 
 `POST /attendance/records/{record_id}/arrived`: `404` si no existe ·
 `409` si el registro no está `ABSENT` (idempotente si ya es `LATE`).
@@ -164,7 +175,7 @@ levanta un engine `NullPool` propio por tarea, hace commit/rollback y lo descart
 
 | Tarea | Encolada por | Cuándo dispara |
 |-------|--------------|----------------|
-| `notify_absence_first_hour(record_id)` | `submit_attendance` por cada `ABSENT` | `countdown = ATTENDANCE_GRACE_MINUTES * 60` |
+| `notify_absence_first_hour(record_id)` | `submit_attendance` por cada `ABSENT`, **solo si `period_order == 1`** | `countdown = ATTENDANCE_GRACE_MINUTES * 60` |
 | `notify_early_departure(departure_id)` | `create_departure` | `countdown = 10s` (evita carrera con el commit del request) |
 
 Cada tarea arma su notifier (`AttendanceNotifier` / `DepartureNotifier`) con la
@@ -184,8 +195,10 @@ se registra en `notifications_log` como `FAILED` y **no** relanza.
 Las vistas viven en `web/src/pages/TeacherDashboard.jsx` y se exportan para
 reutilizarse también en `PAEDashboard.jsx` (el operador PAE es docente+):
 
-- **Asistencia** — carga la primera clase, toggle Presente/Ausente por estudiante,
-  guardar; si ya se tomó, muestra estados y botón "Llegó (tardanza)" en los ausentes.
+- **Asistencia** — selector de las clases del día; al abrir una, se toma lista con
+  dos botones Presente/Ausente (sin preseleccionar; "Guardar" deshabilitado hasta
+  marcar a todos). Si ya se tomó, muestra estados y botón "Llegó (tardanza)" en los
+  ausentes. Etiqueta "1ª hora" y aviso "sin notificación" en las demás clases.
 - **Salidas tempranas** — busca estudiante (`GET /students/search`), hora y motivo,
   registra y notifica; lista las salidas del día.
 - **Horario** — grilla semanal desde `GET /attendance/schedule`.
@@ -217,10 +230,11 @@ docker compose exec -T postgres psql -U biga -d biga < scripts/seed_dev_users.sq
 ```
 
 Pon `ATTENDANCE_GRACE_MINUTES=1` en `.env` para no esperar 50 minutos. Login como
-`teacher@iedemo.edu.co` / `password123` → **Asistencia** (grupo 11A, primera hora
-sembrada lun–vie) → marca un ausente → guarda. ~1 minuto después el worker procesa
-la notificación; toma el enlace `/justificar/{token}` de los logs del worker y
-ábrelo para justificar.
+`teacher@iedemo.edu.co` / `password123` → **Asistencia** (grupo 11A, horario
+completo sembrado lun–vie) → abre la **primera hora** → marca un ausente → guarda.
+~1 minuto después el worker procesa la notificación; toma el enlace
+`/justificar/{token}` de los logs del worker y ábrelo para justificar. (Tomar lista
+de una clase que no sea primera hora **no** genera correo.)
 
 ---
 

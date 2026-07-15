@@ -16,7 +16,7 @@ Un Repository que omita `WHERE institution_id = :id` expone registros de todas l
 
 **Todo método de Repository que acceda a una tabla operativa debe recibir `institution_id` como parámetro y usarlo en el WHERE. Sin excepción.**
 
-Tablas operativas (todas las que tienen `institution_id`): `grades`, `groups`, `class_periods`, `users`, `user_groups`, `students`, `student_groups`, `guardians`, `pae_enrollments`, `pae_deliveries`, `attendance_records`, `attendance_tokens`, `attendance_justifications`, `convivencia_articles`, `discipline_records`, `early_departures`, `notifications_log`, `import_jobs`.
+Tablas operativas (todas las que tienen `institution_id`): `grades`, `groups`, `class_periods`, `users`, `user_groups`, `students`, `student_groups`, `guardians`, `pae_enrollments`, `pae_deliveries`, `attendance_records`, `attendance_tokens`, `attendance_justifications`, `convivencia_articles`, `discipline_records`, `discipline_record_notes`, `early_departures`, `notifications_log`, `import_jobs`.
 
 ### Patrón correcto
 

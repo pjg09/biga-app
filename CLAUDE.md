@@ -62,6 +62,8 @@ Los jobs de Celery que acceden a tablas operativas deben recibir `institution_id
 
 ## Comandos frecuentes
 
+> Guía operativa completa (arranque, credenciales, troubleshooting) en `docs/runbook.md`.
+
 - `docker compose up -d` — levantar el stack (el servicio `storage-init` crea el bucket en MinIO automáticamente)
 - `docker compose up -d --build` — rebuild + levantar
 - `docker compose exec api alembic upgrade head` — aplicar migraciones pendientes
@@ -98,6 +100,8 @@ Correr localmente fuera del contenedor: `set -a && source ../.env && set +a` ant
 
 Sin virtualenv local y con el stack abajo, correr unitarios en contenedor efímero (sin levantar servicios): `docker compose run --rm --no-deps api sh -c "pip install -q -r requirements-dev.txt && pytest tests/unit -q"`
 
+Verificar que un cambio de front compila sin levantar navegador: `curl -s -o /dev/null -w "%{http_code}" http://localhost:5173/src/pages/X.jsx` (200 = transforma OK; un error de sintaxis da 500) y `docker compose logs web | grep -iE "error|Internal server"`.
+
 ## Gestión de dependencias
 
 - Producción: `api/requirements.txt`
@@ -110,7 +114,7 @@ Sin virtualenv local y con el stack abajo, correr unitarios en contenedor efíme
 
 ## Módulos del dominio
 
-Módulos implementados: `auth`, `agendatorio` (registro de convivencia + historial del docente: notas de seguimiento append-only y ocultar del panel vía `archived_at`, sin borrar), `students` (registro append-only + búsqueda), `pae` (inscripción, entrega, reporte semanal, auditoría, notificación de no reclamo), `attendance` (primera hora + justificación por link), `departures` (salidas anticipadas), `admin` (estadísticas `GET /admin/stats` + consola de gestión: usuarios, grados, grupos, matrículas, horarios `class_periods` y asignación docente-grupo). Pendientes: `imports`.
+Módulos implementados: `auth`, `agendatorio` (registro de convivencia + historial del docente: notas de seguimiento append-only y ocultar del panel vía `archived_at`, sin borrar), `students` (registro append-only + búsqueda), `pae` (inscripción, entrega, reporte semanal, auditoría, notificación de no reclamo), `attendance` (clase a clase; notificación solo primera hora + justificación por link), `departures` (salidas anticipadas), `admin` (estadísticas `GET /admin/stats` + consola de gestión: usuarios, grados, grupos, matrículas, horarios `class_periods` y asignación docente-grupo). Pendientes: `imports`.
 
 Búsqueda de estudiantes (`GET /students/search`): `q` es **opcional** — con `grade_id`/`group_id` se navega por grado/salón sin escribir. Es **insensible a acentos** vía la extensión `unaccent` (`Lopez` encuentra `López`; migración `d4a2c7e91b05`). Los selectores de grado/salón se llenan con `GET /agendatorio/grades` y `GET /agendatorio/groups` (accesibles a **staff**, no solo admin). El front reutiliza el componente `StudentSearch` en Convivencia e Historial.
 
@@ -147,9 +151,12 @@ Funciones en `app/core/security.py`. `register_delivery` verifica la capa 1 ante
 - Las páginas viven en `web/src/pages/`, los componentes reutilizables en `web/src/components/`.
 - Los hooks personalizados van en `web/src/hooks/`.
 - El frontend requiere `web/.env` (gitignored, sin `.env.example`) con `VITE_API_URL=http://localhost:8000`. Sin esa var, `fetch` va a `undefined/...` y todo el front falla en silencio. El CORS del API ya permite `http://localhost:5173`. (`vite.config.js` tiene un proxy `/api-proxy` que el código actual no usa.)
+- `PAEDashboard.jsx` **reutiliza** las vistas de aula de `TeacherDashboard.jsx` (`import { AttendanceView, ConvivenciaView, HistorialView, ... }`). El operador PAE es un docente con funciones extra: un módulo de aula nuevo debe exportarse desde `TeacherDashboard` y engancharse en **ambos** dashboards (nav + render). El componente `StudentSearch` (buscador grado/salón/nombre) vive en `TeacherDashboard` y se reutiliza.
 
 ## Pitfalls conocidos
 
+- Al escribir texto con acentos/caracteres especiales en JSX vía las tools de edición, a veces quedan como escape literal (ej. `Sal\u00f3n` se ve literal en vez de `Salón`; `\u2026` en vez de `…`). En **JSX-texto/atributo** esos escapes NO se interpretan y se ven literales en la UI. Detectar con `grep -rn '\\u00\|\\u2026' web/src`; corregir con `perl -CSD -i -pe 's/\\u2026/\x{2026}/g' <archivo>` (al carácter UTF-8 real).
+- El servicio `web` monta un volumen anónimo en `/app/node_modules` (compose). Tras agregar una dependencia npm nueva, Vite falla con `Failed to resolve import "..."` aunque esté en `package.json`: el volumen viejo tapa el `node_modules` de la imagen. Rebuildear renovando el volumen: `docker compose up -d --build --force-recreate --renew-anon-volumes web` (y matar el contenedor viejo con el workaround de AppArmor si `stop` falla).
 - El build backend en cualquier `pyproject.toml` de este repo debe ser `setuptools.build_meta`. `setuptools.backends.legacy:build` no existe en `python:3.12-slim` y rompe el build de Docker.
 - La variable `DATABASE_URL` en `.env` usa el hostname `postgres` (nombre del servicio Docker). Para conectar desde fuera de Docker (TablePlus, psql local) usar `localhost:5433`.
 - El `DATABASE_URL` requiere el driver `postgresql+asyncpg://` — no `postgresql://` ni `postgres://`.

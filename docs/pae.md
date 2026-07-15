@@ -133,11 +133,17 @@ la cadena rota.
 `web/src/pages/PAEDashboard.jsx` (rol PAE_OPERATOR, ruta `/dashboard/pae`):
 
 - **Registro PAE** — listado del día, búsqueda, modal de confirmación de entrega
-  (muestra la foto para corroborar identidad).
+  (muestra la foto para corroborar identidad; click en la foto la abre ampliada
+  en un lightbox).
 - **Reporte diario** — conectado a `GET /pae/report/weekly` (datos reales).
 - **Matriculados** — inscritos del PAE.
-- **Estudiantes** — registrar estudiante (`POST /students`) e **inscribir al PAE**
-  (`POST /pae/enrollments`) por estudiante.
+- **Estudiantes** — registrar estudiante (`POST /students`) con **subida de foto a
+  MinIO** (file picker → `POST /students/{id}/photo`; se guarda la key y se presigna
+  al leer, ver `app/core/photos.py`) e **inscribir al PAE** (`POST /pae/enrollments`)
+  por estudiante.
+
+Además, el operador PAE es un docente con funciones extra: `PAEDashboard` reutiliza
+las vistas de aula de `TeacherDashboard` (Asistencia, Convivencia, Historial, etc.).
 
 Servicios: `web/src/services/pae.js`, `web/src/services/students.js`.
 

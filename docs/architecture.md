@@ -106,7 +106,7 @@ biga-api/
     unit/
     integration/
 
-biga-web/               # Frontend React
+web/                    # Frontend React
   src/
     pages/
     components/
@@ -148,7 +148,7 @@ minio     → Object storage local
 | `notify_absence_first_hour` | Diferido tras tomar lista (`countdown = ATTENDANCE_GRACE_MINUTES`); al disparar relee el estado y solo notifica si sigue `ABSENT` | Notifica al acudiente e incluye enlace único de justificación |
 | `notify_pae_no_claim` | Cron al cierre del horario PAE (stub, pendiente) | Notifica acudientes de estudiantes PAE que no reclamaron |
 | `notify_early_departure` | Inmediato al registrar salida temprana | Notifica al acudiente |
-| `notify_discipline_record` | Inmediato al guardar registro agendatorio (stub, pendiente) | Notifica al acudiente |
+| `notify_discipline_record` | Inmediato al guardar registro agendatorio | Notifica al acudiente |
 
 ---
 
@@ -173,7 +173,8 @@ pae_enrollments         → student, institución, año académico, enrollment_h
 pae_deliveries          → student, user, fecha, método, delivery_hash (capa 2)
 attendance_records      → student, group, fecha, clase, estado
 attendance_tokens       → token UUID único por inasistencia, expira a medianoche
-discipline_records      → student, user, artículos, observaciones, firma (PNG en storage: signature_url)
+discipline_records      → student, user, artículos, observaciones, firma (signature_url), archived_at (ocultar del panel)
+discipline_record_notes → notas de seguimiento append-only (autor + fecha) sobre un registro
 early_departures        → student, user, fecha, hora
 notifications_log       → registro de cada correo enviado (estado, timestamp)
 import_jobs             → estado de cargas masivas (pendiente/procesando/completado/error)
