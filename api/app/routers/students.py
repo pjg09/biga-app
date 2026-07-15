@@ -1,11 +1,12 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.storage.s3 import S3StorageAdapter
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, get_storage_adapter
+from app.core.photos import resolve_photo_url
 from app.models.user import User
 from app.repositories.agendatorio_repository import AgendatorioRepository
 from app.repositories.guardian_repository import GuardianRepository
@@ -29,8 +30,11 @@ def get_agendatorio_service(
     )
 
 
-def get_student_service(db: AsyncSession = Depends(get_db)) -> StudentService:
-    return StudentService(StudentRepository(db))
+def get_student_service(
+    db: AsyncSession = Depends(get_db),
+    storage: S3StorageAdapter = Depends(get_storage_adapter),
+) -> StudentService:
+    return StudentService(StudentRepository(db), storage)
 
 
 @router.post("", response_model=StudentResponse, status_code=status.HTTP_201_CREATED)
@@ -50,13 +54,32 @@ async def list_students(
     return await service.list_students(institution_id=current_user.institution_id)
 
 
+@router.post("/{student_id}/photo", response_model=StudentResponse)
+async def upload_student_photo(
+    student_id: UUID,
+    photo: UploadFile = File(..., description="Imagen del estudiante (JPG, PNG o WEBP)"),
+    current_user: User = Depends(get_current_user),
+    service: StudentService = Depends(get_student_service),
+):
+    data = await photo.read()
+    return await service.set_photo(
+        student_id=student_id,
+        institution_id=current_user.institution_id,
+        data=data,
+        content_type=photo.content_type or "",
+    )
+
+
 @router.get("/search", response_model=list[StudentSearchResult])
 async def search_students(
-    q: str = Query(min_length=2),
+    # `q` es opcional: si se pasa grade_id/group_id, se puede navegar por
+    # grado/salón sin escribir nombre (búsqueda por grado/salón del scope 3.3).
+    q: str = Query("", max_length=100),
     group_id: UUID | None = None,
     grade_id: UUID | None = None,
     current_user: User = Depends(get_current_user),
     service: AgendatorioService = Depends(get_agendatorio_service),
+    storage: S3StorageAdapter = Depends(get_storage_adapter),
 ):
     rows = await service.search_students(
         q=q,
@@ -69,7 +92,7 @@ async def search_students(
             id=row.id,
             full_name=row.full_name,
             document_number=row.document_number,
-            photo_url=row.photo_url,
+            photo_url=resolve_photo_url(storage, row.photo_url),
             group_name=row.group_name,
             grade_name=row.grade_name,
         )

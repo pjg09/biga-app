@@ -37,6 +37,27 @@ class DisciplineRecord(Base):
     observations: Mapped[str] = mapped_column(Text, nullable=False)
     signature_url: Mapped[str] = mapped_column(String(500), nullable=False)
     created_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())
+    # Ocultar del panel del docente (no borra). NULL = visible; con fecha = oculto.
+    archived_at: Mapped[datetime | None] = mapped_column(nullable=True)
+
+
+class DisciplineRecordNote(Base):
+    """Nota de seguimiento append-only sobre un registro disciplinario.
+
+    El registro firmado por el estudiante nunca se modifica; el seguimiento
+    posterior se agrega como notas inmutables con autor y fecha.
+    """
+    __tablename__ = "discipline_record_notes"
+    __table_args__ = (Index("idx_record_notes_record", "discipline_record_id", "created_at"),)
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, default=uuid4)
+    discipline_record_id: Mapped[UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("discipline_records.id"), nullable=False
+    )
+    institution_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), ForeignKey("institutions.id"), nullable=False)
+    author_user_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    note: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())
 
 
 class DisciplineRecordArticle(Base):

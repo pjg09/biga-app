@@ -14,13 +14,14 @@ from app.repositories.notification_repository import NotificationRepository
 logger = logging.getLogger(__name__)
 
 
-def _build_html(student_name: str, group_name: str | None, absence_date, link: str) -> str:
-    group_line = f" del grupo {group_name}" if group_name else ""
+def _build_html(student_name: str, group_name: str | None, grade_name: str | None, absence_date, link: str) -> str:
+    class_label = " ".join(p for p in (grade_name, group_name) if p)
+    group_line = f" del grupo {class_label}" if class_label else ""
     date_str = absence_date.strftime("%d/%m/%Y")
     return f"""\
 <div style="font-family: system-ui, sans-serif; max-width: 520px; margin: 0 auto; color: #1a1730;">
   <h2 style="color: #4A0A9E;">Reporte de inasistencia</h2>
-  <p>El estudiante <strong>{student_name}</strong>{group_line} no asistió a la primera
+  <p>El/La estudiante <strong>{student_name}</strong>{group_line} no asistió a la primera
   hora de clase el día <strong>{date_str}</strong>.</p>
   <p>Si la ausencia tiene una justificación, puede registrarla en el siguiente enlace.
   Es de un solo uso y vence al final del día:</p>
@@ -80,7 +81,7 @@ class AttendanceNotifier:
         student_name = f"{ctx.student.first_name} {ctx.student.last_name}"
         link = f"{settings.frontend_url.rstrip('/')}/justificar/{token_value}"
         subject = f"Inasistencia de {student_name}"
-        html = _build_html(student_name, ctx.group_name, record.date, link)
+        html = _build_html(student_name, ctx.group_name, ctx.grade_name, record.date, link)
 
         # Visibilidad en dev/demo: sin una API key real de Resend el correo no
         # sale, pero el enlace queda en los logs del worker para probar el flujo.

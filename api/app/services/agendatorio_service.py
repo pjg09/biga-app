@@ -1,5 +1,5 @@
 import logging
-from datetime import date as PyDate
+from datetime import date as PyDate, datetime, timezone
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
@@ -10,14 +10,19 @@ from app.repositories.agendatorio_repository import AgendatorioRepository
 from app.repositories.guardian_repository import GuardianRepository
 from app.repositories.student_repository import StudentRepository, StudentSearchRow
 from app.schemas.agendatorio import (
+    ArticleBrief,
     ArticleCreate,
     ArticleResponse,
     ArticleUpdate,
     DisciplineRecordCreate,
     DisciplineRecordDetail,
     DisciplineRecordResponse,
+    GradeOption,
+    GroupOption,
+    MyRecordItem,
+    NoteResponse,
 )
-from app.models.agendatorio import ConvivenciaArticle, DisciplineRecord
+from app.models.agendatorio import ConvivenciaArticle, DisciplineRecord, DisciplineRecordNote
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +39,19 @@ class AgendatorioService:
         self.student_repo = student_repo
         self.guardian_repo = guardian_repo
         self.storage = storage
+
+    # --- Catálogo académico (selectores de búsqueda) ---
+
+    async def list_grades(self, institution_id: UUID) -> list[GradeOption]:
+        grades = await self.agendatorio_repo.list_grades(institution_id)
+        return [GradeOption.model_validate(g) for g in grades]
+
+    async def list_groups(self, institution_id: UUID) -> list[GroupOption]:
+        rows = await self.agendatorio_repo.list_groups(institution_id)
+        return [
+            GroupOption(id=g.id, name=g.name, grade_id=g.grade_id, grade_name=grade_name)
+            for g, grade_name in rows
+        ]
 
     # --- Artículos ---
 
@@ -180,15 +198,101 @@ class AgendatorioService:
         )
 
     async def get_record(self, record_id: UUID, institution_id: UUID) -> DisciplineRecordDetail:
-        record, articles = await self.agendatorio_repo.get_record(record_id, institution_id)
-        if not record:
+        meta = await self.agendatorio_repo.get_record_meta(record_id, institution_id)
+        if not meta:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Registro no encontrado")
+        _, articles = await self.agendatorio_repo.get_record(record_id, institution_id)
+        notes = await self.agendatorio_repo.list_notes(record_id)
+        record = meta.record
         return DisciplineRecordDetail(
             id=record.id,
             student_id=record.student_id,
+            student_name=meta.student_name,
+            grade_name=meta.grade_name,
+            group_name=meta.group_name,
             date=record.date,
             observations=record.observations,
             signature_url=self.storage.get_url(record.signature_url),
             articles=[ArticleResponse.model_validate(a) for a in articles],
+            recorded_by_name=meta.recorded_by_name,
+            notes=[
+                NoteResponse(id=n.id, note=n.note, author_name=author, created_at=n.created_at)
+                for n, author in notes
+            ],
+            archived=record.archived_at is not None,
             created_at=record.created_at,
         )
+
+    # --- Historial del docente ---
+
+    async def list_my_records(
+        self,
+        user_id: UUID,
+        institution_id: UUID,
+        student_id: UUID | None,
+        include_archived: bool,
+        skip: int,
+        limit: int,
+    ) -> list[MyRecordItem]:
+        rows = await self.agendatorio_repo.list_my_records(
+            user_id=user_id,
+            institution_id=institution_id,
+            student_id=student_id,
+            include_archived=include_archived,
+            skip=skip,
+            limit=limit,
+        )
+        record_ids = [r.record.id for r in rows]
+        articles_map = await self.agendatorio_repo.articles_by_records(record_ids)
+        counts = await self.agendatorio_repo.note_counts(record_ids)
+        return [
+            MyRecordItem(
+                id=r.record.id,
+                student_id=r.record.student_id,
+                student_name=r.student_name,
+                grade_name=r.grade_name,
+                group_name=r.group_name,
+                date=r.record.date,
+                observations=r.record.observations,
+                articles=[
+                    ArticleBrief(code=a.code, title=a.title, severity=a.severity)
+                    for a in articles_map.get(r.record.id, [])
+                ],
+                note_count=counts.get(r.record.id, 0),
+                archived=r.record.archived_at is not None,
+                created_at=r.record.created_at,
+            )
+            for r in rows
+        ]
+
+    async def add_note(
+        self, record_id: UUID, user_id: UUID, institution_id: UUID, note: str
+    ) -> NoteResponse:
+        record = await self.agendatorio_repo.get_record_owned(record_id, user_id, institution_id)
+        if not record:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Registro no encontrado")
+        created = await self.agendatorio_repo.add_note(
+            DisciplineRecordNote(
+                id=uuid4(),
+                discipline_record_id=record_id,
+                institution_id=institution_id,
+                author_user_id=user_id,
+                note=note.strip(),
+            )
+        )
+        author_name = await self.agendatorio_repo.get_user_name(user_id)
+        return NoteResponse(
+            id=created.id,
+            note=created.note,
+            author_name=author_name or "",
+            created_at=created.created_at,
+        )
+
+    async def set_record_archived(
+        self, record_id: UUID, user_id: UUID, institution_id: UUID, archived: bool
+    ) -> None:
+        record = await self.agendatorio_repo.get_record_owned(record_id, user_id, institution_id)
+        if not record:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Registro no encontrado")
+        archived_at = datetime.now(timezone.utc).replace(tzinfo=None) if archived else None
+        await self.agendatorio_repo.set_archived(record, archived_at)

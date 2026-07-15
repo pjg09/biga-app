@@ -1,9 +1,13 @@
-from datetime import date
+from datetime import date, time
 from uuid import UUID
 
 from sqlalchemy import extract, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.enums import NotificationType
+from app.models.guardian import Guardian
+from app.models.institution import Institution
+from app.models.notification import NotificationLog
 from app.models.pae import PAEDelivery, PAEEnrollment
 from app.models.student import Student
 
@@ -138,6 +142,63 @@ class PAERepository:
             )
             .where(PAEDelivery.institution_id == institution_id)
             .order_by(PAEDelivery.delivery_date.desc())
+        )
+        return [(row[0], row[1]) for row in result.all()]
+
+    # --- Job de notificación de no reclamo ---
+
+    async def get_institution_ids_past_pae_end(self, current_time: time) -> list[UUID]:
+        # Cross-tenant a propósito: es el barrido programado (beat) que decide qué
+        # instituciones ya cerraron su horario de entrega hoy. El trabajo por
+        # institución sí se hace con institution_id explícito.
+        result = await self.session.execute(
+            select(Institution.id).where(Institution.pae_delivery_end_time <= current_time)
+        )
+        return list(result.scalars().all())
+
+    async def count_deliveries_on(self, institution_id: UUID, delivery_date: date) -> int:
+        result = await self.session.execute(
+            select(func.count())
+            .select_from(PAEDelivery)
+            .where(
+                PAEDelivery.institution_id == institution_id,
+                PAEDelivery.delivery_date == delivery_date,
+            )
+        )
+        return result.scalar_one()
+
+    async def get_no_claim_students_with_guardians(
+        self,
+        institution_id: UUID,
+        academic_year: int,
+        delivery_date: date,
+    ) -> list[tuple[Student, Guardian]]:
+        # Inscritos activos que hoy NO tienen entrega y a los que aún NO se les
+        # notificó el no reclamo (idempotencia: el barrido puede correr varias
+        # veces en la tarde). El JOIN a Guardian con is_primary excluye a los
+        # estudiantes sin acudiente primario — no hay a quién notificar.
+        delivered_subq = select(PAEDelivery.student_id).where(
+            PAEDelivery.institution_id == institution_id,
+            PAEDelivery.delivery_date == delivery_date,
+        )
+        notified_subq = select(NotificationLog.student_id).where(
+            NotificationLog.institution_id == institution_id,
+            NotificationLog.type == NotificationType.PAE_NO_CLAIM,
+            func.date(NotificationLog.created_at) == delivery_date,
+        )
+        result = await self.session.execute(
+            select(Student, Guardian)
+            .join(PAEEnrollment, PAEEnrollment.student_id == Student.id)
+            .join(Guardian, (Guardian.student_id == Student.id) & (Guardian.is_primary == True))
+            .where(
+                PAEEnrollment.institution_id == institution_id,
+                PAEEnrollment.academic_year == academic_year,
+                PAEEnrollment.is_active == True,
+                Student.institution_id == institution_id,
+                Student.is_active == True,
+                Student.id.notin_(delivered_subq),
+                Student.id.notin_(notified_subq),
+            )
         )
         return [(row[0], row[1]) for row in result.all()]
 

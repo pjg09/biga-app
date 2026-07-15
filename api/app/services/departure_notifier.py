@@ -22,7 +22,7 @@ def _build_html(student_name: str, departure_date, departure_time, reason: str |
     return f"""\
 <div style="font-family: system-ui, sans-serif; max-width: 520px; margin: 0 auto; color: #1a1730;">
   <h2 style="color: #4A0A9E;">Salida anticipada</h2>
-  <p>Se registró la salida anticipada del estudiante <strong>{student_name}</strong>
+  <p>Se registró la salida anticipada del/de la estudiante <strong>{student_name}</strong>
   el día <strong>{date_str}</strong> a las <strong>{time_str}</strong>.</p>
   {reason_block}
   <p style="font-size: 13px; color: #6b6880;">Si no autorizó esta salida, comuníquese

@@ -23,6 +23,7 @@ const NAV_TITLES = {
   students:   'Mis estudiantes',
   schedule:   'Horario',
   conduct:    'Convivencia',
+  history:    'Historial',
   messages:   'Mensajes',
 };
 
@@ -47,6 +48,8 @@ function dateLabel() {
 export default function TeacherDashboard() {
   const [activeNav, setActiveNav] = useState('attendance');
   const navigate = useNavigate();
+
+  useEffect(() => { document.title = 'BIGA - Profesores'; }, []);
   const user     = JSON.parse(localStorage.getItem('user') || '{}');
   const initials = `${user.first_name?.[0] ?? ''}${user.last_name?.[0] ?? ''}`.toUpperCase();
   const fullName = `${user.first_name ?? ''} ${user.last_name ?? ''}`.trim();
@@ -77,6 +80,7 @@ export default function TeacherDashboard() {
           <div className="dash__nav-section">
             <p className="dash__nav-label">Seguimiento</p>
             <NavItem id="conduct"  active={activeNav} icon={<ShieldIcon />}  label="Convivencia" onClick={setActiveNav} />
+            <NavItem id="history"  active={activeNav} icon={<BookIcon />}    label="Historial"   onClick={setActiveNav} />
             <NavItem id="messages" active={activeNav} icon={<MessageIcon />} label="Mensajes"    onClick={setActiveNav} />
           </div>
         </nav>
@@ -111,6 +115,7 @@ export default function TeacherDashboard() {
           {activeNav === 'students'   && <TeacherStudentsView />}
           {activeNav === 'schedule'   && <ScheduleView />}
           {activeNav === 'conduct'    && <ConvivenciaView />}
+          {activeNav === 'history'    && <HistorialView />}
           {activeNav === 'messages'   && <MensajesView />}
         </main>
       </div>
@@ -120,6 +125,91 @@ export default function TeacherDashboard() {
 
 /* ── Attendance view ─────────────────────────────────────────── */
 export function AttendanceView() {
+  const [classes, setClasses] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState(null);
+  const [selected, setSelected] = useState(null);  // class_period_id de la clase abierta
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await attendanceService.getToday();
+      setClasses(res.classes || []);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  // Vista de una clase abierta: al volver, recargamos la lista para refrescar el
+  // badge "Tomada".
+  if (selected) {
+    return (
+      <ClassAttendance
+        classPeriodId={selected}
+        onBack={() => { setSelected(null); load(); }}
+      />
+    );
+  }
+
+  if (loading) return <div className="dash__empty"><Spinner /><span>Cargando tus clases de hoy…</span></div>;
+  if (error) {
+    return (
+      <div className="dash__empty">
+        <AlertIcon color="#ef4444" /><span>{error}</span>
+        <button className="btn--secondary" style={{ width: 'auto', marginTop: 8 }} onClick={load}>Reintentar</button>
+      </div>
+    );
+  }
+  if (!classes || classes.length === 0) {
+    return (
+      <div className="dash__empty">
+        <CalendarIcon />
+        <span>No tienes clases asignadas para hoy.</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card dash__list-card">
+      <div className="dash__list-header">
+        <span className="dash__list-title">Clases de hoy</span>
+        <span className="dash__student-group">{classes.length}</span>
+      </div>
+
+      {classes.map(c => (
+        <button
+          key={c.class_period_id}
+          className="dash__student-row att-class-row"
+          onClick={() => setSelected(c.class_period_id)}
+        >
+          <div className="dash__student-avatar" style={{ background: '#ede9fe', color: '#6d28d9' }}>
+            {c.period_order}
+          </div>
+          <div className="dash__student-info">
+            <p className="dash__student-name">
+              {c.name}
+              {c.is_first_hour && <span className="dash__badge dash__badge--blue" style={{ marginLeft: 8 }}>1ª hora</span>}
+            </p>
+            <p className="dash__student-group">
+              {c.grade_name} {c.group_name} · {c.start_time?.slice(0, 5)}–{c.end_time?.slice(0, 5)}
+            </p>
+          </div>
+          <span className={`dash__badge dash__badge--${c.already_taken ? 'green' : 'yellow'}`}>
+            {c.already_taken ? 'Tomada' : 'Pendiente'}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ── Toma de lista de una clase específica ───────────────────── */
+function ClassAttendance({ classPeriodId, onBack }) {
   const [data, setData]       = useState(null);
   const [marks, setMarks]     = useState({});   // student_id -> 'PRESENT' | 'ABSENT'
   const [loading, setLoading] = useState(true);
@@ -137,24 +227,22 @@ export function AttendanceView() {
     setLoading(true);
     setError(null);
     try {
-      const res = await attendanceService.getFirstClass();
+      const res = await attendanceService.getClass(classPeriodId);
       setData(res);
-      if (res.has_class && !res.already_taken) {
-        const init = {};
-        res.students.forEach(s => { init[s.student_id] = 'PRESENT'; });
-        setMarks(init);
-      }
+      // No se pre-selecciona nada: el docente debe marcar explícitamente
+      // Presente/Ausente por cada estudiante antes de poder guardar.
+      setMarks({});
     } catch (e) {
       setError(e.message);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [classPeriodId]);
 
   useEffect(() => { load(); }, [load]);
 
-  const toggle = useCallback((id) => {
-    setMarks(prev => ({ ...prev, [id]: prev[id] === 'PRESENT' ? 'ABSENT' : 'PRESENT' }));
+  const setMark = useCallback((id, status) => {
+    setMarks(prev => ({ ...prev, [id]: status }));
   }, []);
 
   const submit = useCallback(async () => {
@@ -163,7 +251,9 @@ export function AttendanceView() {
     try {
       const entries = data.students.map(s => ({ student_id: s.student_id, status: marks[s.student_id] }));
       await attendanceService.submit(data.class_period_id, entries);
-      showToast('Asistencia registrada. Los ausentes serán notificados.');
+      showToast(data.is_first_hour
+        ? 'Asistencia registrada. Los ausentes serán notificados.'
+        : 'Asistencia registrada.');
       await load();
     } catch (e) {
       showToast(e.message, 'error');
@@ -190,28 +280,33 @@ export function AttendanceView() {
     }
   }, [showToast]);
 
-  if (loading) return <div className="dash__empty"><Spinner /><span>Cargando tu primera clase…</span></div>;
+  const backBtn = (
+    <button className="btn--secondary att-back" style={{ width: 'auto' }} onClick={onBack}>
+      ← Clases de hoy
+    </button>
+  );
+
+  if (loading) return <div className="dash__empty"><Spinner /><span>Cargando la clase…</span></div>;
   if (error) {
     return (
       <div className="dash__empty">
         <AlertIcon color="#ef4444" /><span>{error}</span>
-        <button className="btn--secondary" style={{ width: 'auto', marginTop: 8 }} onClick={load}>Reintentar</button>
-      </div>
-    );
-  }
-  if (!data.has_class) {
-    return (
-      <div className="dash__empty">
-        <CalendarIcon />
-        <span>No tienes una primera hora asignada para hoy.</span>
+        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+          <button className="btn--secondary" style={{ width: 'auto' }} onClick={load}>Reintentar</button>
+          <button className="btn--secondary" style={{ width: 'auto' }} onClick={onBack}>Volver</button>
+        </div>
       </div>
     );
   }
 
-  const present = data.students.filter(s => marksOrStatus(s, marks) === 'PRESENT').length;
-  const absent  = data.students.filter(s => marksOrStatus(s, marks) === 'ABSENT').length;
-  const late    = data.students.filter(s => marksOrStatus(s, marks) === 'LATE').length;
-  const total   = data.students.length;
+  const total = data.students.length;
+  // En la toma de lista los marks son la fuente; en el registro de hoy, el status ya guardado.
+  const stateOf = (s) => (data.already_taken ? s.status : marks[s.student_id]);
+  const present = data.students.filter(s => stateOf(s) === 'PRESENT').length;
+  const absent  = data.students.filter(s => stateOf(s) === 'ABSENT').length;
+  const late    = data.students.filter(s => stateOf(s) === 'LATE').length;
+  const pending = data.already_taken ? 0 : total - present - absent;
+  const allMarked = pending === 0;
 
   return (
     <>
@@ -221,17 +316,26 @@ export function AttendanceView() {
         </div>
       )}
 
+      {backBtn}
+
       <div className="att-head card">
         <div>
-          <p className="att-head__period">{data.period_name} · Grupo {data.group_name}</p>
+          <p className="att-head__period">
+            {data.period_name} · Grupo {data.group_name}
+            {data.is_first_hour && <span className="dash__badge dash__badge--blue" style={{ marginLeft: 8 }}>1ª hora</span>}
+          </p>
           <p className="att-head__sub">
             {data.start_time?.slice(0, 5)}–{data.end_time?.slice(0, 5)} · {total} estudiantes
+            {!data.is_first_hour && ' · sin notificación'}
           </p>
         </div>
         <div className="att-head__counts">
           <span className="dash__badge dash__badge--green">{present} presentes</span>
           {late > 0   && <span className="dash__badge dash__badge--yellow">{late} tardanzas</span>}
           <span className="dash__badge dash__badge--red">{absent} ausentes</span>
+          {!data.already_taken && pending > 0 && (
+            <span className="dash__badge dash__badge--gray">{pending} pendientes</span>
+          )}
         </div>
       </div>
 
@@ -241,15 +345,22 @@ export function AttendanceView() {
             {data.already_taken ? 'Registro de hoy' : 'Toma de asistencia'}
           </span>
           {!data.already_taken && (
-            <button className="btn--confirm" style={{ flex: '0 0 auto' }} onClick={submit} disabled={saving} aria-busy={saving}>
-              {saving ? 'Guardando…' : 'Guardar asistencia'}
+            <button
+              className="btn--confirm"
+              style={{ flex: '0 0 auto' }}
+              onClick={submit}
+              disabled={saving || !allMarked}
+              aria-busy={saving}
+              title={allMarked ? undefined : 'Marca el estado de todos los estudiantes'}
+            >
+              {saving ? 'Guardando…' : allMarked ? 'Guardar asistencia' : `Faltan ${pending}`}
             </button>
           )}
         </div>
 
         {data.students.map((s, i) => {
           const av = AVATARS[i % AVATARS.length];
-          const status = marksOrStatus(s, marks);
+          const mark = marks[s.student_id];
           return (
             <div className="dash__student-row" key={s.student_id}>
               {s.photo_url
@@ -277,12 +388,24 @@ export function AttendanceView() {
                   )}
                 </>
               ) : (
-                <button
-                  className={`att-toggle att-toggle--${status === 'PRESENT' ? 'present' : 'absent'}`}
-                  onClick={() => toggle(s.student_id)}
-                >
-                  {status === 'PRESENT' ? 'Presente' : 'Ausente'}
-                </button>
+                <div className="att-choice" role="group" aria-label={`Asistencia de ${s.first_name} ${s.last_name}`}>
+                  <button
+                    type="button"
+                    className={`att-choice__btn att-choice__btn--present${mark === 'PRESENT' ? ' is-on' : ''}`}
+                    aria-pressed={mark === 'PRESENT'}
+                    onClick={() => setMark(s.student_id, 'PRESENT')}
+                  >
+                    Presente
+                  </button>
+                  <button
+                    type="button"
+                    className={`att-choice__btn att-choice__btn--absent${mark === 'ABSENT' ? ' is-on' : ''}`}
+                    aria-pressed={mark === 'ABSENT'}
+                    onClick={() => setMark(s.student_id, 'ABSENT')}
+                  >
+                    Ausente
+                  </button>
+                </div>
               )}
             </div>
           );
@@ -290,10 +413,6 @@ export function AttendanceView() {
       </div>
     </>
   );
-}
-
-function marksOrStatus(student, marks) {
-  return marks[student.student_id] ?? student.status ?? 'PRESENT';
 }
 
 /* ── Early departures view ───────────────────────────────────── */
@@ -610,7 +729,7 @@ export function MensajesView() {
             <div className="msg__body">
               <div className="msg__head">
                 <span className="dash__student-name">{m.student_name}</span>
-                <span className="msg__date">Inasistencia {fmtShort(m.date)}{m.group_name ? ` · ${m.group_name}` : ''}</span>
+                <span className="msg__date">Inasistencia {fmtShort(m.date)}{[m.grade_name, m.group_name].filter(Boolean).length ? ` · Grupo ${[m.grade_name, m.group_name].filter(Boolean).join(' ')}` : ''}</span>
               </div>
               <p className="msg__reason">{m.reason}</p>
               <span className="msg__meta">Justificada el {fmtShort(m.submitted_at)}</span>
@@ -631,15 +750,121 @@ function fmtShort(iso) {
 /* ── Convivencia (agendatorio) ───────────────────────────────── */
 const SEVERITY_CLASS = { LEVE: 'green', MODERADA: 'yellow', GRAVE: 'red' };
 
+const SEVERITIES = ['LEVE', 'MODERADA', 'GRAVE'];
+const norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+/* ── Buscador de estudiante reutilizable (grado + salón + nombre/doc) ─── */
+function StudentSearch({ selected, onSelect, onClear }) {
+  const [grades, setGrades]   = useState([]);
+  const [groups, setGroups]   = useState([]);
+  const [gradeId, setGradeId] = useState('');
+  const [groupId, setGroupId] = useState('');
+  const [query, setQuery]     = useState('');
+  const [results, setResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+
+  useEffect(() => {
+    Promise.all([agendatorioService.listGrades(), agendatorioService.listGroups()])
+      .then(([g, gr]) => { setGrades(g); setGroups(gr); })
+      .catch(() => { /* ignore */ });
+  }, []);
+
+  const groupsForGrade = groups.filter(g => !gradeId || g.grade_id === gradeId);
+
+  useEffect(() => {
+    if (groupId && !groupsForGrade.some(g => g.id === groupId)) setGroupId('');
+  }, [gradeId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (selected) { setResults([]); return; }
+    const term = query.trim();
+    const canBrowse = Boolean(gradeId || groupId);
+    if (term.length < 2 && !canBrowse) { setResults([]); return; }
+    let active = true;
+    setSearching(true);
+    const t = setTimeout(async () => {
+      try {
+        const r = await studentService.search(term, { gradeId, groupId });
+        if (active) setResults(r);
+      } catch { /* ignore */ }
+      finally { if (active) setSearching(false); }
+    }, 250);
+    return () => { active = false; clearTimeout(t); };
+  }, [query, gradeId, groupId, selected]);
+
+  if (selected) {
+    return (
+      <div className="att-selected">
+        <span className="dash__student-name">{selected.full_name}</span>
+        <span className="dash__student-group">
+          Doc. {selected.document_number}
+          {[selected.grade_name, selected.group_name].filter(Boolean).length
+            ? ` · ${[selected.grade_name, selected.group_name].filter(Boolean).join(' ')}` : ''}
+        </span>
+        <button type="button" className="att-selected__clear" onClick={onClear} aria-label="Cambiar">\u2715</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="conv-search">
+      <div className="conv-search__filters">
+        <label className="dash__field">
+          <span className="dash__field-label">Grado</span>
+          <select className="dash__field-input" value={gradeId} onChange={e => setGradeId(e.target.value)}>
+            <option value="">Todos</option>
+            {grades.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+          </select>
+        </label>
+        <label className="dash__field">
+          <span className="dash__field-label">Salón</span>
+          <select className="dash__field-input" value={groupId} onChange={e => setGroupId(e.target.value)}>
+            <option value="">Todos</option>
+            {groupsForGrade.map(g => <option key={g.id} value={g.id}>{g.grade_name} {g.name}</option>)}
+          </select>
+        </label>
+      </div>
+
+      <div className="att-search">
+        <input className="dash__field-input" placeholder="Buscar por nombre o documento\u2026" value={query}
+          onChange={e => setQuery(e.target.value)} autoComplete="off" />
+        {(results.length > 0 || searching) && (
+          <div className="att-search__results">
+            {searching && results.length === 0 && (
+              <div className="att-search__item att-search__hint">Buscando\u2026</div>
+            )}
+            {results.map(r => (
+              <button type="button" key={r.id} className="att-search__item" onClick={() => onSelect(r)}>
+                <span className="dash__student-name">{r.full_name}</span>
+                <span className="dash__student-group">
+                  Doc. {r.document_number}
+                  {[r.grade_name, r.group_name].filter(Boolean).length
+                    ? ` · ${[r.grade_name, r.group_name].filter(Boolean).join(' ')}` : ''}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+        {!searching && results.length === 0 && (gradeId || groupId || query.trim().length >= 2) && (
+          <p className="sched__free" style={{ marginTop: 6 }}>Sin estudiantes para ese criterio.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function ConvivenciaView() {
   const [articles, setArticles] = useState([]);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState(null);
 
-  const [query, setQuery]       = useState('');
-  const [results, setResults]   = useState([]);
   const [student, setStudent]   = useState(null);
+
+  // Selección de artículos (2.2): filtro por severidad + buscador
+  const [sevFilter, setSevFilter]       = useState('ALL');
+  const [articleQuery, setArticleQuery] = useState('');
   const [picked, setPicked]     = useState([]);   // article ids
+
   const [obs, setObs]           = useState('');
   const [saving, setSaving]     = useState(false);
   const [toast, setToast]       = useState(null);
@@ -659,18 +884,15 @@ export function ConvivenciaView() {
       .finally(() => setLoading(false));
   }, []);
 
-  useEffect(() => {
-    if (student || query.trim().length < 2) { setResults([]); return; }
-    let active = true;
-    const t = setTimeout(async () => {
-      try { const r = await studentService.search(query.trim()); if (active) setResults(r); }
-      catch { /* ignore */ }
-    }, 250);
-    return () => { active = false; clearTimeout(t); };
-  }, [query, student]);
-
   const toggleArticle = (id) =>
     setPicked(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+
+  const filteredArticles = articles.filter(a => {
+    if (sevFilter !== 'ALL' && a.severity !== sevFilter) return false;
+    const q = norm(articleQuery.trim());
+    if (!q) return true;
+    return norm(a.title).includes(q) || norm(a.code).includes(q);
+  });
 
   // --- Firma en canvas ---
   const pos = (e) => {
@@ -707,7 +929,8 @@ export function ConvivenciaView() {
         blob,
       );
       showToast(`Registro creado para ${student.full_name}`);
-      setStudent(null); setQuery(''); setPicked([]); setObs(''); clearCanvas();
+      setStudent(null);
+      setPicked([]); setSevFilter('ALL'); setArticleQuery(''); setObs(''); clearCanvas();
     } catch (e) {
       showToast(e.message, 'error');
     } finally {
@@ -729,45 +952,58 @@ export function ConvivenciaView() {
       <div className="card att-form">
         <p className="dash__list-title" style={{ marginBottom: 4 }}>Nuevo registro de convivencia</p>
 
-        {student ? (
-          <div className="att-selected">
-            <span className="dash__student-name">{student.full_name}</span>
-            <span className="dash__student-group">Doc. {student.document_number}{student.group_name ? ` · ${student.group_name}` : ''}</span>
-            <button type="button" className="att-selected__clear" onClick={() => setStudent(null)} aria-label="Cambiar">✕</button>
-          </div>
-        ) : (
-          <div className="att-search">
-            <input className="dash__field-input" placeholder="Buscar estudiante…" value={query}
-              onChange={e => setQuery(e.target.value)} autoComplete="off" />
-            {results.length > 0 && (
-              <div className="att-search__results">
-                {results.map(r => (
-                  <button type="button" key={r.id} className="att-search__item" onClick={() => { setStudent(r); setResults([]); }}>
-                    <span className="dash__student-name">{r.full_name}</span>
-                    <span className="dash__student-group">Doc. {r.document_number}{r.group_name ? ` · ${r.group_name}` : ''}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+        <StudentSearch
+          selected={student}
+          onSelect={r => setStudent(r)}
+          onClear={() => setStudent(null)}
+        />
 
         <div>
-          <span className="dash__field-label">Artículos del manual infringidos</span>
+          <span className="dash__field-label">
+            Artículos del manual infringidos
+            {picked.length > 0 && <span className="conv-count"> · {picked.length} seleccionado{picked.length > 1 ? 's' : ''}</span>}
+          </span>
+
           {articles.length === 0 ? (
             <p className="sched__free">No hay artículos cargados en el manual.</p>
           ) : (
-            <div className="conv-articles">
-              {articles.map(a => (
-                <button type="button" key={a.id}
-                  className={`conv-article${picked.includes(a.id) ? ' conv-article--on' : ''}`}
-                  onClick={() => toggleArticle(a.id)}>
-                  <span className={`dash__badge dash__badge--${SEVERITY_CLASS[a.severity] || 'yellow'}`}>{a.severity}</span>
-                  <span className="conv-article__code">{a.code}</span>
-                  <span className="conv-article__title">{a.title}</span>
-                </button>
-              ))}
-            </div>
+            <>
+              <div className="conv-article-filters">
+                <div className="conv-sev-chips" role="group" aria-label="Filtrar por severidad">
+                  <button type="button"
+                    className={`conv-sev-chip${sevFilter === 'ALL' ? ' is-on' : ''}`}
+                    onClick={() => setSevFilter('ALL')}>Todas</button>
+                  {SEVERITIES.map(sev => (
+                    <button type="button" key={sev}
+                      className={`conv-sev-chip conv-sev-chip--${SEVERITY_CLASS[sev]}${sevFilter === sev ? ' is-on' : ''}`}
+                      onClick={() => setSevFilter(sev)}>{sev}</button>
+                  ))}
+                </div>
+                <input
+                  className="dash__field-input"
+                  placeholder="Buscar artículo… (ej: Uso del celular)"
+                  value={articleQuery}
+                  onChange={e => setArticleQuery(e.target.value)}
+                  autoComplete="off"
+                />
+              </div>
+
+              {filteredArticles.length === 0 ? (
+                <p className="sched__free">Ningún artículo coincide con el filtro.</p>
+              ) : (
+                <div className="conv-articles">
+                  {filteredArticles.map(a => (
+                    <button type="button" key={a.id}
+                      className={`conv-article${picked.includes(a.id) ? ' conv-article--on' : ''}`}
+                      onClick={() => toggleArticle(a.id)}>
+                      <span className={`dash__badge dash__badge--${SEVERITY_CLASS[a.severity] || 'yellow'}`}>{a.severity}</span>
+                      <span className="conv-article__code">{a.code}</span>
+                      <span className="conv-article__title">{a.title}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
 
@@ -795,6 +1031,272 @@ export function ConvivenciaView() {
 
         <button className="btn--confirm" onClick={submit} disabled={saving} aria-busy={saving}>
           {saving ? 'Guardando…' : 'Crear registro'}
+        </button>
+      </div>
+    </>
+  );
+}
+
+/* ── Historial de convivencia (registros del docente) ────────── */
+export function HistorialView() {
+  const [records, setRecords] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState(null);
+  const [filterStudent, setFilterStudent] = useState(null);
+  const [includeArchived, setIncludeArchived] = useState(false);
+  const [openId, setOpenId]   = useState(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setRecords(await agendatorioService.listMyRecords({
+        studentId: filterStudent?.id,
+        includeArchived,
+      }));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [filterStudent, includeArchived]);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (openId) {
+    return <RecordDetail recordId={openId} onBack={() => { setOpenId(null); load(); }} onChanged={load} />;
+  }
+
+  return (
+    <>
+      <div className="card att-form" style={{ gap: 12 }}>
+        <p className="dash__list-title" style={{ marginBottom: 4 }}>Filtrar por estudiante</p>
+        <StudentSearch
+          selected={filterStudent}
+          onSelect={r => setFilterStudent(r)}
+          onClear={() => setFilterStudent(null)}
+        />
+        <label className="hist-toggle">
+          <input type="checkbox" checked={includeArchived} onChange={e => setIncludeArchived(e.target.checked)} />
+          Mostrar registros ocultos
+        </label>
+      </div>
+
+      {loading ? (
+        <div className="dash__empty"><Spinner /><span>Cargando tu historial…</span></div>
+      ) : error ? (
+        <div className="dash__empty">
+          <AlertIcon color="#ef4444" /><span>{error}</span>
+          <button className="btn--secondary" style={{ width: 'auto', marginTop: 8 }} onClick={load}>Reintentar</button>
+        </div>
+      ) : records.length === 0 ? (
+        <div className="dash__empty">
+          <ShieldIcon />
+          <span>{filterStudent ? 'Este estudiante no tiene registros tuyos.' : 'Aún no has creado registros de convivencia.'}</span>
+        </div>
+      ) : (
+        <div className="card dash__list-card">
+          <div className="dash__list-header">
+            <span className="dash__list-title">Registros creados por ti</span>
+            <span className="dash__student-group">{records.length}</span>
+          </div>
+          {records.map((r, i) => {
+            const av = AVATARS[i % AVATARS.length];
+            return (
+              <button key={r.id} className="dash__student-row att-class-row" onClick={() => setOpenId(r.id)}>
+                <div className="dash__student-avatar" style={{ background: av.bg, color: av.color }}>
+                  {(r.student_name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+                </div>
+                <div className="dash__student-info">
+                  <p className="dash__student-name">
+                    {r.student_name}
+                    {r.archived && <span className="dash__badge dash__badge--gray" style={{ marginLeft: 8 }}>Oculto</span>}
+                  </p>
+                  <p className="dash__student-group">
+                    {[r.grade_name, r.group_name].filter(Boolean).join(' ')}
+                    {[r.grade_name, r.group_name].filter(Boolean).length ? ' · ' : ''}
+                    {fmtShort(r.date)}
+                    {r.note_count > 0 ? ` · ${r.note_count} nota${r.note_count > 1 ? 's' : ''}` : ''}
+                  </p>
+                </div>
+                <div className="hist-sev">
+                  {r.articles.map((a, j) => (
+                    <span key={j} className={`dash__badge dash__badge--${SEVERITY_CLASS[a.severity] || 'yellow'}`}>{a.code}</span>
+                  ))}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </>
+  );
+}
+
+/* ── Detalle de un registro + notas + ocultar ────────────────── */
+function RecordDetail({ recordId, onBack, onChanged }) {
+  const [data, setData]       = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState(null);
+  const [note, setNote]       = useState('');
+  const [savingNote, setSavingNote] = useState(false);
+  const [archiving, setArchiving]   = useState(false);
+  const [toast, setToast]     = useState(null);
+
+  const showToast = useCallback((msg, type = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3500);
+  }, []);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setData(await agendatorioService.recordDetail(recordId));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [recordId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const submitNote = useCallback(async () => {
+    if (note.trim().length < 1) return;
+    setSavingNote(true);
+    try {
+      await agendatorioService.addNote(recordId, note.trim());
+      setNote('');
+      await load();
+      onChanged?.();
+      showToast('Nota agregada');
+    } catch (e) {
+      showToast(e.message, 'error');
+    } finally {
+      setSavingNote(false);
+    }
+  }, [note, recordId, load, onChanged, showToast]);
+
+  const toggleArchive = useCallback(async () => {
+    if (!data) return;
+    setArchiving(true);
+    try {
+      if (data.archived) await agendatorioService.unarchiveRecord(recordId);
+      else await agendatorioService.archiveRecord(recordId);
+      await load();
+      onChanged?.();
+      showToast(data.archived ? 'Registro visible de nuevo' : 'Registro oculto de tu panel');
+    } catch (e) {
+      showToast(e.message, 'error');
+    } finally {
+      setArchiving(false);
+    }
+  }, [data, recordId, load, onChanged, showToast]);
+
+  const backBtn = (
+    <button className="btn--secondary att-back" style={{ width: 'auto' }} onClick={onBack}>← Historial</button>
+  );
+
+  if (loading) return <div className="dash__empty"><Spinner /><span>Cargando registro…</span></div>;
+  if (error) {
+    return (
+      <div className="dash__empty">
+        <AlertIcon color="#ef4444" /><span>{error}</span>
+        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+          <button className="btn--secondary" style={{ width: 'auto' }} onClick={load}>Reintentar</button>
+          <button className="btn--secondary" style={{ width: 'auto' }} onClick={onBack}>Volver</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {toast && (
+        <div className={`dash__toast dash__toast--${toast.type}`} role="alert">
+          {toast.type === 'success' ? <CheckIcon /> : <AlertIcon />}{toast.msg}
+        </div>
+      )}
+
+      {backBtn}
+
+      <div className="att-head card">
+        <div>
+          <p className="att-head__period">
+            {data.student_name}
+            {data.archived && <span className="dash__badge dash__badge--gray" style={{ marginLeft: 8 }}>Oculto</span>}
+          </p>
+          <p className="att-head__sub">
+            {[data.grade_name, data.group_name].filter(Boolean).join(' ')}
+            {[data.grade_name, data.group_name].filter(Boolean).length ? ' · ' : ''}
+            {fmtShort(data.date)} · Registrado por {data.recorded_by_name}
+          </p>
+        </div>
+        <button className="btn--secondary" style={{ width: 'auto' }} onClick={toggleArchive} disabled={archiving}>
+          {archiving ? '…' : data.archived ? 'Mostrar en panel' : 'Ocultar del panel'}
+        </button>
+      </div>
+
+      <div className="card att-form">
+        <div>
+          <span className="dash__field-label">Artículos infringidos</span>
+          <div className="conv-articles" style={{ marginTop: 8 }}>
+            {data.articles.map(a => (
+              <div key={a.id} className="conv-article" style={{ cursor: 'default' }}>
+                <span className={`dash__badge dash__badge--${SEVERITY_CLASS[a.severity] || 'yellow'}`}>{a.severity}</span>
+                <span className="conv-article__code">{a.code}</span>
+                <span className="conv-article__title">{a.title}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <span className="dash__field-label">Observaciones</span>
+          <p className="hist-obs">{data.observations}</p>
+        </div>
+
+        <div>
+          <span className="dash__field-label">Firma del estudiante</span>
+          {data.signature_url
+            ? <img className="hist-signature" src={data.signature_url} alt="Firma del estudiante" />
+            : <p className="sched__free">Sin firma.</p>}
+        </div>
+      </div>
+
+      <div className="card att-form">
+        <p className="dash__list-title" style={{ marginBottom: 4 }}>
+          Notas de seguimiento
+          {data.notes.length > 0 && <span className="conv-count"> · {data.notes.length}</span>}
+        </p>
+
+        {data.notes.length === 0 ? (
+          <p className="sched__free">Sin notas todavía.</p>
+        ) : (
+          <div className="hist-notes">
+            {data.notes.map(n => (
+              <div key={n.id} className="hist-note">
+                <p className="hist-note__text">{n.note}</p>
+                <span className="hist-note__meta">{n.author_name} · {fmtShort(n.created_at)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <label className="dash__field">
+          <span className="dash__field-label">Agregar nota</span>
+          <textarea
+            className="dash__field-input"
+            style={{ minHeight: 70, resize: 'vertical' }}
+            value={note}
+            onChange={e => setNote(e.target.value)}
+            maxLength={2000}
+            placeholder="Ej: Se citó al acudiente; compromiso de seguimiento…"
+          />
+        </label>
+        <button className="btn--confirm" onClick={submitNote} disabled={savingNote || note.trim().length < 1} aria-busy={savingNote}>
+          {savingNote ? 'Guardando…' : 'Agregar nota'}
         </button>
       </div>
     </>
@@ -847,6 +1349,7 @@ function ClipboardIcon({ color = 'currentColor' }) { return <svg width="18" heig
 function UsersIcon({ color = 'currentColor' })     { return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>; }
 function CalendarIcon({ color = 'currentColor' })  { return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>; }
 function ShieldIcon({ color = 'currentColor' })    { return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>; }
+function BookIcon({ color = 'currentColor' })      { return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>; }
 function MessageIcon({ color = 'currentColor' })   { return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>; }
 function LogoutIcon()    { return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>; }
 function CheckIcon({ color = 'currentColor' })     { return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>; }

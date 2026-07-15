@@ -1,10 +1,12 @@
-import { useState, useCallback, useId } from 'react';
+import { useState, useCallback, useEffect, useId } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import '../styles/login.css';
 
 export default function LoginPage() {
   const [fields, setFields] = useState({ email: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
+
+  useEffect(() => { document.title = 'BIGA - Ingreso'; }, []);
   const [status, setStatus] = useState('idle'); // idle | loading | error | invalid_credentials | server_error
   const [errors, setErrors] = useState({});
 

@@ -3,7 +3,9 @@ from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
 
+from app.adapters.storage.s3 import S3StorageAdapter
 from app.core.config import settings
+from app.core.photos import resolve_photo_url
 from app.jobs.attendance_jobs import notify_absence_first_hour
 from app.models.attendance import AttendanceRecord
 from app.models.enums import AttendanceStatus
@@ -12,58 +14,106 @@ from app.schemas.attendance import (
     AttendanceRecordResponse,
     AttendanceStudentItem,
     AttendanceSubmit,
-    FirstClassResponse,
+    ClassAttendanceResponse,
+    ClassSlot,
     JustificationInfo,
     JustificationMessage,
     ScheduleItem,
+    TodayClassesResponse,
 )
 
 _SUBMITTABLE = {AttendanceStatus.PRESENT, AttendanceStatus.ABSENT}
 
 
 class AttendanceService:
-    def __init__(self, repo: AttendanceRepository):
+    def __init__(self, repo: AttendanceRepository, storage: S3StorageAdapter):
+        self.storage = storage
         self.repo = repo
 
-    async def get_first_class(self, user_id: UUID, institution_id: UUID) -> FirstClassResponse:
+    async def get_today_classes(self, user_id: UUID, institution_id: UUID) -> TodayClassesResponse:
+        """Lista todas las clases del docente para hoy (para el selector de asistencia)."""
         today = date.today()
         academic_year = today.year
         day_of_week = today.isoweekday()  # 1 = lunes ... 7 = domingo
 
         if day_of_week > 5:
-            return FirstClassResponse(has_class=False, date=today)
+            return TodayClassesResponse(date=today, classes=[])
 
-        first = await self.repo.get_teacher_first_period(
+        rows = await self.repo.get_teacher_classes_for_day(
             user_id=user_id,
             institution_id=institution_id,
             academic_year=academic_year,
             day_of_week=day_of_week,
         )
-        if not first:
-            return FirstClassResponse(has_class=False, date=today)
+        taken = await self.repo.get_taken_class_period_ids(
+            class_period_ids=[r.class_period.id for r in rows],
+            institution_id=institution_id,
+            date=today,
+        )
+        return TodayClassesResponse(
+            date=today,
+            classes=[
+                ClassSlot(
+                    class_period_id=r.class_period.id,
+                    period_order=r.class_period.period_order,
+                    name=r.class_period.name,
+                    group_id=r.group_id,
+                    group_name=r.group_name,
+                    grade_name=r.grade_name,
+                    start_time=r.class_period.start_time,
+                    end_time=r.class_period.end_time,
+                    already_taken=r.class_period.id in taken,
+                    is_first_hour=r.class_period.period_order == 1,
+                )
+                for r in rows
+            ],
+        )
+
+    async def get_class_attendance(
+        self,
+        user_id: UUID,
+        institution_id: UUID,
+        class_period_id: UUID,
+    ) -> ClassAttendanceResponse:
+        """Roster + estado de asistencia de hoy para una clase específica del docente."""
+        today = date.today()
+        academic_year = today.year
+
+        cls = await self.repo.get_teacher_class(
+            user_id=user_id,
+            class_period_id=class_period_id,
+            institution_id=institution_id,
+            academic_year=academic_year,
+        )
+        if not cls:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="La clase no existe o no está asignada a este docente",
+            )
 
         roster = await self.repo.get_group_roster(
-            group_id=first.group_id,
+            group_id=cls.group_id,
             institution_id=institution_id,
             academic_year=academic_year,
         )
         existing = await self.repo.get_records_for_class(
-            class_period_id=first.class_period.id,
+            class_period_id=class_period_id,
             institution_id=institution_id,
             date=today,
         )
         status_by_student = {r.student_id: r.status for r in existing}
         record_by_student = {r.student_id: r.id for r in existing}
 
-        return FirstClassResponse(
-            has_class=True,
-            class_period_id=first.class_period.id,
-            group_id=first.group_id,
-            group_name=first.group_name,
-            grade_name=first.grade_name,
-            period_name=first.class_period.name,
-            start_time=first.class_period.start_time,
-            end_time=first.class_period.end_time,
+        return ClassAttendanceResponse(
+            class_period_id=cls.class_period.id,
+            group_id=cls.group_id,
+            group_name=cls.group_name,
+            grade_name=cls.grade_name,
+            period_name=cls.class_period.name,
+            period_order=cls.class_period.period_order,
+            is_first_hour=cls.class_period.period_order == 1,
+            start_time=cls.class_period.start_time,
+            end_time=cls.class_period.end_time,
             date=today,
             already_taken=len(existing) > 0,
             students=[
@@ -72,7 +122,7 @@ class AttendanceService:
                     document_number=s.document_number,
                     first_name=s.first_name,
                     last_name=s.last_name,
-                    photo_url=s.photo_url,
+                    photo_url=resolve_photo_url(self.storage, s.photo_url),
                     status=status_by_student.get(s.id),
                     record_id=record_by_student.get(s.id),
                 )
@@ -106,11 +156,6 @@ class AttendanceService:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="La clase no existe o no está asignada a este docente",
-            )
-        if class_period.period_order != 1:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="La asistencia con notificación solo se toma en la primera hora",
             )
 
         existing = await self.repo.get_records_for_class(
@@ -155,13 +200,15 @@ class AttendanceService:
             created.append(record)
         await self.repo.flush()
 
-        # Programa la notificación de cada ausente con la ventana de gracia.
+        # La notificación al acudiente solo aplica a la PRIMERA HORA (scope 3.2):
+        # el resto de las clases se registran para historial, sin correo.
         # Se encola con countdown; cuando dispare, el job relee el estado: si el
         # estudiante ya fue marcado como tardanza/presente, no envía nada.
-        countdown = settings.attendance_grace_minutes * 60
-        for record in created:
-            if record.status == AttendanceStatus.ABSENT:
-                notify_absence_first_hour.apply_async((str(record.id),), countdown=countdown)
+        if class_period.period_order == 1:
+            countdown = settings.attendance_grace_minutes * 60
+            for record in created:
+                if record.status == AttendanceStatus.ABSENT:
+                    notify_absence_first_hour.apply_async((str(record.id),), countdown=countdown)
 
         return [AttendanceRecordResponse.model_validate(r) for r in created]
 
@@ -195,6 +242,7 @@ class AttendanceService:
                 record_id=r.record_id,
                 student_name=r.student_name,
                 group_name=r.group_name,
+                grade_name=r.grade_name,
                 date=r.date,
                 reason=r.reason,
                 submitted_at=r.submitted_at,
@@ -230,6 +278,7 @@ class AttendanceService:
                 student_name=ctx and f"{ctx.student.first_name} {ctx.student.last_name}",
                 date=ctx and ctx.record.date,
                 group_name=ctx and ctx.group_name,
+                grade_name=ctx and ctx.grade_name,
                 message="Esta inasistencia ya fue justificada.",
             )
         if datetime.now() > tok.expires_at:
@@ -243,6 +292,7 @@ class AttendanceService:
             student_name=f"{ctx.student.first_name} {ctx.student.last_name}",
             date=ctx.record.date,
             group_name=ctx.group_name,
+            grade_name=ctx.grade_name,
         )
 
     async def submit_justification(self, token: UUID, reason: str) -> JustificationInfo:
@@ -274,5 +324,6 @@ class AttendanceService:
             student_name=ctx and f"{ctx.student.first_name} {ctx.student.last_name}",
             date=ctx and ctx.record.date,
             group_name=ctx and ctx.group_name,
+            grade_name=ctx and ctx.grade_name,
             message="Justificación registrada. Gracias.",
         )

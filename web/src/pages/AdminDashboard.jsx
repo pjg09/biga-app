@@ -49,6 +49,8 @@ function Toast({ toast }) {
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const user = JSON.parse(localStorage.getItem('user') || '{}');
+
+  useEffect(() => { document.title = 'BIGA - Administración'; }, []);
   const fullName = `${user.first_name ?? ''} ${user.last_name ?? ''}`.trim();
   const [activeNav, setActiveNav] = useState('overview');
 
@@ -284,7 +286,7 @@ function AcademicView() {
   };
   const submitEnroll = async (e) => {
     e.preventDefault();
-    if (!student || !enrollGroup) { showToast('Elegí estudiante y grupo', 'error'); return; }
+    if (!student || !enrollGroup) { showToast('Elige estudiante y grupo', 'error'); return; }
     try { await adminService.enrollStudentInGroup({ student_id: student.id, group_id: enrollGroup, academic_year: YEAR }); showToast(`${student.full_name} matriculado`); setStudent(null); setQ(''); setEnrollGroup(''); }
     catch (err) { showToast(err.status === 409 ? 'El estudiante ya está matriculado ese año' : err.message, 'error'); }
   };
@@ -380,7 +382,7 @@ function ScheduleView() {
 
   const submitCp = async (e) => {
     e.preventDefault();
-    if (!selGroup) { showToast('Elegí un grupo', 'error'); return; }
+    if (!selGroup) { showToast('Elige un grupo', 'error'); return; }
     try {
       await adminService.createClassPeriod({
         group_id: selGroup, name: cp.name, period_order: Number(cp.period_order),

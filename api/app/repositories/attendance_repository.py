@@ -28,13 +28,14 @@ class JustificationRow:
     record_id: UUID
     student_name: str
     group_name: str | None
+    grade_name: str | None
     date: object
     reason: str
     submitted_at: object
 
 
 @dataclass
-class FirstPeriodRow:
+class DayClassRow:
     class_period: ClassPeriod
     group_id: UUID
     group_name: str
@@ -46,19 +47,21 @@ class AttendanceContext:
     record: AttendanceRecord
     student: Student
     group_name: str | None
+    grade_name: str | None
 
 
 class AttendanceRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def get_teacher_first_period(
+    async def get_teacher_classes_for_day(
         self,
         user_id: UUID,
         institution_id: UUID,
         academic_year: int,
         day_of_week: int,
-    ) -> FirstPeriodRow | None:
+    ) -> list[DayClassRow]:
+        """Todas las clases (cualquier period_order) del docente para el día dado."""
         result = await self.session.execute(
             select(ClassPeriod, Group.id, Group.name, Grade.name)
             .join(UserGroup, UserGroup.group_id == ClassPeriod.group_id)
@@ -68,21 +71,60 @@ class AttendanceRepository:
                 UserGroup.user_id == user_id,
                 UserGroup.academic_year == academic_year,
                 ClassPeriod.institution_id == institution_id,
-                ClassPeriod.period_order == 1,
                 ClassPeriod.day_of_week == day_of_week,
             )
-            .order_by(ClassPeriod.start_time)
+            .order_by(ClassPeriod.start_time, ClassPeriod.period_order)
+        )
+        return [
+            DayClassRow(class_period=row[0], group_id=row[1], group_name=row[2], grade_name=row[3])
+            for row in result.all()
+        ]
+
+    async def get_teacher_class(
+        self,
+        user_id: UUID,
+        class_period_id: UUID,
+        institution_id: UUID,
+        academic_year: int,
+    ) -> DayClassRow | None:
+        """Una clase específica que el docente dicta, con nombres de grupo/grado."""
+        result = await self.session.execute(
+            select(ClassPeriod, Group.id, Group.name, Grade.name)
+            .join(UserGroup, UserGroup.group_id == ClassPeriod.group_id)
+            .join(Group, Group.id == ClassPeriod.group_id)
+            .join(Grade, Grade.id == Group.grade_id)
+            .where(
+                ClassPeriod.id == class_period_id,
+                ClassPeriod.institution_id == institution_id,
+                UserGroup.user_id == user_id,
+                UserGroup.academic_year == academic_year,
+            )
             .limit(1)
         )
         row = result.first()
         if not row:
             return None
-        return FirstPeriodRow(
-            class_period=row[0],
-            group_id=row[1],
-            group_name=row[2],
-            grade_name=row[3],
+        return DayClassRow(class_period=row[0], group_id=row[1], group_name=row[2], grade_name=row[3])
+
+    async def get_taken_class_period_ids(
+        self,
+        class_period_ids: list[UUID],
+        institution_id: UUID,
+        date: PyDate,
+    ) -> set[UUID]:
+        """De los class_period_ids dados, cuáles ya tienen asistencia registrada hoy."""
+        if not class_period_ids:
+            return set()
+        result = await self.session.execute(
+            select(AttendanceRecord.class_period_id)
+            .where(
+                AttendanceRecord.class_period_id.in_(class_period_ids),
+                AttendanceRecord.institution_id == institution_id,
+                AttendanceRecord.date == date,
+            )
+            .distinct()
         )
+        return set(result.scalars().all())
 
     async def teacher_owns_class_period(
         self,
@@ -163,15 +205,16 @@ class AttendanceRepository:
 
     async def get_context(self, record_id: UUID) -> AttendanceContext | None:
         result = await self.session.execute(
-            select(AttendanceRecord, Student, Group.name)
+            select(AttendanceRecord, Student, Group.name, Grade.name)
             .join(Student, Student.id == AttendanceRecord.student_id)
             .join(Group, Group.id == AttendanceRecord.group_id)
+            .join(Grade, Grade.id == Group.grade_id)
             .where(AttendanceRecord.id == record_id)
         )
         row = result.first()
         if not row:
             return None
-        return AttendanceContext(record=row[0], student=row[1], group_name=row[2])
+        return AttendanceContext(record=row[0], student=row[1], group_name=row[2], grade_name=row[3])
 
     async def get_token_by_record(self, record_id: UUID) -> AttendanceToken | None:
         result = await self.session.execute(
@@ -263,6 +306,7 @@ class AttendanceRepository:
                 AttendanceRecord.id,
                 func.concat(Student.first_name, " ", Student.last_name),
                 Group.name,
+                Grade.name,
                 AttendanceRecord.date,
                 AttendanceJustification.reason,
                 AttendanceJustification.submitted_at,
@@ -270,6 +314,7 @@ class AttendanceRepository:
             .join(AttendanceRecord, AttendanceRecord.id == AttendanceJustification.attendance_record_id)
             .join(Student, Student.id == AttendanceRecord.student_id)
             .join(Group, Group.id == AttendanceRecord.group_id)
+            .join(Grade, Grade.id == Group.grade_id)
             .where(
                 AttendanceRecord.institution_id == institution_id,
                 AttendanceRecord.recorded_by_user_id == user_id,
@@ -281,9 +326,10 @@ class AttendanceRepository:
                 record_id=row[0],
                 student_name=row[1],
                 group_name=row[2],
-                date=row[3],
-                reason=row[4],
-                submitted_at=row[5],
+                grade_name=row[3],
+                date=row[4],
+                reason=row[5],
+                submitted_at=row[6],
             )
             for row in result.all()
         ]

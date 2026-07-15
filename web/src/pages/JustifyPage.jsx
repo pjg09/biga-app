@@ -76,7 +76,9 @@ export default function JustifyPage() {
             <div className="justify__student">
               <span className="justify__student-name">{info.student_name}</span>
               <span className="justify__student-meta">
-                {info.group_name ? `Grupo ${info.group_name} · ` : ''}{fmtDate(info.date)}
+                {[info.grade_name, info.group_name].filter(Boolean).join(' ')
+                  ? `Grupo ${[info.grade_name, info.group_name].filter(Boolean).join(' ')} · `
+                  : ''}{fmtDate(info.date)}
               </span>
             </div>
 

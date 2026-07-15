@@ -28,6 +28,12 @@
 
 ---
 
+## Extensiones de PostgreSQL
+
+- `unaccent` (migración `d4a2c7e91b05`): habilita la búsqueda de estudiantes insensible a acentos. El repositorio envuelve columna y patrón en `unaccent(...)` en el `WHERE` (ej. `unaccent(nombre) ILIKE unaccent('%lopez%')` encuentra "López"). `ILIKE` cubre además el caso de mayúsculas.
+
+---
+
 ## Tablas
 
 ### `institutions`
@@ -165,7 +171,7 @@ Estudiantes de la institución. Referente pasivo del sistema: no tiene login.
 | `first_name` | VARCHAR(100) | NOT NULL | |
 | `last_name` | VARCHAR(100) | NOT NULL | |
 | `birth_date` | DATE | NOT NULL | |
-| `photo_url` | VARCHAR(500) | NULLABLE | URL en object storage. Se usa para corroborar identidad en el flujo por documento y como referencia para reconocimiento facial (fase 2). |
+| `photo_url` | VARCHAR(500) | NULLABLE | **Key** del objeto en storage (foto subida a MinIO vía `POST /students/{id}/photo`); se presigna al leer (`resolve_photo_url`). Por compatibilidad también acepta una URL externa (se deja pasar tal cual). Se usa para corroborar identidad en el flujo por documento y como referencia para reconocimiento facial (fase 2). |
 | `is_active` | BOOLEAN | NOT NULL, DEFAULT TRUE | |
 | `created_at` | TIMESTAMP | NOT NULL, DEFAULT NOW() | |
 
@@ -390,6 +396,29 @@ Registro en el agendatorio (libro de convivencia digital). Reemplaza el registro
 | `observations` | TEXT | NOT NULL | Descripción libre del hecho |
 | `signature_url` | VARCHAR(500) | NOT NULL | URL del PNG de la firma en object storage |
 | `created_at` | TIMESTAMP | NOT NULL, DEFAULT NOW() | |
+| `archived_at` | TIMESTAMP | NULLABLE | Ocultar del panel del docente sin borrar. NULL = visible; con fecha = oculto. (migración `e5b3f8c210a7`) |
+
+El registro firmado (artículos, observaciones, firma) es inmutable vía API. El seguimiento posterior se agrega como notas (ver `discipline_record_notes`); ocultarlo solo setea `archived_at`.
+
+---
+
+### `discipline_record_notes`
+
+Notas de seguimiento append-only sobre un registro disciplinario (migración `e5b3f8c210a7`). El registro firmado nunca se modifica; el seguimiento queda como notas inmutables con autor y fecha.
+
+| Columna | Tipo | Restricciones | Descripción |
+|---|---|---|---|
+| `id` | UUID | PK | |
+| `discipline_record_id` | UUID | NOT NULL, FK → discipline_records | |
+| `institution_id` | UUID | NOT NULL, FK → institutions | Denormalizado |
+| `author_user_id` | UUID | NOT NULL, FK → users | Docente que escribió la nota |
+| `note` | TEXT | NOT NULL | |
+| `created_at` | TIMESTAMP | NOT NULL, DEFAULT NOW() | |
+
+**Índices:**
+```sql
+CREATE INDEX idx_record_notes_record ON discipline_record_notes (discipline_record_id, created_at);
+```
 
 ---
 

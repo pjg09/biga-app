@@ -67,6 +67,11 @@ class StudentRepository:
         await self.session.refresh(student)
         return student
 
+    async def update_photo(self, student: Student, key: str) -> Student:
+        student.photo_url = key
+        await self.session.flush()
+        return student
+
     async def search(
         self,
         q: str,
@@ -93,14 +98,22 @@ class StudentRepository:
             .where(
                 Student.institution_id == institution_id,
                 Student.is_active == True,
-                or_(
-                    func.concat(Student.first_name, " ", Student.last_name).ilike(f"%{q}%"),
-                    Student.document_number.ilike(f"%{q}%"),
-                ),
             )
+            .order_by(Student.last_name, Student.first_name)
             .limit(limit)
         )
 
+        term = (q or "").strip()
+        if term:
+            # Búsqueda insensible a acentos: unaccent() sobre columna y patrón
+            # (ej. "Lopez" encuentra "López"). ILIKE cubre el caso de mayúsculas.
+            pattern = func.unaccent(f"%{term}%")
+            stmt = stmt.where(
+                or_(
+                    func.unaccent(func.concat(Student.first_name, " ", Student.last_name)).ilike(pattern),
+                    func.unaccent(Student.document_number).ilike(pattern),
+                )
+            )
         if group_id:
             stmt = stmt.where(StudentGroup.group_id == group_id)
         if grade_id:

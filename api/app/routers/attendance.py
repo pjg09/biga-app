@@ -3,42 +3,60 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.adapters.storage.s3 import S3StorageAdapter
 from app.core.database import get_db
-from app.core.dependencies import require_staff
+from app.core.dependencies import get_storage_adapter, require_staff
 from app.models.user import User
 from app.repositories.attendance_repository import AttendanceRepository
 from app.schemas.attendance import (
     AttendanceRecordResponse,
     AttendanceSubmit,
-    FirstClassResponse,
+    ClassAttendanceResponse,
     JustificationInfo,
     JustificationMessage,
     JustificationSubmit,
     ScheduleItem,
+    TodayClassesResponse,
 )
 from app.services.attendance_service import AttendanceService
 
 router = APIRouter(prefix="/attendance", tags=["attendance"])
 
 
-def get_attendance_service(db: AsyncSession = Depends(get_db)) -> AttendanceService:
-    return AttendanceService(AttendanceRepository(db))
+def get_attendance_service(
+    db: AsyncSession = Depends(get_db),
+    storage: S3StorageAdapter = Depends(get_storage_adapter),
+) -> AttendanceService:
+    return AttendanceService(AttendanceRepository(db), storage)
 
 
 # --- Docente / operador PAE (autenticado) ---
 
-@router.get("/first-class/today", response_model=FirstClassResponse)
-async def get_first_class(
+@router.get("/today", response_model=TodayClassesResponse)
+async def get_today_classes(
     current_user: User = Depends(require_staff),
     service: AttendanceService = Depends(get_attendance_service),
 ):
-    return await service.get_first_class(
+    return await service.get_today_classes(
         user_id=current_user.id,
         institution_id=current_user.institution_id,
     )
 
 
-@router.post("/first-class", response_model=list[AttendanceRecordResponse], status_code=status.HTTP_201_CREATED)
+@router.get("/classes/{class_period_id}", response_model=ClassAttendanceResponse)
+async def get_class_attendance(
+    class_period_id: UUID,
+    current_user: User = Depends(require_staff),
+    service: AttendanceService = Depends(get_attendance_service),
+):
+    return await service.get_class_attendance(
+        user_id=current_user.id,
+        institution_id=current_user.institution_id,
+        class_period_id=class_period_id,
+    )
+
+
+@router.post("", response_model=list[AttendanceRecordResponse], status_code=status.HTTP_201_CREATED)
 async def submit_attendance(
     body: AttendanceSubmit,
     current_user: User = Depends(require_staff),

@@ -10,6 +10,8 @@ from app.core.security import (
     verify_delivery_hash,
     verify_enrollment_hash,
 )
+from app.adapters.storage.s3 import S3StorageAdapter
+from app.core.photos import resolve_photo_url
 from app.models.enums import PAEIdentificationMethod
 from app.models.pae import PAEDelivery, PAEEnrollment
 from app.repositories.pae_repository import PAERepository
@@ -32,9 +34,10 @@ def _get_strategy(method: PAEIdentificationMethod) -> PAEIdentificationStrategy:
 
 
 class PAEService:
-    def __init__(self, repo: PAERepository, session: AsyncSession):
+    def __init__(self, repo: PAERepository, session: AsyncSession, storage: S3StorageAdapter):
         self.repo = repo
         self.session = session
+        self.storage = storage
 
     async def list_students_today(
         self,
@@ -53,7 +56,7 @@ class PAEService:
                 document_number=student.document_number,
                 first_name=student.first_name,
                 last_name=student.last_name,
-                photo_url=student.photo_url,
+                photo_url=resolve_photo_url(self.storage, student.photo_url),
                 delivered=delivered,
             )
             for student, delivered in pairs

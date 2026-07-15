@@ -451,6 +451,8 @@ body { background: var(--bg); }
 .dash__badge--blue::before   { background: #3b82f6; }
 .dash__badge--lime   { background: #ecfccb; color: #3a5c12; }
 .dash__badge--lime::before   { background: #84cc16; }
+.dash__badge--gray   { background: #f1f0f5; color: #6b7280; }
+.dash__badge--gray::before   { background: #9ca3af; }
 .dash__badge--purple { background: var(--purple-soft); color: var(--purple); }
 .dash__badge--purple::before { background: var(--purple-mid); }
 
@@ -490,6 +492,7 @@ body { background: var(--bg); }
 .dash__stat-value { font-size: 2rem; font-weight: 800; color: var(--t1); line-height: 1; letter-spacing: -0.04em; }
 .dash__stat-label { font-size: 0.74rem; color: var(--t2); }
 .dash__stat-delta { font-size: 0.7rem; color: var(--green-acc); font-weight: 700; margin-top: 2px; }
+.dash__stat-delta--red { color: #ef4444; }
 
 .dash__stat-bar { height: 4px; background: var(--bg); border-radius: 99px; margin-top: 12px; overflow: hidden; }
 .dash__stat-bar-fill { height: 100%; border-radius: 99px; transition: width 0.5s ease; }
@@ -821,6 +824,49 @@ body { background: var(--bg); }
   border: 2px solid var(--border);
 }
 
+/* Foto del modal como botón: click para ampliar */
+.dash__modal-photo-btn {
+  position: relative;
+  padding: 0; border: none; background: none;
+  cursor: zoom-in; border-radius: 12px; flex-shrink: 0;
+  line-height: 0;
+}
+.dash__modal-photo-btn .dash__modal-photo { display: block; }
+.dash__modal-photo-btn:hover .dash__modal-photo { border-color: #6d28d9; }
+.dash__modal-photo-zoom {
+  position: absolute; right: -6px; bottom: -6px;
+  width: 24px; height: 24px; border-radius: 50%;
+  background: #6d28d9; color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+}
+
+/* Lightbox de la foto a pantalla completa */
+.pae-lightbox {
+  position: fixed; inset: 0; z-index: 1100;
+  background: rgba(10, 8, 20, 0.9);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 14px; padding: 24px;
+  cursor: zoom-out;
+}
+.pae-lightbox__img {
+  max-width: min(90vw, 640px); max-height: 82vh;
+  object-fit: contain;
+  border-radius: 14px;
+  box-shadow: 0 12px 48px rgba(0,0,0,0.5);
+  cursor: default;
+}
+.pae-lightbox__caption { color: #fff; font-size: 0.9rem; font-weight: 600; }
+.pae-lightbox__close {
+  position: absolute; top: 18px; right: 18px;
+  width: 40px; height: 40px; border-radius: 50%;
+  border: none; background: rgba(255,255,255,0.14); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: background 0.12s;
+}
+.pae-lightbox__close:hover { background: rgba(255,255,255,0.26); }
+
 .dash__modal-avatar {
   width: 72px; height: 72px;
   border-radius: 12px;
@@ -969,6 +1015,25 @@ body { background: var(--bg); }
 }
 
 /* ─── Asistencia ─────────────────────────────────────────────── */
+/* Selector de clases del día (cada fila es un botón que reusa dash__student-row) */
+.att-class-row {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+.att-class-row:last-child { border-bottom: none; }
+
+.att-back {
+  margin-bottom: 12px;
+  display: inline-flex;
+  align-items: center;
+}
+
 .att-head {
   display: flex;
   align-items: center;
@@ -997,6 +1062,27 @@ body { background: var(--bg); }
 .att-toggle--present:hover { background: #b6f0d8; }
 .att-toggle--absent  { background: #fee2e2; color: #991b1b; }
 .att-toggle--absent:hover { background: #fbcaca; }
+
+/* Toma de lista: dos botones (Presente/Ausente), ambos desmarcados al inicio.
+   Sin selección = contorno neutro; seleccionado = relleno del color de estado. */
+.att-choice { display: flex; gap: 8px; flex: 0 0 auto; }
+.att-choice__btn {
+  border: 1.5px solid var(--border);
+  background: transparent;
+  color: var(--t2);
+  border-radius: 999px;
+  padding: 6px 16px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  min-width: 90px;
+  transition: background 0.12s, color 0.12s, border-color 0.12s, transform 0.08s;
+}
+.att-choice__btn:active { transform: scale(0.97); }
+.att-choice__btn--present:hover { border-color: #10b981; color: #065f46; }
+.att-choice__btn--absent:hover  { border-color: #ef4444; color: #991b1b; }
+.att-choice__btn--present.is-on { background: #d1fae5; border-color: #10b981; color: #065f46; }
+.att-choice__btn--absent.is-on  { background: #fee2e2; border-color: #ef4444; color: #991b1b; }
 
 /* ─── Salidas tempranas ──────────────────────────────────────── */
 .att-form {
@@ -1117,6 +1203,35 @@ body { background: var(--bg); }
 .conv-article__code  { font-size: 0.78rem; font-weight: 700; color: var(--t1); white-space: nowrap; }
 .conv-article__title { font-size: 0.8rem; color: var(--t2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* Búsqueda de estudiante: filtros grado/salón */
+.conv-search { display: flex; flex-direction: column; gap: 10px; }
+.conv-search__filters {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.att-search__hint { color: var(--t2); font-size: 0.82rem; cursor: default; }
+
+/* Filtro de artículos: severidad + buscador */
+.conv-article-filters {
+  display: flex; align-items: center; gap: 10px;
+  margin-top: 8px; flex-wrap: wrap;
+}
+.conv-article-filters .dash__field-input { flex: 1 1 220px; }
+.conv-sev-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.conv-sev-chip {
+  border: 1.5px solid var(--border); background: transparent;
+  color: var(--t2); border-radius: 999px;
+  padding: 5px 12px; font-size: 0.74rem; font-weight: 700;
+  cursor: pointer; transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.conv-sev-chip:hover { border-color: #b8b3cf; }
+.conv-sev-chip.is-on { background: #ede9fe; border-color: #6d28d9; color: #4A0A9E; }
+.conv-sev-chip--green.is-on  { background: #d1fae5; border-color: #10b981; color: #065f46; }
+.conv-sev-chip--yellow.is-on { background: #fef3c7; border-color: #f59e0b; color: #92400e; }
+.conv-sev-chip--red.is-on    { background: #fee2e2; border-color: #ef4444; color: #991b1b; }
+.conv-count { color: #6d28d9; font-weight: 700; }
+
 .conv-sign-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
 .conv-clear {
   background: none; border: none; color: #6d28d9;
@@ -1128,6 +1243,29 @@ body { background: var(--bg); }
   background: var(--surface);
   touch-action: none; cursor: crosshair;
 }
+
+/* ─── Historial de convivencia ───────────────────────────────── */
+.hist-toggle {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 0.82rem; color: var(--t2); cursor: pointer;
+}
+.hist-toggle input { width: 15px; height: 15px; accent-color: #6d28d9; cursor: pointer; }
+.hist-sev { display: flex; gap: 6px; flex-wrap: wrap; flex: 0 0 auto; }
+.hist-obs {
+  margin-top: 6px; font-size: 0.85rem; color: var(--t1);
+  white-space: pre-wrap; line-height: 1.5;
+}
+.hist-signature {
+  margin-top: 6px; width: 100%; max-width: 420px; height: auto;
+  border: 1px solid var(--border); border-radius: 12px; background: var(--surface);
+}
+.hist-notes { display: flex; flex-direction: column; gap: 8px; margin: 8px 0 4px; }
+.hist-note {
+  padding: 10px 12px; border-radius: 10px;
+  background: var(--bg); border: 1px solid var(--border);
+}
+.hist-note__text { font-size: 0.85rem; color: var(--t1); white-space: pre-wrap; line-height: 1.45; }
+.hist-note__meta { display: block; margin-top: 4px; font-size: 0.72rem; color: var(--t2); }
 
 /* ─── Admin ──────────────────────────────────────────────────── */
 .admin-section { margin-bottom: 22px; }

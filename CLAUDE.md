@@ -25,6 +25,18 @@ No encouragement or positivity needed. Critical thinking and direct corrections 
 
 El proyecto usa **monolito por capas**: Router → Service → Repository. La arquitectura detallada vive en `docs/architecture.md`.
 
+```
+api/app/
+├── core/        — config, database, celery, dependencies, security
+├── models/      — SQLAlchemy models + enums.py
+├── schemas/     — Pydantic request/response schemas
+├── repositories/— queries SQL (una clase por módulo)
+├── services/    — lógica de negocio + clases Notifier para jobs
+├── routers/     — endpoints FastAPI
+├── jobs/        — Celery tasks (wrappers delgados sobre Notifiers)
+└── adapters/    — email/ y storage/ (Protocol + implementación)
+```
+
 Restricciones que no deben violarse:
 - Ninguna capa se salta la inmediatamente siguiente. Un Router nunca toca el Repository directamente.
 - No microservicios, no DDD, no Clean Architecture — decisión explícita documentada en `docs/architecture.md`.
@@ -64,6 +76,8 @@ Los jobs de Celery que acceden a tablas operativas deben recibir `institution_id
 - `docker compose exec -T api python -m scripts.seed_pae` — inscribe los estudiantes demo al PAE y registra entregas de la semana con la cadena de doble hash válida. Es Python (no SQL) porque los hashes dependen de `PAE_SIGNING_SECRET`. Correr **después** del seed SQL.
 - Obtener token JWT para pruebas manuales (tras `seed_base`, form-urlencoded con `username`/`password`, no JSON):
   `export TOKEN=$(curl -s -X POST http://localhost:8000/auth/login -d "username=demo@biga.app&password=Test1234!" | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")`
+- Recargar worker Celery tras cambiar código en `app/jobs/` (no tiene autoreload):
+  `docker compose exec worker python -c "import os, signal; os.kill(1, signal.SIGHUP)"`
 
 ## Tests
 
@@ -80,6 +94,10 @@ El `asyncio_mode = "auto"` en `pyproject.toml` hace que todos los tests `async d
 
 Para testear una validación del Service que duplica una regla del schema Pydantic (ej. `Field(min_length=1)`), construir el input con `Schema.model_construct(...)` — bypassa la validación de Pydantic y permite llegar al chequeo del Service.
 
+Correr localmente fuera del contenedor: `set -a && source ../.env && set +a` antes del comando pytest — `Settings()` busca `.env` relativo al cwd (`api/`), que no existe; sin las env vars el conftest falla al importar `app.main`.
+
+Sin virtualenv local y con el stack abajo, correr unitarios en contenedor efímero (sin levantar servicios): `docker compose run --rm --no-deps api sh -c "pip install -q -r requirements-dev.txt && pytest tests/unit -q"`
+
 ## Gestión de dependencias
 
 - Producción: `api/requirements.txt`
@@ -92,7 +110,11 @@ Para testear una validación del Service que duplica una regla del schema Pydant
 
 ## Módulos del dominio
 
-Módulos implementados: `auth`, `agendatorio`, `students` (registro append-only + búsqueda), `pae` (inscripción, entrega, reporte semanal, auditoría), `attendance` (primera hora + justificación por link), `departures` (salidas anticipadas), `admin` (estadísticas `GET /admin/stats` + consola de gestión: usuarios, grados, grupos, matrículas, horarios `class_periods` y asignación docente-grupo). Pendientes: `imports`.
+Módulos implementados: `auth`, `agendatorio` (registro de convivencia + historial del docente: notas de seguimiento append-only y ocultar del panel vía `archived_at`, sin borrar), `students` (registro append-only + búsqueda), `pae` (inscripción, entrega, reporte semanal, auditoría, notificación de no reclamo), `attendance` (primera hora + justificación por link), `departures` (salidas anticipadas), `admin` (estadísticas `GET /admin/stats` + consola de gestión: usuarios, grados, grupos, matrículas, horarios `class_periods` y asignación docente-grupo). Pendientes: `imports`.
+
+Búsqueda de estudiantes (`GET /students/search`): `q` es **opcional** — con `grade_id`/`group_id` se navega por grado/salón sin escribir. Es **insensible a acentos** vía la extensión `unaccent` (`Lopez` encuentra `López`; migración `d4a2c7e91b05`). Los selectores de grado/salón se llenan con `GET /agendatorio/grades` y `GET /agendatorio/groups` (accesibles a **staff**, no solo admin). El front reutiliza el componente `StudentSearch` en Convivencia e Historial.
+
+Foto del estudiante: se **sube a MinIO** vía `POST /students/{id}/photo` (multipart), igual que la firma del agendatorio. `students.photo_url` guarda la **key** (no la URL); todo servicio que la devuelve la presigna con `resolve_photo_url(storage, ...)` de `app/core/photos.py` (deja pasar URLs `http(s)://` externas por compat). Por eso `PAEService`/`AttendanceService`/`StudentService` reciben el `S3StorageAdapter` inyectado.
 
 Roles (`user_role`): `TEACHER`, `PAE_OPERATOR`, `ADMIN`. El operador PAE es un docente con funciones extra del PAE — las funciones de aula usan `require_staff` (TEACHER+PAE_OPERATOR); la gestión y estadísticas usan `require_admin`. Inscripción PAE y listado del día admiten PAE_OPERATOR o ADMIN (`require_pae_or_admin` en el router PAE). Dependencies en `app/core/dependencies.py`.
 Cada módulo sigue el mismo patrón de archivos paralelos en cada capa.
@@ -101,10 +123,11 @@ Para proteger un endpoint con autenticación: `current_user: User = Depends(get_
 
 ## Asistencia, salidas y jobs de notificación
 
-- **Asistencia de primera hora**: el docente toma lista de su clase con `period_order=1` del día (resuelta vía `user_groups` → `class_periods`). Por cada `ABSENT` se encola `notify_absence_first_hour` con `countdown = ATTENDANCE_GRACE_MINUTES * 60` (default 50, bajar en dev). Si el alumno llega dentro de la ventana, el docente lo marca tardanda (`POST /attendance/records/{id}/arrived` → `LATE`) y el job, al disparar, relee el estado y no notifica.
+- **Asistencia clase a clase**: el docente toma lista de **cualquier** clase del día, no solo la primera hora (scope 3.2). `GET /attendance/today` lista sus clases de hoy (resueltas vía `user_groups` → `class_periods` por `day_of_week`, con badge `already_taken`); `GET /attendance/classes/{class_period_id}` devuelve el roster de una clase; `POST /attendance` registra la lista. La UNIQUE `(student_id, class_period_id, date)` permite un registro por estudiante por clase por día (no requiere migración: el esquema ya lo soportaba). **La notificación al acudiente solo se dispara en primera hora** (`period_order == 1`): ahí, por cada `ABSENT` se encola `notify_absence_first_hour` con `countdown = ATTENDANCE_GRACE_MINUTES * 60` (default 50, bajar en dev). Las clases 2–N se registran para historial, sin correo. Si el alumno llega dentro de la ventana, el docente lo marca tardanza (`POST /attendance/records/{id}/arrived` → `LATE`) y el job, al disparar, relee el estado y no notifica.
 - **Justificación por link**: el correo de inasistencia lleva un enlace de un solo uso `FRONTEND_URL/justificar/{token}` (tabla `attendance_tokens`, vence a medianoche). Los endpoints `GET/POST /attendance/justify/{token}` son **públicos** (sin JWT): el token UUID es la autorización. Al justificar, el registro pasa a `JUSTIFIED`.
 - **Salidas anticipadas**: `POST /departures` crea el registro y encola `notify_early_departure` (correo informativo, sin token).
-- **Jobs Celery + BD async**: las tareas son síncronas pero la BD es async. `app/jobs/runner.py::run_db_job` levanta un engine `NullPool` propio por tarea, hace commit/rollback y lo descarta. Cada job arma su notifier (`AttendanceNotifier`/`DepartureNotifier`) con esa sesión y un `EmailAdapter`. Un fallo de correo se registra en `notifications_log` como `FAILED` y **no** relanza. Sin una API key real de Resend el correo no sale, pero el enlace de justificación queda en los logs del worker.
+- **Jobs Celery + BD async**: las tareas son síncronas pero la BD es async. `app/jobs/runner.py::run_db_job` levanta un engine `NullPool` propio por tarea, hace commit/rollback y lo descarta. Cada job arma su notifier (`AttendanceNotifier`/`DepartureNotifier`/`DisciplineRecordNotifier`/`PAENotifier`) con esa sesión y un `EmailAdapter`. Un fallo de correo se registra en `notifications_log` como `FAILED` y **no** relanza. Sin una API key real de Resend el correo no sale, pero el enlace de justificación queda en los logs del worker.
+- **PAE no reclamado**: único job **programado** (no por evento). `beat_schedule` en `app/core/celery.py` corre `sweep_pae_no_claim` cada 15 min → por cada institución cuya `pae_delivery_end_time` (columna en `institutions`) ya pasó hoy, encola `notify_pae_no_claim(institution_id, date)`. `PAENotifier` es idempotente (omite a quienes ya tienen log `PAE_NO_CLAIM` hoy) y no notifica si hubo 0 entregas ese día. Requiere el servicio `beat` levantado.
 
 ## Integridad PAE — doble hash encadenado (regla crítica)
 
@@ -123,6 +146,7 @@ Funciones en `app/core/security.py`. `register_delivery` verifica la capa 1 ante
 - Los estilos globales y variables van en `web/src/index.css`.
 - Las páginas viven en `web/src/pages/`, los componentes reutilizables en `web/src/components/`.
 - Los hooks personalizados van en `web/src/hooks/`.
+- El frontend requiere `web/.env` (gitignored, sin `.env.example`) con `VITE_API_URL=http://localhost:8000`. Sin esa var, `fetch` va a `undefined/...` y todo el front falla en silencio. El CORS del API ya permite `http://localhost:5173`. (`vite.config.js` tiene un proxy `/api-proxy` que el código actual no usa.)
 
 ## Pitfalls conocidos
 
@@ -139,8 +163,10 @@ Funciones en `app/core/security.py`. `register_delivery` verifica la capa 1 ante
 - `docker stop` falla con "permission denied" por AppArmor. Workaround: `sudo kill -9 $(docker inspect --format '{{.State.Pid}}' <id>)`.
 - `POST /auth/login` espera `application/x-www-form-urlencoded` con campos `username`/`password` (OAuth2PasswordRequestForm), no JSON con `email`/`password`.
 - Si un curl a un endpoint con path param (ej. `/agendatorio/records/$RECORD_ID`) devuelve body vacío sin error visible, revisar que la variable no esté vacía: un segmento final vacío (`/records/`) dispara un 307 a `/records` que curl no sigue por defecto, devolviendo body vacío en silencio.
-- Los jobs de Celery son funciones sync pero `AsyncSessionLocal` es async: el patrón es `asyncio.run(_run(...))` donde `_run` hace `await _logica(...)` y luego `await engine.dispose()` **dentro del mismo `asyncio.run`** (mismo event loop). Sin el `dispose()`, la segunda ejecución del task en el mismo proceso worker reutiliza una conexión asyncpg de un loop ya cerrado y falla con `InterfaceError: cannot perform operation: another operation is in progress`. Si el `dispose()` se hace en un `asyncio.run` separado, falla con `RuntimeError: ... attached to a different loop` al cerrar la conexión. Ver `app/jobs/agendatorio_jobs.py` como referencia para `pae`, `attendance`, `departures`.
-- El `worker` de Celery no tiene autoreload (a diferencia de `uvicorn --reload` en `api`). Tras cambiar código en `app/jobs/`, recargar con `docker compose exec worker python -c "import os, signal; os.kill(1, signal.SIGHUP)"` (SIGHUP reinicia el worker) — `docker compose restart worker` choca con el problema de AppArmor de `docker stop`.
+- Tras un pull que añade vars a `.env.example`, `worker`/`beat` crashean al arrancar con `ValueError: Field required` de Pydantic (campos nuevos en `Settings` que no están en el `.env` local gitignored). Detectar vars ausentes: `diff <(grep -oP '^[A-Z_]+(?==)' .env.example | sort) <(grep -oP '^[A-Z_]+(?==)' .env | sort)`.
+- El `worker` de Celery no tiene autoreload. Usar el comando SIGHUP de "Comandos frecuentes" para recargar — `docker compose restart worker` choca con el problema de AppArmor de `docker stop`.
 - Al crear un módulo de job nuevo en `app/jobs/`, agregarlo al `include` de `app/core/celery.py` — si no, el worker nunca registra el task y `.delay()` encola mensajes que nadie ejecuta nunca (sin error visible).
 - Los tests de repository (queries SQL reales, joins, M2M) no se pueden mockear con sentido. No existe infraestructura de fixtures contra Postgres real (`tests/integration/` vacío) — definir esa infraestructura antes de escribir `test_*_repository.py` en cualquier módulo.
+- Probar correos sin dominio verificado en Resend: `EMAIL_FROM=onboarding@resend.dev` y el destinatario **debe** ser el correo dueño de la cuenta Resend — cualquier otro destinatario da 403 y el notifier lo registra como `FAILED`. Verificar `biga.app` (SPF/DKIM) es requisito para enviar a acudientes reales.
+- `scripts/seed_dev_users.sql` usa `ON CONFLICT (id) DO NOTHING`: re-correrlo **no** actualiza filas existentes. Para cambiar datos ya seedeados (ej. el correo de los acudientes) usar `UPDATE` directo: `UPDATE guardians SET email='...' WHERE is_primary = true;`
 

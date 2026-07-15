@@ -18,6 +18,11 @@ from app.schemas.agendatorio import (
     DisciplineRecordCreate,
     DisciplineRecordDetail,
     DisciplineRecordResponse,
+    GradeOption,
+    GroupOption,
+    MyRecordItem,
+    NoteCreate,
+    NoteResponse,
 )
 from app.services.agendatorio_service import AgendatorioService
 
@@ -34,6 +39,24 @@ def get_agendatorio_service(
         guardian_repo=GuardianRepository(db),
         storage=storage,
     )
+
+
+# --- Catálogo académico (para los selectores de búsqueda de estudiantes) ---
+
+@router.get("/grades", response_model=list[GradeOption])
+async def list_grades(
+    current_user: User = Depends(get_current_user),
+    service: AgendatorioService = Depends(get_agendatorio_service),
+):
+    return await service.list_grades(current_user.institution_id)
+
+
+@router.get("/groups", response_model=list[GroupOption])
+async def list_groups(
+    current_user: User = Depends(get_current_user),
+    service: AgendatorioService = Depends(get_agendatorio_service),
+):
+    return await service.list_groups(current_user.institution_id)
 
 
 # --- Artículos ---
@@ -115,6 +138,25 @@ async def list_records(
     )
 
 
+@router.get("/my-records", response_model=list[MyRecordItem])
+async def list_my_records(
+    student_id: UUID | None = None,
+    include_archived: bool = False,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+    service: AgendatorioService = Depends(get_agendatorio_service),
+):
+    return await service.list_my_records(
+        user_id=current_user.id,
+        institution_id=current_user.institution_id,
+        student_id=student_id,
+        include_archived=include_archived,
+        skip=skip,
+        limit=limit,
+    )
+
+
 @router.get("/records/{record_id}", response_model=DisciplineRecordDetail)
 async def get_record(
     record_id: UUID,
@@ -122,3 +164,42 @@ async def get_record(
     service: AgendatorioService = Depends(get_agendatorio_service),
 ):
     return await service.get_record(record_id, current_user.institution_id)
+
+
+@router.post("/records/{record_id}/notes", response_model=NoteResponse, status_code=201)
+async def add_note(
+    record_id: UUID,
+    body: NoteCreate,
+    current_user: User = Depends(get_current_user),
+    service: AgendatorioService = Depends(get_agendatorio_service),
+):
+    return await service.add_note(
+        record_id=record_id,
+        user_id=current_user.id,
+        institution_id=current_user.institution_id,
+        note=body.note,
+    )
+
+
+@router.post("/records/{record_id}/archive", status_code=204)
+async def archive_record(
+    record_id: UUID,
+    current_user: User = Depends(get_current_user),
+    service: AgendatorioService = Depends(get_agendatorio_service),
+):
+    await service.set_record_archived(
+        record_id=record_id, user_id=current_user.id,
+        institution_id=current_user.institution_id, archived=True,
+    )
+
+
+@router.post("/records/{record_id}/unarchive", status_code=204)
+async def unarchive_record(
+    record_id: UUID,
+    current_user: User = Depends(get_current_user),
+    service: AgendatorioService = Depends(get_agendatorio_service),
+):
+    await service.set_record_archived(
+        record_id=record_id, user_id=current_user.id,
+        institution_id=current_user.institution_id, archived=False,
+    )

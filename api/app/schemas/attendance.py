@@ -16,15 +16,35 @@ class AttendanceStudentItem(BaseModel):
     record_id: UUID | None = None    # id del registro de hoy (para marcar llegada)
 
 
-class FirstClassResponse(BaseModel):
-    has_class: bool
-    class_period_id: UUID | None = None
-    group_id: UUID | None = None
-    group_name: str | None = None
-    grade_name: str | None = None
-    period_name: str | None = None
-    start_time: time | None = None
-    end_time: time | None = None
+class ClassSlot(BaseModel):
+    """Una clase del docente en el día de hoy (para el selector de asistencia)."""
+    class_period_id: UUID
+    period_order: int
+    name: str
+    group_id: UUID
+    group_name: str
+    grade_name: str
+    start_time: time
+    end_time: time
+    already_taken: bool = False
+    is_first_hour: bool = False  # solo la primera hora dispara notificación al acudiente
+
+
+class TodayClassesResponse(BaseModel):
+    date: PyDate
+    classes: list[ClassSlot] = []
+
+
+class ClassAttendanceResponse(BaseModel):
+    class_period_id: UUID
+    group_id: UUID
+    group_name: str
+    grade_name: str
+    period_name: str
+    period_order: int
+    is_first_hour: bool
+    start_time: time
+    end_time: time
     date: PyDate
     already_taken: bool = False
     students: list[AttendanceStudentItem] = []
@@ -58,6 +78,7 @@ class JustificationInfo(BaseModel):
     student_name: str | None = None
     date: PyDate | None = None
     group_name: str | None = None
+    grade_name: str | None = None
     already_justified: bool = False
     message: str | None = None
 
@@ -85,6 +106,7 @@ class JustificationMessage(BaseModel):
     record_id: UUID
     student_name: str
     group_name: str | None
+    grade_name: str | None
     date: PyDate
     reason: str
     submitted_at: datetime

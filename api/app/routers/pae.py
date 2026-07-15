@@ -3,8 +3,9 @@ from datetime import date
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.adapters.storage.s3 import S3StorageAdapter
 from app.core.database import get_db
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, get_storage_adapter
 from app.models.enums import UserRole
 from app.models.user import User
 from app.repositories.pae_repository import PAERepository
@@ -23,8 +24,11 @@ from fastapi import HTTPException, status
 router = APIRouter(prefix="/pae", tags=["pae"])
 
 
-def get_pae_service(db: AsyncSession = Depends(get_db)) -> PAEService:
-    return PAEService(PAERepository(db), db)
+def get_pae_service(
+    db: AsyncSession = Depends(get_db),
+    storage: S3StorageAdapter = Depends(get_storage_adapter),
+) -> PAEService:
+    return PAEService(PAERepository(db), db, storage)
 
 
 def require_pae_operator(current_user: User = Depends(get_current_user)) -> User:

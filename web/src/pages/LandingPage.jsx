@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import Navbar from '../components/Navbar';
 import Hero from '../components/Hero';
 import Mission from '../components/Mission';
@@ -8,6 +9,8 @@ import CallToAction from '../components/CallToAction';
 import Footer from '../components/Footer';
 
 export default function LandingPage() {
+  useEffect(() => { document.title = 'BIGA - Tecnología Educativa'; }, []);
+
   return (
     <>
       <Navbar />

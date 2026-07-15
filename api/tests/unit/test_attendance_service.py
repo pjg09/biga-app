@@ -18,7 +18,7 @@ def _student(sid):
 
 
 def _service(repo):
-    return AttendanceService(repo)
+    return AttendanceService(repo, MagicMock())
 
 
 async def test_submit_rejects_non_submittable_status():
@@ -86,6 +86,29 @@ async def test_submit_success_schedules_only_absent():
     assert len(result) == 2
     # Solo el ausente se programa para notificación.
     assert task.apply_async.call_count == 1
+
+
+async def test_submit_non_first_hour_does_not_notify():
+    # Clase que no es primera hora (period_order != 1): se registra la asistencia
+    # pero NO se encola ninguna notificación al acudiente (scope 3.2).
+    s1, s2 = uuid4(), uuid4()
+    cp = SimpleNamespace(id=uuid4(), period_order=3, group_id=uuid4())
+    repo = AsyncMock()
+    repo.teacher_owns_class_period.return_value = cp
+    repo.get_records_for_class.return_value = []
+    repo.get_group_roster.return_value = [_student(s1), _student(s2)]
+    service = _service(repo)
+    data = AttendanceSubmit(
+        class_period_id=cp.id,
+        entries=[
+            AttendanceEntry(student_id=s1, status=AttendanceStatus.PRESENT),
+            AttendanceEntry(student_id=s2, status=AttendanceStatus.ABSENT),
+        ],
+    )
+    with patch("app.services.attendance_service.notify_absence_first_hour") as task:
+        result = await service.submit_attendance(user_id=uuid4(), institution_id=uuid4(), data=data)
+    assert len(result) == 2
+    assert task.apply_async.call_count == 0
 
 
 async def test_mark_arrived_absent_becomes_late():

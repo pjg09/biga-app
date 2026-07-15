@@ -19,6 +19,7 @@ async function request(path, options = {}) {
     throw Object.assign(new Error(err.detail ?? 'Error de servidor'), { status: res.status });
   }
 
+  if (res.status === 204) return null;  // No Content (ej. archive/unarchive)
   return res.json();
 }
 
