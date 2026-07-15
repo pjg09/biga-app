@@ -826,12 +826,12 @@ function StudentSearch({ selected, onSelect, onClear }) {
       </div>
 
       <div className="att-search">
-        <input className="dash__field-input" placeholder="Buscar por nombre o documento\u2026" value={query}
+        <input className="dash__field-input" placeholder="Buscar por nombre o documento…" value={query}
           onChange={e => setQuery(e.target.value)} autoComplete="off" />
         {(results.length > 0 || searching) && (
           <div className="att-search__results">
             {searching && results.length === 0 && (
-              <div className="att-search__item att-search__hint">Buscando\u2026</div>
+              <div className="att-search__item att-search__hint">Buscando…</div>
             )}
             {results.map(r => (
               <button type="button" key={r.id} className="att-search__item" onClick={() => onSelect(r)}>
