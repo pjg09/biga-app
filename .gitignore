@@ -177,6 +177,11 @@ pnpm-debug.log*
 .dockerignore
 docker-compose.override.yml
 
+# Celery (artefactos de runtime)
+api/celerybeat-schedule
+celerybeat-schedule
+celerybeat.pid
+
 # Misc
 *.bak
 *.swp
