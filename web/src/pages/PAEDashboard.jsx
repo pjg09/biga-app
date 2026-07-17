@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { paeService } from '../services/pae';
 import { studentService } from '../services/students';
-import { AttendanceView, DeparturesView, ScheduleView, ConvivenciaView, HistorialView, MensajesView } from './TeacherDashboard';
+import { AttendanceView, DeparturesView, ScheduleView, ConvivenciaView, HistorialView, MensajesView, StudentPhoto } from './TeacherDashboard';
 import '../styles/dashboard.css';
 
 const AVATARS = [
@@ -386,7 +386,7 @@ function PAERegisterView() {
                     <td>
                       <div className="dash__table-student">
                         {s.photo_url ? (
-                          <img className="dash__table-photo" src={s.photo_url} alt="" />
+                          <StudentPhoto src={s.photo_url} alt="" caption={`${s.first_name} ${s.last_name}`} />
                         ) : (
                           <div className="dash__student-avatar" style={{ background: av.bg, color: av.color, width: 32, height: 32, fontSize: '0.62rem' }}>
                             {initials(s.first_name, s.last_name)}
@@ -522,7 +522,7 @@ function PAEEnrolledView() {
                 <td>
                   <div className="dash__table-student">
                     {s.photo_url ? (
-                      <img className="dash__table-photo" src={s.photo_url} alt="" />
+                      <StudentPhoto src={s.photo_url} alt="" caption={`${s.first_name} ${s.last_name}`} />
                     ) : (
                       <div className="dash__student-avatar" style={{ background: av.bg, color: av.color, width: 32, height: 32, fontSize: '0.62rem' }}>
                         {initials(s.first_name, s.last_name)}
@@ -765,7 +765,7 @@ export function StudentsView() {
                     <td>
                       <div className="dash__table-student">
                         {s.photo_url ? (
-                          <img className="dash__table-photo" src={s.photo_url} alt="" />
+                          <StudentPhoto src={s.photo_url} alt="" caption={`${s.first_name} ${s.last_name}`} />
                         ) : (
                           <div className="dash__student-avatar" style={{ background: av.bg, color: av.color, width: 32, height: 32, fontSize: '0.62rem' }}>
                             {initials(s.first_name, s.last_name)}

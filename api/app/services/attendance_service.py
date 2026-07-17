@@ -241,6 +241,7 @@ class AttendanceService:
             JustificationMessage(
                 record_id=r.record_id,
                 student_name=r.student_name,
+                photo_url=resolve_photo_url(self.storage, r.photo_url),
                 group_name=r.group_name,
                 grade_name=r.grade_name,
                 date=r.date,

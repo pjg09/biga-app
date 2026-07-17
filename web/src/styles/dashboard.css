@@ -79,11 +79,11 @@ body { background: var(--bg); }
 .dash__nav-section { margin-bottom: 10px; }
 
 .dash__nav-label {
-  font-size: 0.58rem;
+  font-size: 0.87rem;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--t3);
+  color: var(--t2);
   padding: 8px 8px 4px;
 }
 
@@ -93,7 +93,7 @@ body { background: var(--bg); }
   gap: 10px;
   padding: 9px 11px;
   border-radius: 9px;
-  font-size: 0.845rem;
+  font-size: 1.01rem;
   font-weight: 500;
   color: var(--t2);
   cursor: pointer;
@@ -112,7 +112,7 @@ body { background: var(--bg); }
 .dash__nav-item--active {
   background: var(--purple-soft);
   color: var(--purple);
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .dash__nav-item--active:hover {
@@ -133,7 +133,7 @@ body { background: var(--bg); }
 }
 
 .dash__nav-item-icon {
-  width: 18px; height: 18px;
+  width: 22px; height: 22px;
   flex-shrink: 0;
   display: flex; align-items: center;
 }
@@ -165,16 +165,17 @@ body { background: var(--bg); }
 .dash--pae     .dash__user-avatar { background: var(--green-soft);  color: var(--green-acc); }
 
 .dash__user-info { flex: 1; min-width: 0; }
-.dash__user-name { font-size: 0.78rem; font-weight: 600; color: var(--t1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.dash__user-role { font-size: 0.66rem; color: var(--t3); margin-top: 1px; }
+.dash__user-name { font-size: 0.78rem; font-weight: 700; color: var(--t1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dash__user-role { font-size: 0.79rem; font-weight: 600; color: var(--t2); margin-top: 1px; }
 
 .dash__logout-btn {
   background: none; border: none;
-  cursor: pointer; color: var(--t3);
+  cursor: pointer; color: var(--t2);
   padding: 5px; border-radius: 6px;
   display: flex; align-items: center;
   transition: color 0.13s, background 0.13s;
 }
+.dash__logout-btn svg { width: 16px; height: 16px; stroke-width: 2.1; }
 .dash__logout-btn:hover { color: var(--t1); background: var(--bg); }
 
 /* ─── Main ───────────────────────────────────────────────────── */
@@ -195,12 +196,12 @@ body { background: var(--bg); }
 }
 
 .dash__page-greeting {
-  font-size: 0.68rem;
-  font-weight: 600;
-  color: var(--t3);
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: var(--t1);
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  margin-bottom: 5px;
+  margin-bottom: 21.6px;
 }
 
 .dash__page-title {
@@ -212,7 +213,7 @@ body { background: var(--bg); }
 }
 
 .dash__page-badge {
-  font-size: 0.67rem;
+  font-size: 0.8rem;
   font-weight: 700;
   padding: 5px 13px;
   border-radius: 99px;
@@ -430,6 +431,10 @@ body { background: var(--bg); }
 .dash__student-info { flex: 1; min-width: 0; }
 .dash__student-name  { font-size: 0.84rem; font-weight: 500; color: var(--t1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dash__student-group { font-size: 0.67rem; color: var(--t3); margin-top: 1px; }
+.att-class-row .dash__student-group,
+.att-roster-row .dash__student-group,
+.stu-row .dash__student-group { font-size: 0.8rem; color: var(--t2); }
+.att-class-row .dash__badge { font-size: 0.78rem; }
 .dash__student-time  { font-size: 0.72rem; color: var(--t2); font-variant-numeric: tabular-nums; flex-shrink: 0; min-width: 38px; text-align: right; }
 
 /* ─── Badges ─────────────────────────────────────────────────── */
@@ -561,7 +566,7 @@ body { background: var(--bg); }
 .dash__scan-title { font-size: 0.92rem; font-weight: 700; color: var(--t1); }
 .dash__scan-desc  { font-size: 0.76rem; color: var(--t2); line-height: 1.55; }
 
-.btn--primary {
+.dash .btn--primary {
   background: var(--purple);
   color: white;
   border: none;
@@ -571,10 +576,10 @@ body { background: var(--bg); }
   transition: background 0.13s, transform 0.1s;
   width: 100%; letter-spacing: 0.02em;
 }
-.btn--primary:hover  { background: #5b21b6; transform: translateY(-1px); }
-.btn--primary:active { transform: translateY(0); }
+.dash .btn--primary:hover  { background: #5b21b6; transform: translateY(-1px); }
+.dash .btn--primary:active { transform: translateY(0); }
 
-.btn--secondary {
+.dash .btn--secondary {
   background: var(--bg);
   color: var(--t1);
   border: 1px solid var(--border);
@@ -584,7 +589,7 @@ body { background: var(--bg); }
   transition: background 0.13s;
   width: 100%;
 }
-.btn--secondary:hover { background: var(--purple-soft); color: var(--purple); border-color: transparent; }
+.dash .btn--secondary:hover { background: var(--purple-soft); color: var(--purple); border-color: transparent; }
 
 /* ─── PAE bar chart ──────────────────────────────────────────── */
 .dash__chart-card {
@@ -913,7 +918,7 @@ body { background: var(--bg); }
   flex: 1;
 }
 
-.btn--confirm {
+.dash .btn--confirm {
   flex: 2;
   background: var(--green-acc);
   color: white;
@@ -927,9 +932,9 @@ body { background: var(--bg); }
   display: flex; align-items: center; justify-content: center; gap: 8px;
   letter-spacing: 0.02em;
 }
-.btn--confirm:hover:not(:disabled)  { background: #047857; transform: translateY(-1px); }
-.btn--confirm:active:not(:disabled) { transform: translateY(0); }
-.btn--confirm:disabled { opacity: 0.7; cursor: not-allowed; }
+.dash .btn--confirm:hover:not(:disabled)  { background: #047857; transform: translateY(-1px); }
+.dash .btn--confirm:active:not(:disabled) { transform: translateY(0); }
+.dash .btn--confirm:disabled { opacity: 0.7; cursor: not-allowed; }
 
 /* ─── Toast ──────────────────────────────────────────────────── */
 .dash__toast {
@@ -1028,10 +1033,12 @@ body { background: var(--bg); }
 }
 .att-class-row:last-child { border-bottom: none; }
 
-.att-back {
+.btn--secondary.att-back {
   margin-bottom: 12px;
   display: inline-flex;
   align-items: center;
+  border-color: var(--t3);
+  font-size: 0.88rem;
 }
 
 .att-head {
@@ -1044,8 +1051,21 @@ body { background: var(--bg); }
   flex-wrap: wrap;
 }
 .att-head__period { font-size: 1rem; font-weight: 700; color: var(--t1); }
-.att-head__sub    { font-size: 0.8rem; color: var(--t2); margin-top: 2px; }
+.att-head__sub    { font-size: 0.9rem; color: var(--t2); margin-top: 2px; }
 .att-head__counts { display: flex; gap: 8px; flex-wrap: wrap; }
+.att-head__counts .dash__badge { font-size: 0.78rem; }
+.att-roster-row .dash__badge { font-size: 0.78rem; }
+
+/* "Clases de hoy" — tabla resumen +50% en todos sus elementos */
+.att-today .dash__list-title    { font-size: 1.06rem; }
+.att-today .dash__student-avatar { width: 44px; height: 44px; font-size: 0.81rem; }
+.att-today .dash__table-photo   { width: 44px; height: 44px; }
+.att-today .dash__field-input   { font-size: 1rem; padding: 12px 14px; }
+.att-today .att-choice__btn         { font-size: 0.95rem; }
+.att-today .dash__table-register-btn { font-size: 0.95rem; }
+.att-today .dash__student-name  { font-size: 1.02rem; }
+.att-today .dash__student-group { font-size: 0.97rem; }
+.att-today .dash__badge         { font-size: 0.95rem; }
 
 .att-toggle {
   border: none;
@@ -1134,6 +1154,24 @@ body { background: var(--bg); }
   border-radius: 12px;
   padding: 12px 14px;
 }
+.att-selected--photo {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  padding-right: 40px;
+}
+.att-selected--photo .att-selected__info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.att-selected--photo .dash__table-photo,
+.att-selected--photo .dash__student-avatar {
+  width: 56px; height: 56px;
+  flex-shrink: 0;
+}
+
 .att-selected__clear {
   position: absolute;
   top: 10px; right: 12px;
@@ -1142,6 +1180,28 @@ body { background: var(--bg); }
   font-size: 0.9rem;
 }
 .att-selected__clear:hover { color: var(--t1); }
+
+/* Salidas tempranas — +30% en todos los elementos (no el título de página) */
+.dep-scale .dash__list-title     { font-size: 1.14rem; }
+.dep-scale .dash__student-name   { font-size: 1.09rem; }
+.dep-scale .dash__student-group  { font-size: 0.87rem; }
+.dep-scale .dash__student-time   { font-size: 0.94rem; }
+.dep-scale .dash__student-avatar { width: 47px; height: 47px; font-size: 0.87rem; }
+.dep-scale .dash__field-label    { font-size: 0.96rem; color: var(--t1); }
+.dep-scale .dash__field-optional { color: var(--t2); }
+.dep-scale .dash__field-input    { font-size: 1.12rem; }
+.dep-scale .btn--confirm         { font-size: 1.09rem; }
+.dep-scale .dash__empty          { font-size: 1.07rem; }
+.dep-scale .att-selected__clear  { font-size: 1.17rem; }
+.dep-scale .att-selected .dash__student-group { font-size: 1rem; color: var(--t2); }
+.dep-scale .dash__student-row .dash__student-group { font-size: 1rem; color: var(--t2); }
+/* Convivencia — elementos propios del form, mismo escalado que salidas */
+.dep-scale .conv-article__code  { font-size: 1.01rem; }
+.dep-scale .conv-article__title { font-size: 1.04rem; }
+.dep-scale .conv-sev-chip       { font-size: 0.96rem; }
+.dep-scale .conv-clear          { font-size: 0.99rem; }
+.dep-scale .dash__badge         { font-size: 0.85rem; }
+.dep-scale .sched__free         { font-size: 1.01rem; }
 
 /* ─── Horario ────────────────────────────────────────────────── */
 .sched {
@@ -1152,7 +1212,7 @@ body { background: var(--bg); }
 @media (max-width: 900px) { .sched { grid-template-columns: 1fr; } }
 .sched__col { padding: 14px; }
 .sched__day {
-  font-size: 0.8rem; font-weight: 700; color: var(--t1);
+  font-size: 0.88rem; font-weight: 700; color: var(--t1);
   text-transform: uppercase; letter-spacing: 0.04em;
   padding-bottom: 8px; margin-bottom: 8px;
   border-bottom: 1px solid var(--border);
@@ -1164,9 +1224,9 @@ body { background: var(--bg); }
   background: var(--bg); border-radius: 10px;
   border-left: 3px solid #6d28d9;
 }
-.sched__time  { font-size: 0.72rem; font-weight: 700; color: #6d28d9; font-variant-numeric: tabular-nums; }
-.sched__name  { font-size: 0.84rem; font-weight: 600; color: var(--t1); }
-.sched__group { font-size: 0.74rem; color: var(--t2); }
+.sched__time  { font-size: 1.08rem; font-weight: 700; color: #6d28d9; font-variant-numeric: tabular-nums; }
+.sched__name  { font-size: 1.26rem; font-weight: 600; color: var(--t1); }
+.sched__group { font-size: 1.2rem; color: var(--t1); }
 
 /* ─── Mensajes (excusas) ─────────────────────────────────────── */
 .msg {
@@ -1177,13 +1237,23 @@ body { background: var(--bg); }
 .msg:last-child { border-bottom: none; }
 .msg__body { flex: 1; min-width: 0; }
 .msg__head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-.msg__date { font-size: 0.74rem; color: var(--t3); }
+.msg__date { font-size: 0.8rem; color: var(--t2); }
 .msg__reason {
   font-size: 0.86rem; color: var(--t1); line-height: 1.5;
   margin: 6px 0 4px;
   background: var(--bg); border-radius: 10px; padding: 10px 12px;
 }
-.msg__meta { font-size: 0.72rem; color: var(--t3); }
+.msg__meta { font-size: 0.8rem; color: var(--t2); }
+
+/* Mensajes — +50% en todos los elementos + más color en fechas */
+.msg-scale .dash__list-title    { font-size: 1.31rem; }
+.msg-scale .dash__student-group { font-size: 1rem; }
+.msg-scale .dash__student-name  { font-size: 1.26rem; }
+.msg-scale .dash__student-avatar { width: 96px; height: 96px; font-size: 1.6rem; }
+.msg-scale .dash__table-photo   { width: 96px; height: 96px; }
+.msg-scale .msg__date   { font-size: 1.2rem; color: var(--t1); }
+.msg-scale .msg__reason { font-size: 1.29rem; }
+.msg-scale .msg__meta   { font-size: 1.2rem; color: var(--t1); }
 
 /* ─── Convivencia ────────────────────────────────────────────── */
 .conv-articles {
@@ -1251,6 +1321,22 @@ body { background: var(--bg); }
 }
 .hist-toggle input { width: 15px; height: 15px; accent-color: #6d28d9; cursor: pointer; }
 .hist-sev { display: flex; gap: 6px; flex-wrap: wrap; flex: 0 0 auto; }
+
+/* Historial — +50% en todos los elementos + ajustes de color */
+.hist-scale .dash__list-title     { font-size: 1.31rem; }
+.hist-scale .dash__student-avatar { width: 54px; height: 54px; font-size: 1rem; }
+.hist-scale .dash__table-photo    { width: 54px; height: 54px; }
+.hist-scale .dash__student-name   { font-size: 1.26rem; }
+.hist-scale .dash__student-group  { font-size: 1.2rem; }
+.hist-scale .dash__badge          { font-size: 1.17rem; }
+.hist-scale .dash__field-label    { font-size: 1.11rem; }
+.hist-scale .dash__field-input    { font-size: 1.29rem; }
+.hist-scale .hist-toggle          { font-size: 1.23rem; color: var(--t1); }
+.hist-scale .hist-toggle input    { width: 22px; height: 22px; }
+/* más color: filtro grado/salón, descripción del registro, contador */
+.hist-scale .conv-search__filters .dash__field-label { color: var(--t1); }
+.hist-scale .att-class-row .dash__student-group       { color: var(--t1); }
+.hist-scale .dash__list-header .dash__student-group   { color: var(--t1); }
 .hist-obs {
   margin-top: 6px; font-size: 0.85rem; color: var(--t1);
   white-space: pre-wrap; line-height: 1.5;
@@ -1266,6 +1352,25 @@ body { background: var(--bg); }
 }
 .hist-note__text { font-size: 0.85rem; color: var(--t1); white-space: pre-wrap; line-height: 1.45; }
 .hist-note__meta { display: block; margin-top: 4px; font-size: 0.72rem; color: var(--t2); }
+
+/* Detalle de un registro de convivencia — +50% en todos los elementos */
+.rec-scale .att-head__period   { font-size: 1.5rem; }
+.rec-scale .att-head__sub      { font-size: 1.35rem; color: var(--t1); }
+.rec-scale .dash__list-title   { font-size: 1.31rem; }
+.rec-scale .dash__field-label  { font-size: 1.11rem; color: var(--t1); }
+.rec-scale .conv-article__code { font-size: 1.17rem; }
+.rec-scale .conv-article__title{ font-size: 1.2rem; }
+.rec-scale .dash__badge        { font-size: 0.98rem; }
+.rec-scale .hist-obs           { font-size: 1.28rem; }
+.rec-scale .sched__free        { font-size: 1.17rem; }
+.rec-scale .hist-note__text    { font-size: 1.28rem; }
+.rec-scale .hist-note__meta    { font-size: 1.08rem; color: var(--t1); }
+.rec-scale .dash__field-input  { font-size: 1.29rem; }
+.rec-scale .btn--confirm       { font-size: 1.26rem; }
+.rec-scale .att-back           { font-size: 1.32rem; }
+.rec-head__student { display: flex; align-items: center; gap: 14px; }
+.rec-head__student .dash__table-photo,
+.rec-head__student .dash__student-avatar { width: 64px; height: 64px; flex-shrink: 0; }
 
 /* ─── Admin ──────────────────────────────────────────────────── */
 .admin-section { margin-bottom: 22px; }

@@ -74,7 +74,7 @@ Los jobs de Celery que acceden a tablas operativas deben recibir `institution_id
 - `docker compose exec api alembic check` — verificar que no hay drift entre modelos y BD
 - `docker compose exec api python -m scripts.seed_base` — crear institución y usuario demo (BD limpia)
 - `docker compose exec api python -m scripts.seed_agendatorio` — crear estudiante y acudiente de prueba
-- `docker compose exec -T postgres psql -U biga -d biga < scripts/seed_dev_users.sql` — **seed demo completo** (3 usuarios TEACHER/PAE_OPERATOR/ADMIN, grupo 11A con horario, 4 estudiantes + acudientes + matrículas, artículos de convivencia). Correr **después** de `alembic upgrade head`. Credenciales en `docs/databaseDev.md`.
+- `docker compose exec -T postgres psql -U biga -d biga < scripts/seed_dev_users.sql` — **seed demo completo** (3 usuarios TEACHER/PAE_OPERATOR/ADMIN, grupo 11A con horario, 4 estudiantes + acudientes + matrículas, artículos de convivencia). Correr **después** de `alembic upgrade head`. Credenciales en `docs/databaseDev.md`. Ubicación dual de seeds: `seed_dev_users.sql` vive en `./scripts/` (root, se pipea con `psql <`), mientras que `seed_base`/`seed_pae` viven en `api/scripts/` y se corren con `python -m scripts.X` dentro del contenedor.
 - `docker compose exec -T api python -m scripts.seed_pae` — inscribe los estudiantes demo al PAE y registra entregas de la semana con la cadena de doble hash válida. Es Python (no SQL) porque los hashes dependen de `PAE_SIGNING_SECRET`. Correr **después** del seed SQL.
 - Obtener token JWT para pruebas manuales (tras `seed_base`, form-urlencoded con `username`/`password`, no JSON):
   `export TOKEN=$(curl -s -X POST http://localhost:8000/auth/login -d "username=demo@biga.app&password=Test1234!" | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")`
@@ -120,6 +120,8 @@ Búsqueda de estudiantes (`GET /students/search`): `q` es **opcional** — con `
 
 Foto del estudiante: se **sube a MinIO** vía `POST /students/{id}/photo` (multipart), igual que la firma del agendatorio. `students.photo_url` guarda la **key** (no la URL); todo servicio que la devuelve la presigna con `resolve_photo_url(storage, ...)` de `app/core/photos.py` (deja pasar URLs `http(s)://` externas por compat). Por eso `PAEService`/`AttendanceService`/`StudentService` reciben el `S3StorageAdapter` inyectado.
 
+Para exponer `photo_url` en un endpoint de **lista/detalle nuevo**: (1) agregar el campo al Row/dataclass del repo y al schema de respuesta, (2) `select(Student.photo_url)` en la query + mapearlo, (3) presignar con `resolve_photo_url(self.storage, key)` en el service (que debe recibir `S3StorageAdapter` vía `Depends(get_storage_adapter)`). Sin migración (solo lee `students.photo_url`). El front renderiza `<StudentPhoto src={x.photo_url}>` con fallback a avatar de iniciales.
+
 Roles (`user_role`): `TEACHER`, `PAE_OPERATOR`, `ADMIN`. El operador PAE es un docente con funciones extra del PAE — las funciones de aula usan `require_staff` (TEACHER+PAE_OPERATOR); la gestión y estadísticas usan `require_admin`. Inscripción PAE y listado del día admiten PAE_OPERATOR o ADMIN (`require_pae_or_admin` en el router PAE). Dependencies en `app/core/dependencies.py`.
 Cada módulo sigue el mismo patrón de archivos paralelos en cada capa.
 
@@ -148,6 +150,8 @@ Funciones en `app/core/security.py`. `register_delivery` verifica la capa 1 ante
 
 - Cada componente tiene su propio archivo CSS en `web/src/styles/` con el mismo nombre: `Hero.jsx` → `styles/hero.css`.
 - Los estilos globales y variables van en `web/src/index.css`.
+- El CSS de `web/src` es plano y **global (sin scope por componente)**; `dashboard.css` lo comparten Teacher/PAE/Admin (los cambios se reflejan en los tres). Para retocar una sola vista, scopear con una clase wrapper/modificadora en el card (ej. `.att-today`, `.dep-scale`, `.hist-scale`); para pisar reglas base compartidas (`.btn`, `.dash__student-group`) usar selectores de **2 clases** (una sola pierde el desempate de especificidad). Colisión conocida: `dashboard.css` define `.btn--primary{width:100%}` sin scope → App.jsx importa los dashboards eager, así que se filtra a la landing (scopeado bajo `.dash`).
+- Componente `StudentPhoto` (exportado de `TeacherDashboard.jsx`): miniatura de foto + lightbox click-para-ampliar (reusa `.pae-lightbox`). Usarlo en vez de `<img className="dash__table-photo">` suelto.
 - Las páginas viven en `web/src/pages/`, los componentes reutilizables en `web/src/components/`.
 - Los hooks personalizados van en `web/src/hooks/`.
 - El frontend requiere `web/.env` (gitignored, sin `.env.example`) con `VITE_API_URL=http://localhost:8000`. Sin esa var, `fetch` va a `undefined/...` y todo el front falla en silencio. El CORS del API ya permite `http://localhost:5173`. (`vite.config.js` tiene un proxy `/api-proxy` que el código actual no usa.)
@@ -155,6 +159,7 @@ Funciones en `app/core/security.py`. `register_delivery` verifica la capa 1 ante
 
 ## Pitfalls conocidos
 
+- Los dashboards están tras `ProtectedRoute` (JWT): no se capturan en headless sin login (redirige a `/login`). Para verificar cambios visuales: repro estático con el CSS servido por Vite, o `google-chrome-stable --headless=new --remote-debugging-port=N` + Python `websockets` (CDP) para leer estilos/anchos computados reales (`CSS.getMatchedStylesForNode`, `getBoundingClientRect`). El hero de la landing es `100svh`: para capturar secciones inferiores en headless, overridear temporalmente `.hero{min-height:auto}` y `.reveal{opacity:1 !important;transform:none !important}`.
 - Al escribir texto con acentos/caracteres especiales en JSX vía las tools de edición, a veces quedan como escape literal (ej. `Sal\u00f3n` se ve literal en vez de `Salón`; `\u2026` en vez de `…`). En **JSX-texto/atributo** esos escapes NO se interpretan y se ven literales en la UI. Detectar con `grep -rn '\\u00\|\\u2026' web/src`; corregir con `perl -CSD -i -pe 's/\\u2026/\x{2026}/g' <archivo>` (al carácter UTF-8 real).
 - El servicio `web` monta un volumen anónimo en `/app/node_modules` (compose). Tras agregar una dependencia npm nueva, Vite falla con `Failed to resolve import "..."` aunque esté en `package.json`: el volumen viejo tapa el `node_modules` de la imagen. Rebuildear renovando el volumen: `docker compose up -d --build --force-recreate --renew-anon-volumes web` (y matar el contenedor viejo con el workaround de AppArmor si `stop` falla).
 - El build backend en cualquier `pyproject.toml` de este repo debe ser `setuptools.build_meta`. `setuptools.backends.legacy:build` no existe en `python:3.12-slim` y rompe el build de Docker.

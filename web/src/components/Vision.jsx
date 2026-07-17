@@ -2,10 +2,10 @@ import { useScrollReveal } from '../hooks/useScrollReveal';
 import '../styles/vision.css';
 
 export default function Vision() {
-  const labelRef  = useScrollReveal();
-  const quoteRef  = useScrollReveal();
-  const text1Ref  = useScrollReveal();
-  const text2Ref  = useScrollReveal();
+  const labelRef = useScrollReveal();
+  const quoteRef = useScrollReveal();
+  const text1Ref = useScrollReveal();
+  const text2Ref = useScrollReveal();
 
   return (
     <section id="vision" className="vision" aria-labelledby="vision-heading">
@@ -62,7 +62,7 @@ function RoadmapItem({ phase, items, delay }) {
 const ROADMAP = [
   {
     phase: 'Fase 1 — MVP',
-    items: ['Asistencia y PAE', 'Comunicación familia-escuela', 'Módulo convivencia'],
+    items: ['Asistencia y PAE', 'Comunicación familia - escuela', 'Módulo convivencia'],
   },
   {
     phase: 'Fase 2 — Expansión',

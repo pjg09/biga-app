@@ -121,6 +121,21 @@ Componente compartido: **`StudentSearch`** (en `TeacherDashboard.jsx`) — busca
 estudiante con selectores de **grado** y **salón** + texto (nombre/documento), usado
 en Convivencia e Historial. Recibe `selected`/`onSelect`/`onClear`.
 
+Componente compartido: **`StudentPhoto`** (en `TeacherDashboard.jsx`) — miniatura de
+foto de estudiante que al click abre un lightbox a pantalla completa (reusa
+`.pae-lightbox`). Se usa en todas las tablas/detalles con foto (asistencia, salidas,
+estudiantes, mensajes, historial, convivencia). Usarlo en vez de un `<img
+className="dash__table-photo">` suelto.
+
+**CSS global (sin scope):** aunque la convención es "un CSS por componente/página", los
+archivos son planos y aplican a **todo el documento**. `dashboard.css` lo comparten
+Teacher/PAE/Admin (un cambio se refleja en los tres). Para retocar una sola vista,
+scopear con una clase wrapper/modificadora en el card (ej. `.att-today`, `.dep-scale`,
+`.hist-scale`); para pisar reglas base compartidas (`.btn`, `.dash__student-group`)
+usar selectores de **2 clases**. Colisión conocida (ya corregida): `.btn--primary`
+sin scope en `dashboard.css` se filtraba a la landing porque `App.jsx` importa los
+dashboards eager (scopeado bajo `.dash`).
+
 Título de pestaña: cada dashboard setea `document.title` con un `useEffect` al montar
 (`BIGA - Profesores`, `BIGA - PAE`, `BIGA - Administración`); Landing y Login también.
 

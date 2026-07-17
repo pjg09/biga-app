@@ -24,6 +24,7 @@ class MyRecordRow:
     student_name: str
     grade_name: str | None
     group_name: str | None
+    photo_url: str | None
 
 
 @dataclass
@@ -33,6 +34,7 @@ class RecordMeta:
     grade_name: str | None
     group_name: str | None
     recorded_by_name: str
+    photo_url: str | None
 
 
 class AgendatorioRepository:
@@ -216,6 +218,7 @@ class AgendatorioRepository:
                 func.concat(Student.first_name, " ", Student.last_name),
                 Grade.name,
                 Group.name,
+                Student.photo_url,
             )
             .join(Student, Student.id == DisciplineRecord.student_id)
             .outerjoin(
@@ -240,7 +243,7 @@ class AgendatorioRepository:
         )
         result = await self.session.execute(stmt)
         return [
-            MyRecordRow(record=row[0], student_name=row[1], grade_name=row[2], group_name=row[3])
+            MyRecordRow(record=row[0], student_name=row[1], grade_name=row[2], group_name=row[3], photo_url=row[4])
             for row in result.all()
         ]
 
@@ -290,6 +293,7 @@ class AgendatorioRepository:
                 Grade.name,
                 Group.name,
                 func.concat(User.first_name, " ", User.last_name),
+                Student.photo_url,
             )
             .join(Student, Student.id == DisciplineRecord.student_id)
             .join(User, User.id == DisciplineRecord.recorded_by_user_id)
@@ -309,7 +313,7 @@ class AgendatorioRepository:
             return None
         return RecordMeta(
             record=row[0], student_name=row[1], grade_name=row[2],
-            group_name=row[3], recorded_by_name=row[4],
+            group_name=row[3], recorded_by_name=row[4], photo_url=row[5],
         )
 
     async def list_notes(self, record_id: UUID) -> list[tuple[DisciplineRecordNote, str]]:

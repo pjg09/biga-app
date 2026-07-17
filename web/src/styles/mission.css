@@ -29,7 +29,7 @@
 
 .section-label {
   display: inline-block;
-  font-size: 0.75rem;
+  font-size: 0.9rem;
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -96,7 +96,7 @@
   background: var(--clr-purple-50);
   border: 1px solid var(--clr-purple-100);
   color: var(--clr-purple-700);
-  font-size: 0.875rem;
+  font-size: 1.05rem;
   font-weight: 500;
   transition: background var(--transition-fast), transform var(--transition-fast),
     border-color var(--transition-fast), box-shadow var(--transition-fast);
@@ -124,5 +124,14 @@
 
   .mission__left {
     position: static;
+    text-align: center;
+  }
+
+  .mission__divider {
+    margin-inline: auto;
+  }
+
+  .mission__pills {
+    justify-content: center;
   }
 }

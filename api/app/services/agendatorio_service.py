@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 from fastapi import HTTPException, status
 
 from app.adapters.storage.s3 import S3StorageAdapter
+from app.core.photos import resolve_photo_url
 from app.jobs.agendatorio_jobs import notify_discipline_record
 from app.repositories.agendatorio_repository import AgendatorioRepository
 from app.repositories.guardian_repository import GuardianRepository
@@ -208,6 +209,7 @@ class AgendatorioService:
             id=record.id,
             student_id=record.student_id,
             student_name=meta.student_name,
+            photo_url=resolve_photo_url(self.storage, meta.photo_url),
             grade_name=meta.grade_name,
             group_name=meta.group_name,
             date=record.date,
@@ -250,6 +252,7 @@ class AgendatorioService:
                 id=r.record.id,
                 student_id=r.record.student_id,
                 student_name=r.student_name,
+                photo_url=resolve_photo_url(self.storage, r.photo_url),
                 grade_name=r.grade_name,
                 group_name=r.group_name,
                 date=r.record.date,

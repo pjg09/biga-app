@@ -105,6 +105,7 @@ class ScheduleItem(BaseModel):
 class JustificationMessage(BaseModel):
     record_id: UUID
     student_name: str
+    photo_url: str | None = None
     group_name: str | None
     grade_name: str | None
     date: PyDate

@@ -14,6 +14,7 @@ class DepartureResponse(BaseModel):
     id: UUID
     student_id: UUID
     student_name: str | None = None
+    photo_url: str | None = None
     departure_date: PyDate
     departure_time: time
     reason: str | None

@@ -87,6 +87,7 @@ class MyRecordItem(BaseModel):
     id: UUID
     student_id: UUID
     student_name: str
+    photo_url: str | None = None
     grade_name: str | None
     group_name: str | None
     date: date
@@ -101,6 +102,7 @@ class DisciplineRecordDetail(BaseModel):
     id: UUID
     student_id: UUID
     student_name: str
+    photo_url: str | None = None
     grade_name: str | None
     group_name: str | None
     date: date

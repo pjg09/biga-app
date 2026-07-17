@@ -5,7 +5,7 @@ const FEATURES = [
   {
     id: 'comunicacion',
     icon: <ChatIcon />,
-    title: 'Comunicación familia-escuela',
+    title: 'Comunicación familia - escuela',
     description:
       'Canales directos y trazables entre padres, docentes e institución. Cada mensaje queda registrado, nada se pierde ni queda sin respuesta.',
     tag: 'Mensajería',
@@ -94,7 +94,7 @@ function FeatureCard({ feature, index }) {
 function ChatIcon() {
   return (
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
+      <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
     </svg>
   );
 }
@@ -102,8 +102,8 @@ function ChatIcon() {
 function ChartIcon() {
   return (
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 3v18h18"/>
-      <path d="M7 16l4-5 4 3 4-6"/>
+      <path d="M3 3v18h18" />
+      <path d="M7 16l4-5 4 3 4-6" />
     </svg>
   );
 }
@@ -111,9 +111,9 @@ function ChartIcon() {
 function BrainIcon() {
   return (
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="3"/>
-      <path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>
-      <path d="M5.636 5.636l2.122 2.122M16.243 16.243l2.121 2.121M5.636 18.364l2.122-2.122M16.243 7.757l2.121-2.121"/>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+      <path d="M5.636 5.636l2.122 2.122M16.243 16.243l2.121 2.121M5.636 18.364l2.122-2.122M16.243 7.757l2.121-2.121" />
     </svg>
   );
 }
@@ -121,8 +121,8 @@ function BrainIcon() {
 function RightsIcon() {
   return (
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-      <path d="M9 12l2 2 4-4"/>
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+      <path d="M9 12l2 2 4-4" />
     </svg>
   );
 }

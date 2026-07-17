@@ -263,24 +263,30 @@ const BRAND_FEATURES = [
 
 /* ── Icons ───────────────────────────────────────────── */
 function LogoIcon() {
+  // useId genera IDs únicos por instancia: el logo se renderiza dos veces
+  // (desktop + mobile) y con IDs fijos los gradientes colisionaban, dejando
+  // el ícono sin relleno en mobile. Sin colones para evitar edge cases en url().
+  const uid = useId().replace(/:/g, '');
+  const lp = `lp-${uid}`;
+  const lg = `lg-${uid}`;
   return (
     <svg width="28" height="28" viewBox="0 0 100 100" aria-hidden="true" focusable="false">
       <defs>
-        <radialGradient id="lp" cx="38%" cy="28%" r="70%">
+        <radialGradient id={lp} cx="38%" cy="28%" r="70%">
           <stop offset="0%" stopColor="#9B3FF5"/>
           <stop offset="100%" stopColor="#4A0A9E"/>
         </radialGradient>
-        <radialGradient id="lg" cx="33%" cy="28%" r="68%">
+        <radialGradient id={lg} cx="33%" cy="28%" r="68%">
           <stop offset="0%" stopColor="#D4F870"/>
           <stop offset="55%" stopColor="#80CC20"/>
           <stop offset="100%" stopColor="#2E7008"/>
         </radialGradient>
       </defs>
-      <circle cx="50" cy="52" r="44" fill="url(#lp)"/>
+      <circle cx="50" cy="52" r="44" fill={`url(#${lp})`}/>
       <path d="M50,24 L74,68 L26,68 Z" fill="white" stroke="white" strokeWidth="10" strokeLinejoin="round" strokeLinecap="round"/>
-      <circle cx="50" cy="11" r="11" fill="url(#lg)"/>
-      <circle cx="80" cy="70" r="11" fill="url(#lg)"/>
-      <circle cx="20" cy="70" r="11" fill="url(#lg)"/>
+      <circle cx="50" cy="11" r="11" fill={`url(#${lg})`}/>
+      <circle cx="80" cy="70" r="11" fill={`url(#${lg})`}/>
+      <circle cx="20" cy="70" r="11" fill={`url(#${lg})`}/>
     </svg>
   );
 }

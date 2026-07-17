@@ -175,10 +175,10 @@ export function AttendanceView() {
   }
 
   return (
-    <div className="card dash__list-card">
+    <div className="card dash__list-card att-today">
       <div className="dash__list-header">
         <span className="dash__list-title">Clases de hoy</span>
-        <span className="dash__student-group">{classes.length}</span>
+        <span className="dash__list-title">{classes.length}</span>
       </div>
 
       {classes.map(c => (
@@ -191,14 +191,12 @@ export function AttendanceView() {
             {c.period_order}
           </div>
           <div className="dash__student-info">
-            <p className="dash__student-name">
-              {c.name}
-              {c.is_first_hour && <span className="dash__badge dash__badge--blue" style={{ marginLeft: 8 }}>1ª hora</span>}
-            </p>
+            <p className="dash__student-name">{c.name}</p>
             <p className="dash__student-group">
-              {c.grade_name} {c.group_name} · {c.start_time?.slice(0, 5)}–{c.end_time?.slice(0, 5)}
+              {c.grade_name} {c.group_name} · {c.start_time?.slice(0, 5)} - {c.end_time?.slice(0, 5)}
             </p>
           </div>
+          {c.is_first_hour && <span className="dash__badge dash__badge--blue">1ª hora</span>}
           <span className={`dash__badge dash__badge--${c.already_taken ? 'green' : 'yellow'}`}>
             {c.already_taken ? 'Tomada' : 'Pendiente'}
           </span>
@@ -282,7 +280,7 @@ function ClassAttendance({ classPeriodId, onBack }) {
 
   const backBtn = (
     <button className="btn--secondary att-back" style={{ width: 'auto' }} onClick={onBack}>
-      ← Clases de hoy
+      Clases de hoy
     </button>
   );
 
@@ -325,7 +323,7 @@ function ClassAttendance({ classPeriodId, onBack }) {
             {data.is_first_hour && <span className="dash__badge dash__badge--blue" style={{ marginLeft: 8 }}>1ª hora</span>}
           </p>
           <p className="att-head__sub">
-            {data.start_time?.slice(0, 5)}–{data.end_time?.slice(0, 5)} · {total} estudiantes
+            {data.start_time?.slice(0, 5)} - {data.end_time?.slice(0, 5)} · {total} estudiantes
             {!data.is_first_hour && ' · sin notificación'}
           </p>
         </div>
@@ -339,7 +337,7 @@ function ClassAttendance({ classPeriodId, onBack }) {
         </div>
       </div>
 
-      <div className="card dash__list-card">
+      <div className="card dash__list-card att-today">
         <div className="dash__list-header">
           <span className="dash__list-title">
             {data.already_taken ? 'Registro de hoy' : 'Toma de asistencia'}
@@ -362,9 +360,9 @@ function ClassAttendance({ classPeriodId, onBack }) {
           const av = AVATARS[i % AVATARS.length];
           const mark = marks[s.student_id];
           return (
-            <div className="dash__student-row" key={s.student_id}>
+            <div className="dash__student-row att-roster-row" key={s.student_id}>
               {s.photo_url
-                ? <img className="dash__table-photo" src={s.photo_url} alt="" />
+                ? <StudentPhoto src={s.photo_url} alt="" caption={`${s.first_name} ${s.last_name}`} />
                 : <div className="dash__student-avatar" style={{ background: av.bg, color: av.color }}>{initials(s.first_name, s.last_name)}</div>}
               <div className="dash__student-info">
                 <p className="dash__student-name">{s.first_name} {s.last_name}</p>
@@ -475,13 +473,14 @@ export function DeparturesView() {
         </div>
       )}
 
+      <div className="dep-scale">
       <form className="card att-form" onSubmit={submit}>
         <p className="dash__list-title" style={{ marginBottom: 4 }}>Registrar salida anticipada</p>
 
         {selected ? (
           <div className="att-selected">
             <span className="dash__student-name">{selected.full_name}</span>
-            <span className="dash__student-group">Doc. {selected.document_number}{selected.group_name ? ` · ${selected.group_name}` : ''}</span>
+            <span className="dash__student-group">Doc. {selected.document_number}{[selected.grade_name, selected.group_name].filter(Boolean).length ? ` · ${[selected.grade_name, selected.group_name].filter(Boolean).join(' ')}` : ''}</span>
             <button type="button" className="att-selected__clear" onClick={() => setSelected(null)} aria-label="Cambiar">✕</button>
           </div>
         ) : (
@@ -543,9 +542,11 @@ export function DeparturesView() {
           const av = AVATARS[i % AVATARS.length];
           return (
             <div className="dash__student-row" key={d.id}>
-              <div className="dash__student-avatar" style={{ background: av.bg, color: av.color }}>
-                {(d.student_name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
-              </div>
+              {d.photo_url
+                ? <StudentPhoto src={d.photo_url} alt="" caption={d.student_name} />
+                : <div className="dash__student-avatar" style={{ background: av.bg, color: av.color }}>
+                    {(d.student_name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+                  </div>}
               <div className="dash__student-info">
                 <p className="dash__student-name">{d.student_name || d.student_id}</p>
                 <p className="dash__student-group">{d.reason || 'Sin motivo'}</p>
@@ -555,6 +556,37 @@ export function DeparturesView() {
           );
         })}
       </div>
+      </div>
+    </>
+  );
+}
+
+// Foto de estudiante con lightbox: click amplía la imagen a pantalla completa.
+// Reutiliza el overlay .pae-lightbox. Se usa en todos los dashboards.
+export function StudentPhoto({ src, alt = '', caption, className = 'dash__table-photo' }) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
+  return (
+    <>
+      <img
+        className={className}
+        src={src}
+        alt={alt}
+        onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+        style={{ cursor: 'zoom-in' }}
+      />
+      {open && (
+        <div className="pae-lightbox" onClick={() => setOpen(false)} role="dialog" aria-modal="true">
+          <button className="pae-lightbox__close" onClick={() => setOpen(false)} aria-label="Cerrar">✕</button>
+          <img className="pae-lightbox__img" src={src} alt={alt} onClick={(e) => e.stopPropagation()} />
+          {caption && <p className="pae-lightbox__caption">{caption}</p>}
+        </div>
+      )}
     </>
   );
 }
@@ -608,13 +640,13 @@ function TeacherStudentsView() {
   });
 
   return (
-    <div className="card dash__list-card">
+    <div className="card dash__list-card att-today">
       <div className="dash__list-header">
         <span className="dash__list-title">Estudiantes de la institución</span>
-        <span className="dash__student-group">{filtered.length}</span>
+        <span className="dash__list-title">{filtered.length}</span>
       </div>
 
-      <div style={{ padding: '0 18px 12px' }}>
+      <div style={{ padding: '16px 18px 14px' }}>
         <input
           className="dash__field-input"
           type="search"
@@ -632,9 +664,9 @@ function TeacherStudentsView() {
       ) : filtered.map((s, i) => {
         const av = AVATARS[i % AVATARS.length];
         return (
-          <div className="dash__student-row" key={s.id}>
+          <div className="dash__student-row stu-row" key={s.id}>
             {s.photo_url
-              ? <img className="dash__table-photo" src={s.photo_url} alt="" />
+              ? <StudentPhoto src={s.photo_url} alt="" caption={`${s.first_name} ${s.last_name}`} />
               : <div className="dash__student-avatar" style={{ background: av.bg, color: av.color }}>{initials(s.first_name, s.last_name)}</div>}
             <div className="dash__student-info">
               <p className="dash__student-name">{s.first_name} {s.last_name}</p>
@@ -683,7 +715,7 @@ export function ScheduleView() {
             <p className="sched__free">Sin clases</p>
           ) : byDay[day].map(it => (
             <div className="sched__slot" key={it.class_period_id}>
-              <span className="sched__time">{it.start_time.slice(0, 5)}–{it.end_time.slice(0, 5)}</span>
+              <span className="sched__time">{it.start_time.slice(0, 5)} - {it.end_time.slice(0, 5)}</span>
               <span className="sched__name">{it.name}</span>
               <span className="sched__group">{it.grade_name} {it.group_name}{it.period_order === 1 ? ' · 1ª hora' : ''}</span>
             </div>
@@ -714,7 +746,7 @@ export function MensajesView() {
   }
 
   return (
-    <div className="card dash__list-card">
+    <div className="card dash__list-card msg-scale">
       <div className="dash__list-header">
         <span className="dash__list-title">Excusas de los acudientes</span>
         <span className="dash__student-group">{msgs.length}</span>
@@ -723,9 +755,11 @@ export function MensajesView() {
         const av = AVATARS[i % AVATARS.length];
         return (
           <div className="msg" key={m.record_id}>
-            <div className="dash__student-avatar" style={{ background: av.bg, color: av.color }}>
-              {(m.student_name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
-            </div>
+            {m.photo_url
+              ? <StudentPhoto src={m.photo_url} alt="" caption={m.student_name} />
+              : <div className="dash__student-avatar" style={{ background: av.bg, color: av.color }}>
+                  {(m.student_name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+                </div>}
             <div className="msg__body">
               <div className="msg__head">
                 <span className="dash__student-name">{m.student_name}</span>
@@ -794,14 +828,21 @@ function StudentSearch({ selected, onSelect, onClear }) {
 
   if (selected) {
     return (
-      <div className="att-selected">
-        <span className="dash__student-name">{selected.full_name}</span>
-        <span className="dash__student-group">
-          Doc. {selected.document_number}
-          {[selected.grade_name, selected.group_name].filter(Boolean).length
-            ? ` · ${[selected.grade_name, selected.group_name].filter(Boolean).join(' ')}` : ''}
-        </span>
-        <button type="button" className="att-selected__clear" onClick={onClear} aria-label="Cambiar">\u2715</button>
+      <div className="att-selected att-selected--photo">
+        {selected.photo_url
+          ? <StudentPhoto src={selected.photo_url} alt={selected.full_name} caption={selected.full_name} />
+          : <div className="dash__student-avatar" style={{ background: '#ede9fe', color: '#6d28d9' }}>
+              {(selected.full_name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+            </div>}
+        <div className="att-selected__info">
+          <span className="dash__student-name">{selected.full_name}</span>
+          <span className="dash__student-group">
+            Doc. {selected.document_number}
+            {[selected.grade_name, selected.group_name].filter(Boolean).length
+              ? ` · ${[selected.grade_name, selected.group_name].filter(Boolean).join(' ')}` : ''}
+          </span>
+        </div>
+        <button type="button" className="att-selected__clear" onClick={onClear} aria-label="Cambiar">✕</button>
       </div>
     );
   }
@@ -949,7 +990,7 @@ export function ConvivenciaView() {
         </div>
       )}
 
-      <div className="card att-form">
+      <div className="card att-form dep-scale">
         <p className="dash__list-title" style={{ marginBottom: 4 }}>Nuevo registro de convivencia</p>
 
         <StudentSearch
@@ -1068,7 +1109,7 @@ export function HistorialView() {
   }
 
   return (
-    <>
+    <div className="hist-scale">
       <div className="card att-form" style={{ gap: 12 }}>
         <p className="dash__list-title" style={{ marginBottom: 4 }}>Filtrar por estudiante</p>
         <StudentSearch
@@ -1104,14 +1145,13 @@ export function HistorialView() {
             const av = AVATARS[i % AVATARS.length];
             return (
               <button key={r.id} className="dash__student-row att-class-row" onClick={() => setOpenId(r.id)}>
-                <div className="dash__student-avatar" style={{ background: av.bg, color: av.color }}>
-                  {(r.student_name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
-                </div>
+                {r.photo_url
+                  ? <StudentPhoto src={r.photo_url} alt={r.student_name} caption={r.student_name} />
+                  : <div className="dash__student-avatar" style={{ background: av.bg, color: av.color }}>
+                      {(r.student_name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+                    </div>}
                 <div className="dash__student-info">
-                  <p className="dash__student-name">
-                    {r.student_name}
-                    {r.archived && <span className="dash__badge dash__badge--gray" style={{ marginLeft: 8 }}>Oculto</span>}
-                  </p>
+                  <p className="dash__student-name">{r.student_name}</p>
                   <p className="dash__student-group">
                     {[r.grade_name, r.group_name].filter(Boolean).join(' ')}
                     {[r.grade_name, r.group_name].filter(Boolean).length ? ' · ' : ''}
@@ -1119,6 +1159,7 @@ export function HistorialView() {
                     {r.note_count > 0 ? ` · ${r.note_count} nota${r.note_count > 1 ? 's' : ''}` : ''}
                   </p>
                 </div>
+                {r.archived && <span className="dash__badge dash__badge--gray">Oculto</span>}
                 <div className="hist-sev">
                   {r.articles.map((a, j) => (
                     <span key={j} className={`dash__badge dash__badge--${SEVERITY_CLASS[a.severity] || 'yellow'}`}>{a.code}</span>
@@ -1129,7 +1170,7 @@ export function HistorialView() {
           })}
         </div>
       )}
-    </>
+    </div>
   );
 }
 
@@ -1212,7 +1253,7 @@ function RecordDetail({ recordId, onBack, onChanged }) {
   }
 
   return (
-    <>
+    <div className="rec-scale">
       {toast && (
         <div className={`dash__toast dash__toast--${toast.type}`} role="alert">
           {toast.type === 'success' ? <CheckIcon /> : <AlertIcon />}{toast.msg}
@@ -1222,16 +1263,23 @@ function RecordDetail({ recordId, onBack, onChanged }) {
       {backBtn}
 
       <div className="att-head card">
-        <div>
-          <p className="att-head__period">
-            {data.student_name}
-            {data.archived && <span className="dash__badge dash__badge--gray" style={{ marginLeft: 8 }}>Oculto</span>}
-          </p>
-          <p className="att-head__sub">
-            {[data.grade_name, data.group_name].filter(Boolean).join(' ')}
-            {[data.grade_name, data.group_name].filter(Boolean).length ? ' · ' : ''}
-            {fmtShort(data.date)} · Registrado por {data.recorded_by_name}
-          </p>
+        <div className="rec-head__student">
+          {data.photo_url
+            ? <StudentPhoto src={data.photo_url} alt={data.student_name} caption={data.student_name} />
+            : <div className="dash__student-avatar" style={{ background: '#ede9fe', color: '#6d28d9' }}>
+                {(data.student_name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+              </div>}
+          <div>
+            <p className="att-head__period">
+              {data.student_name}
+              {data.archived && <span className="dash__badge dash__badge--gray" style={{ marginLeft: 8 }}>Oculto</span>}
+            </p>
+            <p className="att-head__sub">
+              {[data.grade_name, data.group_name].filter(Boolean).join(' ')}
+              {[data.grade_name, data.group_name].filter(Boolean).length ? ' · ' : ''}
+              {fmtShort(data.date)} · Registrado por {data.recorded_by_name}
+            </p>
+          </div>
         </div>
         <button className="btn--secondary" style={{ width: 'auto' }} onClick={toggleArchive} disabled={archiving}>
           {archiving ? '…' : data.archived ? 'Mostrar en panel' : 'Ocultar del panel'}
@@ -1299,7 +1347,7 @@ function RecordDetail({ recordId, onBack, onChanged }) {
           {savingNote ? 'Guardando…' : 'Agregar nota'}
         </button>
       </div>
-    </>
+    </div>
   );
 }
 

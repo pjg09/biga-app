@@ -29,13 +29,14 @@ class DepartureRepository:
         self,
         institution_id: UUID,
         date: PyDate,
-    ) -> list[tuple[EarlyDeparture, str]]:
+    ) -> list[tuple[EarlyDeparture, str, str | None]]:
         from sqlalchemy import func
 
         result = await self.session.execute(
             select(
                 EarlyDeparture,
                 func.concat(Student.first_name, " ", Student.last_name),
+                Student.photo_url,
             )
             .join(Student, Student.id == EarlyDeparture.student_id)
             .where(
@@ -44,7 +45,7 @@ class DepartureRepository:
             )
             .order_by(EarlyDeparture.departure_time.desc())
         )
-        return [(row[0], row[1]) for row in result.all()]
+        return [(row[0], row[1], row[2]) for row in result.all()]
 
     async def get_context(self, departure_id: UUID) -> DepartureContext | None:
         result = await self.session.execute(

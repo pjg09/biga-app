@@ -2,23 +2,24 @@ import { useState, useCallback } from 'react';
 import { useScrollReveal } from '../hooks/useScrollReveal';
 import '../styles/cta.css';
 
+// Basic RFC 5322 email validation — no eval, no XSS risk
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export default function CallToAction() {
   const [email, setEmail] = useState('');
   const [status, setStatus] = useState('idle'); // idle | success | error
 
   const titleRef = useScrollReveal();
-  const formRef  = useScrollReveal();
+  const formRef = useScrollReveal();
+
+  const isEmailValid = EMAIL_PATTERN.test(email.trim());
 
   const handleSubmit = useCallback(
     (e) => {
       e.preventDefault();
 
       const trimmed = email.trim();
-      if (!trimmed) return;
-
-      // Basic RFC 5322 email validation — no eval, no XSS risk
-      const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailPattern.test(trimmed)) {
+      if (!EMAIL_PATTERN.test(trimmed)) {
         setStatus('error');
         return;
       }
@@ -87,11 +88,13 @@ export default function CallToAction() {
               aria-invalid={status === 'error'}
               maxLength={320}
             />
-            <button type="submit" className="btn btn--primary cta__submit">
+            <button
+              type="submit"
+              className="btn btn--primary cta__submit"
+              disabled={!isEmailValid}
+              aria-disabled={!isEmailValid}
+            >
               Solicitar demo
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
             </button>
           </div>
 
@@ -109,7 +112,7 @@ export default function CallToAction() {
         </form>
 
         <p className="cta__note">
-          Sin tarjeta de crédito · Implementación acompañada · Soporte en español
+          Implementación acompañada
         </p>
       </div>
     </section>

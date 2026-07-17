@@ -65,9 +65,10 @@ front usa el componente compartido `StudentSearch`.
 - `GET /agendatorio/my-records` — solo los registros que **ese** docente creó
   (`recorded_by_user_id == current_user.id`). Params: `student_id` (filtrar por
   estudiante), `include_archived` (mostrar ocultos). Devuelve nombre del alumno,
-  grado/salón, artículos, conteo de notas y flag `archived`.
-- `GET /agendatorio/records/{id}` — detalle enriquecido: alumno, grado/salón, quién lo
-  registró, artículos, firma (URL presignada), **notas** y `archived`.
+  foto (`photo_url` presignado), grado/salón, artículos, conteo de notas y flag `archived`.
+- `GET /agendatorio/records/{id}` — detalle enriquecido: alumno, foto (`photo_url`
+  presignado), grado/salón, quién lo registró, artículos, firma (URL presignada),
+  **notas** y `archived`.
 - `POST /agendatorio/records/{id}/notes` — agrega una nota (append-only). Solo el dueño.
 - `POST /agendatorio/records/{id}/archive` · `/unarchive` — oculta/muestra en el panel
   (setea/limpia `archived_at`). Solo el dueño; devuelve `204`.

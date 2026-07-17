@@ -32,6 +32,7 @@ class JustificationRow:
     date: object
     reason: str
     submitted_at: object
+    photo_url: str | None
 
 
 @dataclass
@@ -310,6 +311,7 @@ class AttendanceRepository:
                 AttendanceRecord.date,
                 AttendanceJustification.reason,
                 AttendanceJustification.submitted_at,
+                Student.photo_url,
             )
             .join(AttendanceRecord, AttendanceRecord.id == AttendanceJustification.attendance_record_id)
             .join(Student, Student.id == AttendanceRecord.student_id)
@@ -330,6 +332,7 @@ class AttendanceRepository:
                 date=row[4],
                 reason=row[5],
                 submitted_at=row[6],
+                photo_url=row[7],
             )
             for row in result.all()
         ]

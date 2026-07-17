@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.adapters.storage.s3 import S3StorageAdapter
 from app.core.database import get_db
-from app.core.dependencies import require_staff
+from app.core.dependencies import get_storage_adapter, require_staff
 from app.models.user import User
 from app.repositories.departure_repository import DepartureRepository
 from app.repositories.student_repository import StudentRepository
@@ -12,8 +13,11 @@ from app.services.departure_service import DepartureService
 router = APIRouter(prefix="/departures", tags=["departures"])
 
 
-def get_departure_service(db: AsyncSession = Depends(get_db)) -> DepartureService:
-    return DepartureService(DepartureRepository(db), StudentRepository(db))
+def get_departure_service(
+    db: AsyncSession = Depends(get_db),
+    storage: S3StorageAdapter = Depends(get_storage_adapter),
+) -> DepartureService:
+    return DepartureService(DepartureRepository(db), StudentRepository(db), storage)
 
 
 @router.post("", response_model=DepartureResponse, status_code=status.HTTP_201_CREATED)

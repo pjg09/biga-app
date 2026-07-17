@@ -70,9 +70,9 @@
 }
 
 .navbar__link {
-  font-size: 0.9rem;
-  font-weight: 500;
-  color: var(--clr-gray-400);
+  font-size: 1.17rem;
+  font-weight: 700;
+  color: var(--clr-gray-200);
   transition: color var(--transition-fast);
   white-space: nowrap;
   position: relative;
@@ -150,6 +150,10 @@
 .btn--lg {
   padding: 0.875rem 2rem;
   font-size: 1rem;
+}
+
+.btn.navbar__cta {
+  font-size: 1.01rem;
 }
 
 /* Burger */
@@ -236,7 +240,7 @@
   }
 
   .navbar__link {
-    font-size: 1.1rem;
+    font-size: 1.43rem;
     color: var(--clr-gray-200);
   }
 

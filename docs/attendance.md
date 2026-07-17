@@ -123,7 +123,7 @@ Docente ve las salidas de hoy GET  /departures
 | `POST /attendance` | Toma de lista. Body `{ class_period_id, entries:[{student_id, status}] }` |
 | `POST /attendance/records/{record_id}/arrived` | Marca `ABSENT` → `LATE` (llegó tarde) |
 | `GET /attendance/schedule` | Horario semanal del docente (sus `class_periods`) |
-| `GET /attendance/justifications` | Excusas enviadas por los acudientes para los registros de este docente |
+| `GET /attendance/justifications` | Excusas enviadas por los acudientes para los registros de este docente (incluye `photo_url` presignado) |
 
 `GET /attendance/classes/{class_period_id}` (ejemplo):
 ```json
@@ -164,7 +164,7 @@ notificación solo se encola en primera hora.)
 | Método y ruta | Descripción |
 |---|---|
 | `POST /departures` | Body `{ student_id, departure_time, reason? }`. Crea y notifica |
-| `GET /departures` | Salidas de hoy (incluye `student_name`) |
+| `GET /departures` | Salidas de hoy (incluye `student_name`, `photo_url` presignado) |
 
 ---
 

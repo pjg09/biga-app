@@ -3,6 +3,8 @@ from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
 
+from app.adapters.storage.s3 import S3StorageAdapter
+from app.core.photos import resolve_photo_url
 from app.jobs.departure_jobs import notify_early_departure
 from app.models.departure import EarlyDeparture
 from app.repositories.departure_repository import DepartureRepository
@@ -11,9 +13,15 @@ from app.schemas.departures import DepartureCreate, DepartureResponse
 
 
 class DepartureService:
-    def __init__(self, repo: DepartureRepository, student_repo: StudentRepository):
+    def __init__(
+        self,
+        repo: DepartureRepository,
+        student_repo: StudentRepository,
+        storage: S3StorageAdapter,
+    ):
         self.repo = repo
         self.student_repo = student_repo
+        self.storage = storage
 
     async def create_departure(
         self,
@@ -60,10 +68,11 @@ class DepartureService:
                 id=d.id,
                 student_id=d.student_id,
                 student_name=name,
+                photo_url=resolve_photo_url(self.storage, photo_key),
                 departure_date=d.departure_date,
                 departure_time=d.departure_time,
                 reason=d.reason,
                 created_at=d.created_at,
             )
-            for d, name in rows
+            for d, name, photo_key in rows
         ]

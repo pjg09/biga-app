@@ -30,7 +30,7 @@ export default function Hero() {
         {/* Subtext */}
         <p className="hero__sub">
           Corresponsabilidad, protección y bienestar para niños, niñas
-          y adolescentes — conectando familia, escuela e institución.
+          y adolescentes, conectando familia, escuela e institución.
         </p>
 
         {/* CTAs */}
@@ -52,9 +52,6 @@ export default function Hero() {
             }}
           >
             Solicita una demo
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
           </a>
         </div>
 
@@ -78,7 +75,7 @@ export default function Hero() {
       >
         <span className="hero__scroll-line" />
         <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-          <path d="M9 3v12M4 10l5 5 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M9 3v12M4 10l5 5 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </a>
     </section>
@@ -89,5 +86,6 @@ const STATS = [
   { value: '100%', label: 'Multi-institución' },
   { value: 'Tiempo real', label: 'Seguimiento' },
   { value: 'IA integrada', label: 'Analítica predictiva' },
-  { value: 'PAE + Convivencia', label: 'Procesos cubiertos' },
+  { value: 'PAE', label: 'Seguridad alimentaria' },
+  { value: 'Convivencia', label: 'Procesos cubiertos' }
 ];

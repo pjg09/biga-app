@@ -30,7 +30,7 @@ export default function Mission() {
             mediante el uso ético, consciente y regulado de la tecnología.
           </p>
 
-          <p ref={text2Ref} className="mission__text reveal reveal-delay-1">
+          <p ref={text2Ref} className="mission__text mission__text--lead reveal reveal-delay-1">
             A través del desarrollo e implementación de soluciones digitales innovadoras,
             BIGA fortalece la comunicación efectiva entre familia, escuela e institución,
             facilitando el seguimiento oportuno de procesos académicos, convivenciales y
