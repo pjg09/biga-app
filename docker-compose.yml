@@ -3,7 +3,7 @@ services:
     build:
       context: ./api
     ports:
-      - "8000:8000"
+      - "8001:8000"
     env_file: .env
     depends_on:
       postgres:
@@ -100,11 +100,11 @@ services:
     build:
       context: ./web
     ports:
-      - "5173:5173"
+      - "5175:5175"
     volumes:
       - ./web:/app
       - /app/node_modules
-    command: npm run dev -- --host
+    command: npm run dev -- --host --port 5175
 
 volumes:
   postgres_data:

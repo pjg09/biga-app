@@ -36,7 +36,9 @@ class AttendanceService:
         academic_year = today.year
         day_of_week = today.isoweekday()  # 1 = lunes ... 7 = domingo
 
-        if day_of_week > 5:
+        # NOTA (tweak dev): originalmente `> 5` (Lun-Vie). Subido a `> 6` para
+        # permitir sábado en pruebas. Revertir a `> 5` para volver al diseño Lun-Vie.
+        if day_of_week > 6:
             return TodayClassesResponse(date=today, classes=[])
 
         rows = await self.repo.get_teacher_classes_for_day(
