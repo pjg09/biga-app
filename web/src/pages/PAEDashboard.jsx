@@ -15,7 +15,7 @@ const AVATARS = [
 
 const NAV_TITLES = {
   'pae-register': 'Registro PAE',
-  'pae-report':   'Reporte diario',
+  'pae-report':   'Reporte semanal',
   'pae-enrolled': 'Matriculados',
   students:       'Estudiantes',
   attendance:     'Asistencia',
@@ -77,7 +77,7 @@ export default function PAEDashboard() {
           <div className="dash__nav-section">
             <p className="dash__nav-label">PAE</p>
             <NavItem id="pae-register" active={activeNav} icon={<ScanIcon />}      label="Registro PAE"   onClick={setActiveNav} pae />
-            <NavItem id="pae-report"   active={activeNav} icon={<ChartIcon />}     label="Reporte diario" onClick={setActiveNav} pae />
+            <NavItem id="pae-report"   active={activeNav} icon={<ChartIcon />}     label="Reporte semanal" onClick={setActiveNav} pae />
             <NavItem id="pae-enrolled" active={activeNav} icon={<ListCheckIcon />} label="Matriculados"   onClick={setActiveNav} pae />
           </div>
           <div className="dash__nav-section">

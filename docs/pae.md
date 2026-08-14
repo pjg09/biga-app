@@ -155,7 +155,9 @@ que siguen restringidos al operador.
 - **Registro PAE** — listado del día, búsqueda, modal de confirmación de entrega
   (muestra la foto para corroborar identidad; click en la foto la abre ampliada
   en un lightbox).
-- **Reporte diario** — conectado a `GET /pae/report/weekly` (datos reales).
+- **Reporte semanal** — conectado a `GET /pae/report/weekly` (datos reales). Se llamaba
+  "Reporte diario" en el nav aunque el contenido siempre fue semanal (Lun-Vie); renombrado
+  2026-08-14 para que el nombre no mienta sobre el contenido.
 - **Matriculados** — inscritos del PAE.
 - **Estudiantes** — registrar estudiante (`POST /students`) con **subida de foto a
   MinIO** (file picker → `POST /students/{id}/photo`; se guarda la key y se presigna
