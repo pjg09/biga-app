@@ -1293,6 +1293,91 @@ body { background: var(--bg); }
 .dep-scale--sm .att-selected .dash__student-group { font-size: 0.85rem; }
 .dep-scale--sm .dash__student-row .dash__student-group { font-size: 0.85rem; }
 
+/* ═══════════════════════════════════════════════════════════════
+   Tamaño único de ESCRITORIO, tomado de Salidas tempranas
+   (.dep-scale--sm, arriba) +10%, generalizado a todo el resto de la
+   app -- mismo criterio que ya se aplicó en móvil (ver el bloque
+   `!important` dentro de @media max-width:640px). Sin media query:
+   corre siempre, y el bloque móvil (más abajo en el archivo, mismo
+   !important) lo sigue pisando por orden de aparición en pantallas
+   ≤640px. Las reglas viejas de dep-scale/hist-scale/msg-scale/
+   rec-scale/att-today quedan igual en el archivo pero ya no aplican
+   -- las pisa `!important` aquí en vez de borrarlas, por si hace
+   falta volver atrás.
+   Fuera de alcance a propósito (no existen en Salidas tempranas y
+   en escritorio no hay presión de espacio que justifique inventar un
+   tamaño): dash__stat-value (número hero), dash__modal-photo/avatar,
+   rec-head__student (foto de encabezado), conv-sev-chip. */
+
+/* Título de card/sección */
+.dash__list-title,
+.dash__table-title,
+.admin-section__title,
+.dash__chart-title,
+.dash__stat-stack-title { font-size: 1.0659rem !important; }
+
+/* Texto principal de una fila/bloque */
+.dash__student-name,
+.dash__table-student-name,
+.msg__reason,
+.hist-obs,
+.hist-note__text,
+.sched__name,
+.dash__modal-name { font-size: 1.0197rem !important; }
+
+/* Texto secundario/meta */
+.dash__student-group,
+.dash__table-count,
+.msg__date,
+.msg__meta,
+.hist-note__meta,
+.conv-article__title,
+.sched__group,
+.att-head__sub,
+.dash__stat-label,
+.dash__modal-doc { font-size: 0.935rem !important; }
+
+/* Avatar/foto de fila (lista, tabla) */
+.dash__student-avatar,
+.dash__table-photo,
+.att-selected--photo .dash__table-photo,
+.att-selected--photo .dash__student-avatar { width: 44px !important; height: 44px !important; }
+.dash__student-avatar { font-size: 0.814rem !important; }
+
+/* Texto final pequeño (hora, código de artículo, "Limpiar") */
+.dash__student-time,
+.conv-article__code,
+.conv-clear,
+.sched__time,
+.dash__stat-delta { font-size: 0.8789rem !important; }
+
+/* Labels de campo */
+.dash__field-label { font-size: 0.8976rem !important; }
+.hist-toggle        { font-size: 0.8976rem !important; }
+.hist-toggle input  { width: 16.5px !important; height: 16.5px !important; }
+
+/* Inputs/selects/textarea */
+.dash__field-input { font-size: 1.0472rem !important; }
+
+/* Botones primarios/secundarios/confirmar */
+.dash .btn--primary,
+.dash .btn--secondary,
+.dash .btn--confirm { font-size: 1.0197rem !important; }
+
+/* Estado vacío */
+.dash__empty { font-size: 1.001rem !important; }
+
+/* Botón pequeño de quitar ("✕") */
+.att-selected__clear,
+.conv-picked-item__remove { font-size: 1.0945rem !important; }
+
+/* Badges y botón de acción chico en tabla -- sin equivalente directo en
+   Salidas tempranas (esa vista no tiene badges); mismo +10% aplicado al
+   valor ya elegido para móvil, para mantener la misma proporción interna
+   de la escala. */
+.dash__badge { font-size: 0.7315rem !important; }
+.dash__table-register-btn { font-size: 0.7315rem !important; }
+
 /* ─── Horario ────────────────────────────────────────────────── */
 .sched {
   display: grid;
@@ -1672,6 +1757,27 @@ body { background: var(--bg); }
 
 /* ─── ≤640px: móvil ──────────────────────────────────────────── */
 @media (max-width: 640px) {
+  /* Horario: en vez de las 5 columnas apiladas (una debajo de otra, mucho
+     scroll), un selector de día muestra solo la columna elegida. */
+  .sched__day-filter {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+  .sched__day-filter .dash__field-label { font-size: 1.036rem; } /* +40% sobre 0.74rem */
+  /* El <select> nativo no hereda tipografía por defecto (hoja de estilos del
+     navegador, no la de la app) -- se fija explícitamente Inter + los colores
+     de marca en vez de dejar la fuente/color del sistema operativo. */
+  .sched__day-filter select {
+    font-family: inherit;
+    font-size: 1.032rem; /* +20% sobre 0.86rem */
+    color: var(--t1);
+  }
+  .sched__col { display: none; }
+  .sched__col--mobile-active { display: block; }
+
+
   /* Cabecera móvil: burger + badge forman una barra de controles arriba
      (izquierda/derecha) y el bloque de texto (saludo+título) baja a su
      propia línea completa debajo, en vez de apilar 3 bloques sueltos sin
@@ -1760,23 +1866,94 @@ body { background: var(--bg); }
 
   .att-form { padding: 16px; }
 
-  /* Horario: en vez de las 5 columnas apiladas (una debajo de otra, mucho
-     scroll), un selector de día muestra solo la columna elegida. */
-  .sched__day-filter {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    margin-bottom: 12px;
-  }
-  .sched__day-filter .dash__field-label { font-size: 1.036rem; } /* +40% sobre 0.74rem */
-  /* El <select> nativo no hereda tipografía por defecto (hoja de estilos del
-     navegador, no la de la app) -- se fija explícitamente Inter + los colores
-     de marca en vez de dejar la fuente/color del sistema operativo. */
-  .sched__day-filter select {
-    font-family: inherit;
-    font-size: 1.032rem; /* +20% sobre 0.86rem */
-    color: var(--t1);
-  }
-  .sched__col { display: none; }
-  .sched__col--mobile-active { display: block; }
+  /* ═══════════════════════════════════════════════════════════
+     Tamaño único de móvil, tomado de Salidas tempranas
+     (.dep-scale--sm) y aplicado a todo el resto de la app.
+     Antes de esto convivían ~6 escalas distintas sin relación entre
+     sí (dep-scale +30%, hist-scale/msg-scale/rec-scale +50%,
+     att-today +50%, y vistas de Admin/PAE sin ninguna escala) — cada
+     una ganaba su propio pulso de especificidad de forma inconsistente.
+     Decisión explícita: converger TODO a un solo tamaño por rol de
+     elemento, aunque eso encoja Historial/Mensajes/detalle de
+     convivencia desde su +50% actual. `!important` es intencional:
+     es la única forma de pisar de una sola vez los ~6 contextos de
+     escala (cada uno con selectores de 2 clases) sin enumerar cada
+     combinación por separado. Los elementos sin equivalente directo
+     en Salidas tempranas (stat cards, chips, foto de modal) llevan
+     una reducción proporcional, marcada abajo. */
+
+  /* Títulos de card/sección */
+  .dash__list-title,
+  .dash__table-title,
+  .admin-section__title,
+  .dash__chart-title,
+  .dash__stat-stack-title { font-size: 0.969rem !important; }
+
+  /* Texto principal de una fila/bloque (nombre, contenido de mensaje/nota) */
+  .dash__student-name,
+  .dash__table-student-name,
+  .msg__reason,
+  .hist-obs,
+  .hist-note__text,
+  .sched__name { font-size: 0.927rem !important; }
+
+  /* Texto secundario/meta (grupo, fecha, contador, descripción corta) */
+  .dash__student-group,
+  .dash__table-count,
+  .msg__date,
+  .msg__meta,
+  .hist-note__meta,
+  .conv-article__title,
+  .sched__group,
+  .att-head__sub,
+  .dash__stat-label { font-size: 0.85rem !important; }
+
+  /* Avatar/foto de fila (lista, tabla) */
+  .dash__student-avatar,
+  .dash__table-photo,
+  .att-selected--photo .dash__table-photo,
+  .att-selected--photo .dash__student-avatar { width: 40px !important; height: 40px !important; }
+  .dash__student-avatar { font-size: 0.74rem !important; }
+
+  /* Texto final pequeño (hora, código de artículo, "Limpiar") */
+  .dash__student-time,
+  .conv-article__code,
+  .conv-clear,
+  .sched__time,
+  .dash__stat-delta { font-size: 0.799rem !important; }
+
+  /* Labels de campo */
+  .dash__field-label { font-size: 0.816rem !important; }
+  .hist-toggle        { font-size: 0.816rem !important; }
+  .hist-toggle input  { width: 15px !important; height: 15px !important; }
+
+  /* Inputs/selects/textarea */
+  .dash__field-input { font-size: 0.952rem !important; }
+
+  /* Botones primarios/secundarios/confirmar */
+  .dash .btn--primary,
+  .dash .btn--secondary,
+  .dash .btn--confirm { font-size: 0.927rem !important; }
+
+  /* Estado vacío */
+  .dash__empty { font-size: 0.91rem !important; }
+
+  /* Botón pequeño de quitar ("✕") */
+  .att-selected__clear,
+  .conv-picked-item__remove { font-size: 0.995rem !important; }
+
+  /* Badges de estado — un solo tamaño en toda la app (antes iba de
+     0.65rem a 1.17rem según la vista) */
+  .dash__badge { font-size: 0.665rem !important; padding: 2px 7px !important; }
+  .dash__table-register-btn { font-size: 0.665rem !important; }
+
+  /* Sin equivalente directo en Salidas tempranas: reducción proporcional */
+  .conv-sev-chip    { font-size: 0.7rem !important; }               /* chip de severidad */
+  .dash__stat-value { font-size: 1.5rem !important; }                /* -25%: número hero de stat card */
+  .dash__modal-name { font-size: 0.927rem !important; }              /* tier "nombre" */
+  .dash__modal-doc  { font-size: 0.85rem !important; }               /* tier "meta" */
+  .dash__modal-photo,
+  .dash__modal-avatar { width: 60px !important; height: 60px !important; } /* -17% desde 72px */
+  .rec-head__student .dash__table-photo,
+  .rec-head__student .dash__student-avatar { width: 48px !important; height: 48px !important; } /* -25% desde 64px */
 }
