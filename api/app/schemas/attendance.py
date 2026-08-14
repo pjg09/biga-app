@@ -84,6 +84,12 @@ class JustificationInfo(BaseModel):
 
 
 class JustificationSubmit(BaseModel):
+    """El envío real llega como multipart (texto + archivo opcional).
+
+    Se conserva para validar el `reason` con las mismas reglas: el router
+    construye esta instancia a partir del campo de formulario.
+    """
+
     reason: str = Field(min_length=3, max_length=2000)
 
 
@@ -108,6 +114,101 @@ class JustificationMessage(BaseModel):
     photo_url: str | None = None
     group_name: str | None
     grade_name: str | None
+    # `id` es el de la justificación; `record_id` el de la inasistencia. Se
+    # exponen los dos: el primero identifica el caso, el segundo lo liga al
+    # registro de asistencia.
+    id: UUID
+    student_id: UUID
     date: PyDate
     reason: str
     submitted_at: datetime
+    # URL presignada del soporte; None si el acudiente no adjuntó nada.
+    attachment_url: str | None = None
+    attachment_filename: str | None = None
+    attachment_content_type: str | None = None
+    note_count: int = 0
+    archived: bool = False
+
+
+# --- Inasistencias sin justificar (sección "Inasistencias" del docente) ---
+
+class AbsenceNoteCreate(BaseModel):
+    note: str = Field(min_length=1, max_length=2000)
+
+
+class AbsenceNoteResponse(BaseModel):
+    id: UUID
+    note: str
+    author_name: str
+    created_at: datetime
+
+
+class AbsenceItem(BaseModel):
+    """Fila del listado de inasistencias de primera hora sin justificar."""
+
+    record_id: UUID
+    student_id: UUID
+    student_name: str
+    photo_url: str | None = None
+    grade_name: str | None
+    group_name: str | None
+    date: PyDate
+    period_name: str
+    start_time: time
+    note_count: int = 0
+    closed: bool = False
+    # Si existe el enlace de justificación, el aviso al acudiente llegó a
+    # generarse. Sin él, o estaba en la ventana de gracia o el envío ni se
+    # intentó (por ejemplo, estudiante sin acudiente primario).
+    guardian_notified: bool = False
+
+
+class AbsenceDetail(BaseModel):
+    record_id: UUID
+    student_id: UUID
+    student_name: str
+    photo_url: str | None = None
+    grade_name: str | None
+    group_name: str | None
+    date: PyDate
+    period_name: str
+    start_time: time
+    end_time: time
+    recorded_at: datetime
+    status: str
+    guardian_notified: bool
+    guardian_email: str | None = None
+    closed: bool = False
+    notes: list[AbsenceNoteResponse]
+
+
+class JustificationNoteCreate(BaseModel):
+    note: str = Field(min_length=1, max_length=2000)
+
+
+class JustificationNoteResponse(BaseModel):
+    id: UUID
+    note: str
+    author_name: str
+    created_at: datetime
+
+
+class JustificationDetail(BaseModel):
+    """Vista de un caso abierto desde Mensajes."""
+
+    id: UUID
+    record_id: UUID
+    student_id: UUID
+    student_name: str
+    photo_url: str | None = None
+    grade_name: str | None
+    group_name: str | None
+    date: PyDate
+    reason: str
+    submitted_at: datetime
+    attachment_url: str | None = None
+    attachment_filename: str | None = None
+    attachment_content_type: str | None = None
+    attachment_size_bytes: int | None = None
+    notes: list[JustificationNoteResponse]
+    archived: bool

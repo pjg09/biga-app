@@ -15,11 +15,41 @@ export const attendanceService = {
 
   schedule: () => api.get('/attendance/schedule'),
 
-  justifications: () => api.get('/attendance/justifications'),
 
-  // Público (el padre no está autenticado; el token es la autorización)
+  // Inasistencias de primera hora sin justificar.
+  absences: ({ studentId, includeClosed } = {}) => {
+    const p = new URLSearchParams();
+    if (studentId) p.set('student_id', studentId);
+    if (includeClosed) p.set('include_closed', 'true');
+    const qs = p.toString();
+    return api.get(`/attendance/absences${qs ? `?${qs}` : ''}`);
+  },
+  setAbsenceClosed: (recordId, closed) =>
+    api.post(`/attendance/absences/${recordId}/${closed ? 'archive' : 'unarchive'}`),
+  absenceDetail: (recordId) => api.get(`/attendance/absences/${recordId}`),
+  addAbsenceNote: (recordId, note) => api.post(`/attendance/absences/${recordId}/notes`, { note }),
+
+  // Mensajes: excusas de los acudientes, con filtros y cierre de caso.
+  justifications: ({ studentId, includeArchived } = {}) => {
+    const p = new URLSearchParams();
+    if (studentId) p.set('student_id', studentId);
+    if (includeArchived) p.set('include_archived', 'true');
+    const qs = p.toString();
+    return api.get(`/attendance/justifications${qs ? `?${qs}` : ''}`);
+  },
+  justificationDetail: (id) => api.get(`/attendance/justifications/${id}`),
+  addJustificationNote: (id, note) => api.post(`/attendance/justifications/${id}/notes`, { note }),
+  setJustificationArchived: (id, archived) =>
+    api.post(`/attendance/justifications/${id}/${archived ? 'archive' : 'unarchive'}`),
+
+  // Público (el acudiente no está autenticado; el token es la autorización)
   justificationInfo: (token) => api.get(`/attendance/justify/${token}`),
 
-  submitJustification: (token, reason) =>
-    api.post(`/attendance/justify/${token}`, { reason }),
+  // Multipart: el soporte (PDF o imagen) es opcional.
+  submitJustification: (token, reason, file) => {
+    const fd = new FormData();
+    fd.append('reason', reason);
+    if (file) fd.append('attachment', file, file.name);
+    return api.postFormPublic(`/attendance/justify/${token}`, fd);
+  },
 };

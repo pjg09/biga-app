@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { attendanceService } from '../services/attendance';
 import { departureService } from '../services/departures';
@@ -23,6 +24,7 @@ const NAV_TITLES = {
   students:   'Mis estudiantes',
   schedule:   'Horario',
   conduct:    'Convivencia',
+  absences:   'Inasistencias sin justificar',
   history:    'Historial',
   messages:   'Mensajes',
 };
@@ -79,7 +81,8 @@ export default function TeacherDashboard() {
           </div>
           <div className="dash__nav-section">
             <p className="dash__nav-label">Seguimiento</p>
-            <NavItem id="conduct"  active={activeNav} icon={<ShieldIcon />}  label="Convivencia" onClick={setActiveNav} />
+            <NavItem id="conduct"  active={activeNav} icon={<ShieldIcon />}    label="Convivencia"   onClick={setActiveNav} />
+            <NavItem id="absences" active={activeNav} icon={<ClipboardIcon />} label="Inasistencias" onClick={setActiveNav} />
             <NavItem id="history"  active={activeNav} icon={<BookIcon />}    label="Historial"   onClick={setActiveNav} />
             <NavItem id="messages" active={activeNav} icon={<MessageIcon />} label="Mensajes"    onClick={setActiveNav} />
           </div>
@@ -115,6 +118,7 @@ export default function TeacherDashboard() {
           {activeNav === 'students'   && <TeacherStudentsView />}
           {activeNav === 'schedule'   && <ScheduleView />}
           {activeNav === 'conduct'    && <ConvivenciaView />}
+          {activeNav === 'absences'   && <AbsencesView />}
           {activeNav === 'history'    && <HistorialView />}
           {activeNav === 'messages'   && <MensajesView />}
         </main>
@@ -571,6 +575,11 @@ export function StudentPhoto({ src, alt = '', caption, className = 'dash__table-
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [open]);
+  // Cerrar el lightbox también es un clic, y varias filas que muestran una foto
+  // son <button> que abren un detalle. Sin frenar la propagación aquí, el clic
+  // con el que el usuario cierra el zoom activa la fila y lo mete en el reporte.
+  const close = useCallback((e) => { e.stopPropagation(); setOpen(false); }, []);
+
   return (
     <>
       <img
@@ -580,12 +589,18 @@ export function StudentPhoto({ src, alt = '', caption, className = 'dash__table-
         onClick={(e) => { e.stopPropagation(); setOpen(true); }}
         style={{ cursor: 'zoom-in' }}
       />
-      {open && (
-        <div className="pae-lightbox" onClick={() => setOpen(false)} role="dialog" aria-modal="true">
-          <button className="pae-lightbox__close" onClick={() => setOpen(false)} aria-label="Cerrar">✕</button>
+      {/* Portal a <body>: el lightbox vive dentro de la fila, y una fila puede
+          ser un <button>. Un <button> y un role="dialog" anidados dentro de otro
+          <button> son HTML inválido. Ojo: el portal NO evita la propagación —
+          React propaga por el árbol de componentes, no por el del DOM — así que
+          los stopPropagation de arriba siguen siendo imprescindibles. */}
+      {open && createPortal(
+        <div className="pae-lightbox" onClick={close} role="dialog" aria-modal="true">
+          <button className="pae-lightbox__close" onClick={close} aria-label="Cerrar">✕</button>
           <img className="pae-lightbox__img" src={src} alt={alt} onClick={(e) => e.stopPropagation()} />
           {caption && <p className="pae-lightbox__caption">{caption}</p>}
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );
@@ -601,7 +616,7 @@ function Spinner({ color = '#6d28d9', size = 20 }) {
 }
 
 /* ── Students view (lista real) ──────────────────────────────── */
-function TeacherStudentsView() {
+export function TeacherStudentsView() {
   const [students, setStudents] = useState([]);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState(null);
@@ -642,7 +657,9 @@ function TeacherStudentsView() {
   return (
     <div className="card dash__list-card att-today">
       <div className="dash__list-header">
-        <span className="dash__list-title">Estudiantes de la institución</span>
+        {/* El backend acota este listado a los salones asignados al docente,
+            así que el título ya no puede prometer la institución entera. */}
+        <span className="dash__list-title">Mis estudiantes</span>
         <span className="dash__list-title">{filtered.length}</span>
       </div>
 
@@ -659,7 +676,14 @@ function TeacherStudentsView() {
 
       {filtered.length === 0 ? (
         <div className="dash__empty" style={{ padding: '32px 20px' }}>
-          <UsersIcon /><span>{students.length === 0 ? 'Aún no hay estudiantes registrados.' : `Sin resultados para "${query}"`}</span>
+          <UsersIcon />
+          <span>
+            {students.length === 0
+              // Lista vacía ≠ institución vacía: lo normal es que el docente
+              // no tenga salones asignados todavía.
+              ? 'No tienes estudiantes asignados. Verifica con administración que tus salones estén registrados.'
+              : `Sin resultados para "${query}"`}
+          </span>
         </div>
       ) : filtered.map((s, i) => {
         const av = AVATARS[i % AVATARS.length];
@@ -726,55 +750,540 @@ export function ScheduleView() {
   );
 }
 
+/* ── Inasistencias de primera hora sin justificar ────────────── */
+export function AbsencesView() {
+  const [items, setItems]   = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]   = useState(null);
+  const [openId, setOpenId] = useState(null);
+  const [filterStudent, setFilterStudent] = useState(null);
+  const [includeClosed, setIncludeClosed] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true); setError(null);
+    try {
+      setItems(await attendanceService.absences({
+        studentId: filterStudent?.id,
+        includeClosed,
+      }));
+    } catch (e) { setError(e.message); }
+    finally { setLoading(false); }
+  }, [filterStudent, includeClosed]);
+
+  useEffect(() => { load(); }, [load]);
+
+  // Al volver se recarga: pudieron añadirse notas, o el acudiente pudo haber
+  // justificado entretanto y la fila ya no pertenece a esta sección.
+  if (openId) {
+    return <AbsenceDetail recordId={openId} onBack={() => { setOpenId(null); load(); }} />;
+  }
+
+  return (
+    <div className="hist-scale">
+      <div className="card att-form" style={{ gap: 12 }}>
+        <p className="dash__list-title" style={{ marginBottom: 4 }}>Filtrar por estudiante</p>
+        <StudentSearch
+          selected={filterStudent}
+          onSelect={r => setFilterStudent(r)}
+          onClear={() => setFilterStudent(null)}
+        />
+        <label className="hist-toggle">
+          <input
+            type="checkbox"
+            checked={includeClosed}
+            onChange={e => setIncludeClosed(e.target.checked)}
+          />
+          Mostrar casos cerrados
+        </label>
+      </div>
+
+      {loading ? (
+        <div className="dash__empty"><Spinner /><span>Cargando inasistencias…</span></div>
+      ) : error ? (
+        <div className="dash__empty">
+          <AlertIcon color="#ef4444" /><span>{error}</span>
+          <button className="btn--secondary" style={{ width: 'auto', marginTop: 8 }} onClick={load}>Reintentar</button>
+        </div>
+      ) : items.length === 0 ? (
+        <div className="dash__empty">
+          <ClipboardIcon />
+          <span>
+            {filterStudent
+              ? 'Este estudiante no tiene inasistencias pendientes de justificar.'
+              : includeClosed
+                ? 'No hay inasistencias sin justificar.'
+                : 'No hay casos abiertos. Activa «Mostrar casos cerrados» para ver los ya gestionados.'}
+          </span>
+        </div>
+      ) : (
+        <div className="card dash__list-card">
+          <div className="dash__list-header">
+            <span className="dash__list-title">Pendientes de justificar</span>
+            <span className="dash__student-group">{items.length}</span>
+          </div>
+          {items.map((a, i) => {
+            const av = AVATARS[i % AVATARS.length];
+            return (
+              <button key={a.record_id} className="dash__student-row att-class-row" onClick={() => setOpenId(a.record_id)}>
+                {a.photo_url
+                  ? <StudentPhoto src={a.photo_url} alt={a.student_name} caption={a.student_name} />
+                  : <div className="dash__student-avatar" style={{ background: av.bg, color: av.color }}>
+                      {(a.student_name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+                    </div>}
+                <div className="dash__student-info">
+                  <p className="dash__student-name">{a.student_name}</p>
+                  <p className="dash__student-group">
+                    {[a.grade_name, a.group_name].filter(Boolean).join(' ')}
+                    {[a.grade_name, a.group_name].filter(Boolean).length ? ' · ' : ''}
+                    {fmtShort(a.date)} · {a.period_name} {a.start_time?.slice(0, 5)}
+                    {a.note_count > 0 ? ` · ${a.note_count} nota${a.note_count > 1 ? 's' : ''}` : ''}
+                  </p>
+                </div>
+                {a.closed && <span className="dash__badge dash__badge--gray">Cerrado</span>}
+                <div className="hist-sev">
+                  <span className={`dash__badge dash__badge--${a.guardian_notified ? 'blue' : 'yellow'}`}>
+                    {a.guardian_notified ? 'Aviso enviado' : 'Sin aviso'}
+                  </span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Detalle de una inasistencia sin justificar + notas ──────── */
+function AbsenceDetail({ recordId, onBack }) {
+  const [data, setData]       = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState(null);
+  const [note, setNote]       = useState('');
+  const [saving, setSaving]   = useState(false);
+  const [closing, setClosing] = useState(false);
+  const [toast, setToast]     = useState(null);
+
+  const showToast = useCallback((msg, type = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3500);
+  }, []);
+
+  const load = useCallback(async () => {
+    setLoading(true); setError(null);
+    try { setData(await attendanceService.absenceDetail(recordId)); }
+    catch (e) { setError(e.message); }
+    finally { setLoading(false); }
+  }, [recordId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const submitNote = useCallback(async () => {
+    const texto = note.trim();
+    if (!texto) return;
+    setSaving(true);
+    try {
+      await attendanceService.addAbsenceNote(recordId, texto);
+      setNote('');
+      await load();
+      showToast('Nota agregada');
+    } catch (e) { showToast(e.message, 'error'); }
+    finally { setSaving(false); }
+  }, [note, recordId, load, showToast]);
+
+  const toggleClosed = useCallback(async () => {
+    setClosing(true);
+    try {
+      await attendanceService.setAbsenceClosed(recordId, !data.closed);
+      await load();
+      showToast(data.closed ? 'Caso reabierto' : 'Caso cerrado');
+    } catch (e) { showToast(e.message, 'error'); }
+    finally { setClosing(false); }
+  }, [recordId, data, load, showToast]);
+
+  const backBtn = (
+    <button className="btn--secondary att-back" style={{ width: 'auto' }} onClick={onBack}>← Inasistencias</button>
+  );
+
+  if (loading) return <div className="dash__empty"><Spinner /><span>Cargando la inasistencia…</span></div>;
+  if (error || !data) {
+    return (
+      <div className="rec-scale">
+        {backBtn}
+        <div className="dash__empty">
+          <AlertIcon color="#ef4444" />
+          <span>{error || 'No se encontró la inasistencia.'}</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rec-scale">
+      {toast && (
+        <div className={`dash__toast dash__toast--${toast.type}`} role="alert">
+          {toast.type === 'success' ? <CheckIcon /> : <AlertIcon />}{toast.msg}
+        </div>
+      )}
+
+      {backBtn}
+
+      <div className="att-head card">
+        <div className="rec-head__student">
+          {data.photo_url
+            ? <StudentPhoto src={data.photo_url} alt={data.student_name} caption={data.student_name} />
+            : <div className="dash__student-avatar" style={{ background: '#ede9fe', color: '#6d28d9' }}>
+                {(data.student_name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+              </div>}
+          <div>
+            <p className="att-head__period">
+              {data.student_name}
+              <span className="dash__badge dash__badge--red">Sin justificar</span>
+              {data.closed && <span className="dash__badge dash__badge--gray">Cerrado</span>}
+            </p>
+            <p className="att-head__sub">
+              {[data.grade_name, data.group_name].filter(Boolean).join(' ')}
+              {[data.grade_name, data.group_name].filter(Boolean).length ? ' · ' : ''}
+              {fmtShort(data.date)}
+            </p>
+          </div>
+        </div>
+        <button className="btn--secondary" style={{ width: 'auto' }} onClick={toggleClosed} disabled={closing}>
+          {closing ? '…' : data.closed ? 'Reabrir caso' : 'Cerrar caso'}
+        </button>
+      </div>
+
+      <div className="card att-form">
+        <div>
+          <span className="dash__field-label">Cuándo fue</span>
+          <p className="hist-obs">
+            {data.period_name} · {data.start_time?.slice(0, 5)} a {data.end_time?.slice(0, 5)} del {fmtShort(data.date)}.
+            {' '}Lista tomada el {fmtShort(data.recorded_at)}.
+          </p>
+        </div>
+
+        <div>
+          <span className="dash__field-label">Aviso al acudiente</span>
+          {data.guardian_notified ? (
+            <p className="hist-obs">
+              Se envió el enlace de justificación{data.guardian_email ? <> a <strong>{data.guardian_email}</strong></> : null}
+              {' '}y nadie lo ha usado todavía.
+            </p>
+          ) : (
+            <p className="hist-obs">
+              Todavía no se ha enviado el aviso. Puede estar dentro de la ventana de gracia, o el
+              estudiante no tener acudiente principal registrado.
+              {data.guardian_email ? <> Contacto: <strong>{data.guardian_email}</strong>.</> : null}
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div className="card att-form">
+        <p className="dash__list-title" style={{ marginBottom: 4 }}>
+          Notas de seguimiento
+          {data.notes.length > 0 && <span className="conv-count"> · {data.notes.length}</span>}
+        </p>
+
+        {data.notes.length === 0 ? (
+          <p className="sched__free">Sin notas todavía.</p>
+        ) : (
+          <div className="hist-notes">
+            {data.notes.map(n => (
+              <div key={n.id} className="hist-note">
+                <p className="hist-note__text">{n.note}</p>
+                <span className="hist-note__meta">{n.author_name} · {fmtShort(n.created_at)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <label className="dash__field">
+          <span className="dash__field-label">Agregar nota</span>
+          <textarea
+            className="dash__field-input"
+            style={{ minHeight: 70, resize: 'vertical' }}
+            value={note}
+            onChange={e => setNote(e.target.value)}
+            maxLength={2000}
+            placeholder="Ej: Llamé al acudiente; enviará la excusa mañana…"
+          />
+        </label>
+        <button className="btn--confirm" onClick={submitNote} disabled={saving || note.trim().length < 1} aria-busy={saving}>
+          {saving ? 'Guardando…' : 'Agregar nota'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /* ── Mensajes: excusas de los acudientes ─────────────────────── */
 export function MensajesView() {
   const [msgs, setMsgs]     = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError]   = useState(null);
+  const [openId, setOpenId] = useState(null);
+  const [filterStudent, setFilterStudent] = useState(null);
+  const [includeArchived, setIncludeArchived] = useState(false);
 
-  useEffect(() => {
-    attendanceService.justifications()
-      .then(setMsgs)
-      .catch(e => setError(e.message))
-      .finally(() => setLoading(false));
-  }, []);
+  const load = useCallback(async () => {
+    setLoading(true); setError(null);
+    try {
+      setMsgs(await attendanceService.justifications({
+        studentId: filterStudent?.id,
+        includeArchived,
+      }));
+    } catch (e) { setError(e.message); }
+    finally { setLoading(false); }
+  }, [filterStudent, includeArchived]);
 
-  if (loading) return <div className="dash__empty"><Spinner /><span>Cargando mensajes…</span></div>;
-  if (error)   return <div className="dash__empty"><AlertIcon color="#ef4444" /><span>{error}</span></div>;
-  if (msgs.length === 0) {
-    return <div className="dash__empty"><MessageIcon /><span>Aún no hay excusas enviadas por los acudientes.</span></div>;
+  useEffect(() => { load(); }, [load]);
+
+  // Al volver del detalle se recarga: pudo cerrarse el caso o añadirse notas.
+  if (openId) {
+    return (
+      <MessageDetail
+        justificationId={openId}
+        onBack={() => { setOpenId(null); load(); }}
+      />
+    );
   }
 
   return (
-    <div className="card dash__list-card msg-scale">
-      <div className="dash__list-header">
-        <span className="dash__list-title">Excusas de los acudientes</span>
-        <span className="dash__student-group">{msgs.length}</span>
+    <div className="hist-scale">
+      <div className="card att-form" style={{ gap: 12 }}>
+        <p className="dash__list-title" style={{ marginBottom: 4 }}>Filtrar por estudiante</p>
+        <StudentSearch
+          selected={filterStudent}
+          onSelect={r => setFilterStudent(r)}
+          onClear={() => setFilterStudent(null)}
+        />
+        <label className="hist-toggle">
+          <input
+            type="checkbox"
+            checked={includeArchived}
+            onChange={e => setIncludeArchived(e.target.checked)}
+          />
+          Mostrar casos cerrados
+        </label>
       </div>
-      {msgs.map((m, i) => {
-        const av = AVATARS[i % AVATARS.length];
-        return (
-          <div className="msg" key={m.record_id}>
-            {m.photo_url
-              ? <StudentPhoto src={m.photo_url} alt="" caption={m.student_name} />
-              : <div className="dash__student-avatar" style={{ background: av.bg, color: av.color }}>
-                  {(m.student_name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
-                </div>}
-            <div className="msg__body">
-              <div className="msg__head">
-                <span className="dash__student-name">{m.student_name}</span>
-                <span className="msg__date">Inasistencia {fmtShort(m.date)}{[m.grade_name, m.group_name].filter(Boolean).length ? ` · Grupo ${[m.grade_name, m.group_name].filter(Boolean).join(' ')}` : ''}</span>
-              </div>
-              <p className="msg__reason">{m.reason}</p>
-              <span className="msg__meta">Justificada el {fmtShort(m.submitted_at)}</span>
-            </div>
+
+      {loading ? (
+        <div className="dash__empty"><Spinner /><span>Cargando mensajes…</span></div>
+      ) : error ? (
+        <div className="dash__empty">
+          <AlertIcon color="#ef4444" /><span>{error}</span>
+          <button className="btn--secondary" style={{ width: 'auto', marginTop: 8 }} onClick={load}>Reintentar</button>
+        </div>
+      ) : msgs.length === 0 ? (
+        <div className="dash__empty">
+          <MessageIcon />
+          <span>
+            {filterStudent
+              ? 'Este estudiante no tiene excusas para tus reportes.'
+              : includeArchived
+                ? 'Aún no hay excusas enviadas por los acudientes.'
+                : 'No hay casos abiertos. Activa «Mostrar casos cerrados» para ver el histórico.'}
+          </span>
+        </div>
+      ) : (
+        <div className="card dash__list-card">
+          <div className="dash__list-header">
+            <span className="dash__list-title">Excusas de los acudientes</span>
+            <span className="dash__student-group">{msgs.length}</span>
           </div>
-        );
-      })}
+          {msgs.map((m, i) => {
+            const av = AVATARS[i % AVATARS.length];
+            return (
+              <button key={m.id} className="dash__student-row att-class-row" onClick={() => setOpenId(m.id)}>
+                {m.photo_url
+                  ? <StudentPhoto src={m.photo_url} alt={m.student_name} caption={m.student_name} />
+                  : <div className="dash__student-avatar" style={{ background: av.bg, color: av.color }}>
+                      {(m.student_name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+                    </div>}
+                <div className="dash__student-info">
+                  <p className="dash__student-name">{m.student_name}</p>
+                  <p className="dash__student-group">
+                    {[m.grade_name, m.group_name].filter(Boolean).join(' ')}
+                    {[m.grade_name, m.group_name].filter(Boolean).length ? ' · ' : ''}
+                    Inasistencia {fmtShort(m.date)}
+                    {m.note_count > 0 ? ` · ${m.note_count} nota${m.note_count > 1 ? 's' : ''}` : ''}
+                  </p>
+                </div>
+                {m.archived && <span className="dash__badge dash__badge--gray">Cerrado</span>}
+                <div className="hist-sev">
+                  {m.attachment_url
+                    ? <span className="dash__badge dash__badge--purple">
+                        {m.attachment_content_type === 'application/pdf' ? 'PDF' : 'Imagen'}
+                      </span>
+                    : <span className="dash__badge dash__badge--gray">Sin soporte</span>}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
 
+/* ── Detalle de una excusa + notas + cierre de caso ──────────── */
+function MessageDetail({ justificationId, onBack }) {
+  const [data, setData]       = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState(null);
+  const [note, setNote]       = useState('');
+  const [savingNote, setSavingNote] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const [toast, setToast]     = useState(null);
+
+  const showToast = useCallback((msg, type = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3500);
+  }, []);
+
+  const load = useCallback(async () => {
+    setLoading(true); setError(null);
+    try { setData(await attendanceService.justificationDetail(justificationId)); }
+    catch (e) { setError(e.message); }
+    finally { setLoading(false); }
+  }, [justificationId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const submitNote = useCallback(async () => {
+    const texto = note.trim();
+    if (!texto) return;
+    setSavingNote(true);
+    try {
+      await attendanceService.addJustificationNote(justificationId, texto);
+      setNote('');
+      await load();
+      showToast('Nota agregada');
+    } catch (e) { showToast(e.message, 'error'); }
+    finally { setSavingNote(false); }
+  }, [note, justificationId, load, showToast]);
+
+  const toggleClosed = useCallback(async () => {
+    setClosing(true);
+    try {
+      await attendanceService.setJustificationArchived(justificationId, !data.archived);
+      await load();
+      showToast(data.archived ? 'Caso reabierto' : 'Caso cerrado');
+    } catch (e) { showToast(e.message, 'error'); }
+    finally { setClosing(false); }
+  }, [justificationId, data, load, showToast]);
+
+  const backBtn = (
+    <button className="btn--secondary att-back" style={{ width: 'auto' }} onClick={onBack}>← Mensajes</button>
+  );
+
+  if (loading) return <div className="dash__empty"><Spinner /><span>Cargando la excusa…</span></div>;
+  if (error || !data) {
+    return (
+      <div className="rec-scale">
+        {backBtn}
+        <div className="dash__empty"><AlertIcon color="#ef4444" /><span>{error || 'No se encontró la excusa.'}</span></div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rec-scale">
+      {toast && (
+        <div className={`dash__toast dash__toast--${toast.type}`} role="alert">
+          {toast.type === 'success' ? <CheckIcon /> : <AlertIcon />}{toast.msg}
+        </div>
+      )}
+
+      {backBtn}
+
+      <div className="att-head card">
+        <div className="rec-head__student">
+          {data.photo_url
+            ? <StudentPhoto src={data.photo_url} alt={data.student_name} caption={data.student_name} />
+            : <div className="dash__student-avatar" style={{ background: '#ede9fe', color: '#6d28d9' }}>
+                {(data.student_name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+              </div>}
+          <div>
+            <p className="att-head__period">
+              {data.student_name}
+              {data.archived && <span className="dash__badge dash__badge--gray">Cerrado</span>}
+            </p>
+            <p className="att-head__sub">
+              {[data.grade_name, data.group_name].filter(Boolean).join(' ')}
+              {[data.grade_name, data.group_name].filter(Boolean).length ? ' · ' : ''}
+              Inasistencia del {fmtShort(data.date)} · Excusa recibida el {fmtShort(data.submitted_at)}
+            </p>
+          </div>
+        </div>
+        <button className="btn--secondary" style={{ width: 'auto' }} onClick={toggleClosed} disabled={closing}>
+          {closing ? '…' : data.archived ? 'Reabrir caso' : 'Cerrar caso'}
+        </button>
+      </div>
+
+      <div className="card att-form">
+        <div>
+          <span className="dash__field-label">Motivo que reportó el acudiente</span>
+          <p className="hist-obs">{data.reason}</p>
+        </div>
+
+        <div>
+          <span className="dash__field-label">Soporte adjunto</span>
+          {data.attachment_url ? (
+            <a className="msg__attach" href={data.attachment_url} target="_blank" rel="noopener noreferrer">
+              <PaperclipIcon />
+              <span className="msg__attach-name">{data.attachment_filename || 'Soporte'}</span>
+              <span className="msg__attach-tag">
+                {data.attachment_content_type === 'application/pdf' ? 'PDF' : 'Imagen'}
+                {data.attachment_size_bytes ? ` · ${Math.max(1, Math.round(data.attachment_size_bytes / 1024))} KB` : ''}
+              </span>
+            </a>
+          ) : (
+            <p className="sched__free">El acudiente no adjuntó ningún documento.</p>
+          )}
+        </div>
+      </div>
+
+      <div className="card att-form">
+        <p className="dash__list-title" style={{ marginBottom: 4 }}>
+          Notas de seguimiento
+          {data.notes.length > 0 && <span className="conv-count"> · {data.notes.length}</span>}
+        </p>
+
+        {data.notes.length === 0 ? (
+          <p className="sched__free">Sin notas todavía.</p>
+        ) : (
+          <div className="hist-notes">
+            {data.notes.map(n => (
+              <div key={n.id} className="hist-note">
+                <p className="hist-note__text">{n.note}</p>
+                <span className="hist-note__meta">{n.author_name} · {fmtShort(n.created_at)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <label className="dash__field">
+          <span className="dash__field-label">Agregar nota</span>
+          <textarea
+            className="dash__field-input"
+            style={{ minHeight: 70, resize: 'vertical' }}
+            value={note}
+            onChange={e => setNote(e.target.value)}
+            maxLength={2000}
+            placeholder="Ej: Se verificó la incapacidad con coordinación…"
+          />
+        </label>
+        <button className="btn--confirm" onClick={submitNote} disabled={savingNote || note.trim().length < 1} aria-busy={savingNote}>
+          {savingNote ? 'Guardando…' : 'Agregar nota'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// La usan Mensajes, su detalle y el Historial.
 function fmtShort(iso) {
   if (!iso) return '';
   const d = new Date(iso.length <= 10 ? `${iso}T00:00:00` : iso);
@@ -1272,7 +1781,7 @@ function RecordDetail({ recordId, onBack, onChanged }) {
           <div>
             <p className="att-head__period">
               {data.student_name}
-              {data.archived && <span className="dash__badge dash__badge--gray" style={{ marginLeft: 8 }}>Oculto</span>}
+              {data.archived && <span className="dash__badge dash__badge--gray">Oculto</span>}
             </p>
             <p className="att-head__sub">
               {[data.grade_name, data.group_name].filter(Boolean).join(' ')}
@@ -1398,6 +1907,7 @@ function UsersIcon({ color = 'currentColor' })     { return <svg width="18" heig
 function CalendarIcon({ color = 'currentColor' })  { return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>; }
 function ShieldIcon({ color = 'currentColor' })    { return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>; }
 function BookIcon({ color = 'currentColor' })      { return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>; }
+function PaperclipIcon() { return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" /></svg>; }
 function MessageIcon({ color = 'currentColor' })   { return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>; }
 function LogoutIcon()    { return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>; }
 function CheckIcon({ color = 'currentColor' })     { return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>; }

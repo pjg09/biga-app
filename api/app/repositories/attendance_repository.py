@@ -7,12 +7,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from sqlalchemy import func
 
-from app.models.attendance import AttendanceJustification, AttendanceRecord, AttendanceToken
+from app.models.attendance import (
+    AttendanceAbsenceNote,
+    AttendanceJustification,
+    AttendanceJustificationNote,
+    AttendanceRecord,
+    AttendanceToken,
+)
 from app.models.class_period import ClassPeriod
+from app.models.enums import AttendanceStatus
 from app.models.grade import Grade
 from app.models.group import Group
 from app.models.student import Student
 from app.models.student_group import StudentGroup
+from app.models.user import User
 from app.models.user_group import UserGroup
 
 
@@ -33,6 +41,52 @@ class JustificationRow:
     reason: str
     submitted_at: object
     photo_url: str | None
+    attachment_key: str | None
+    attachment_filename: str | None
+    attachment_content_type: str | None
+    justification_id: UUID
+    student_id: UUID
+    note_count: int
+    archived: bool
+
+
+@dataclass
+class AbsenceRow:
+    record_id: UUID
+    student_id: UUID
+    student_name: str
+    photo_url: str | None
+    grade_name: str | None
+    group_name: str | None
+    date: object
+    period_name: str
+    start_time: object
+    end_time: object
+    recorded_at: object
+    status: object
+    note_count: int
+    guardian_notified: bool
+    closed: bool
+
+
+@dataclass
+class JustificationDetailRow:
+    justification: object
+    record_id: UUID
+    date: object
+    student_id: UUID
+    student_name: str
+    photo_url: str | None
+    group_name: str | None
+    grade_name: str | None
+
+
+@dataclass
+class JustificationNoteRow:
+    id: UUID
+    note: str
+    author_name: str
+    created_at: object
 
 
 @dataclass
@@ -264,12 +318,20 @@ class AttendanceRepository:
         record_id: UUID,
         token_id: UUID,
         reason: str,
+        attachment_key: str | None = None,
+        attachment_filename: str | None = None,
+        attachment_content_type: str | None = None,
+        attachment_size_bytes: int | None = None,
     ) -> AttendanceJustification:
         obj = AttendanceJustification(
             id=justification_id,
             attendance_record_id=record_id,
             token_id=token_id,
             reason=reason,
+            attachment_key=attachment_key,
+            attachment_filename=attachment_filename,
+            attachment_content_type=attachment_content_type,
+            attachment_size_bytes=attachment_size_bytes,
         )
         self.session.add(obj)
         await self.session.flush()
@@ -301,8 +363,26 @@ class AttendanceRepository:
         self,
         user_id: UUID,
         institution_id: UUID,
+        student_id: UUID | None = None,
+        include_archived: bool = False,
+        skip: int = 0,
+        limit: int = 50,
     ) -> list[JustificationRow]:
-        result = await self.session.execute(
+        """Excusas dirigidas al docente que reportó la inasistencia.
+
+        El conteo de notas va como subconsulta escalar y no como JOIN + GROUP BY:
+        con el join habría que agrupar por todas las columnas seleccionadas, y
+        cualquier columna nueva que se añada al SELECT rompería el GROUP BY en
+        silencio.
+        """
+        note_count = (
+            select(func.count(AttendanceJustificationNote.id))
+            .where(AttendanceJustificationNote.justification_id == AttendanceJustification.id)
+            .correlate(AttendanceJustification)
+            .scalar_subquery()
+        )
+
+        stmt = (
             select(
                 AttendanceRecord.id,
                 func.concat(Student.first_name, " ", Student.last_name),
@@ -312,6 +392,13 @@ class AttendanceRepository:
                 AttendanceJustification.reason,
                 AttendanceJustification.submitted_at,
                 Student.photo_url,
+                AttendanceJustification.attachment_key,
+                AttendanceJustification.attachment_filename,
+                AttendanceJustification.attachment_content_type,
+                AttendanceJustification.id,
+                Student.id,
+                note_count,
+                AttendanceJustification.archived_at,
             )
             .join(AttendanceRecord, AttendanceRecord.id == AttendanceJustification.attendance_record_id)
             .join(Student, Student.id == AttendanceRecord.student_id)
@@ -322,7 +409,15 @@ class AttendanceRepository:
                 AttendanceRecord.recorded_by_user_id == user_id,
             )
             .order_by(AttendanceJustification.submitted_at.desc())
+            .offset(skip)
+            .limit(limit)
         )
+        if student_id:
+            stmt = stmt.where(AttendanceRecord.student_id == student_id)
+        if not include_archived:
+            stmt = stmt.where(AttendanceJustification.archived_at.is_(None))
+
+        result = await self.session.execute(stmt)
         return [
             JustificationRow(
                 record_id=row[0],
@@ -333,6 +428,244 @@ class AttendanceRepository:
                 reason=row[5],
                 submitted_at=row[6],
                 photo_url=row[7],
+                attachment_key=row[8],
+                attachment_filename=row[9],
+                attachment_content_type=row[10],
+                justification_id=row[11],
+                student_id=row[12],
+                note_count=row[13],
+                archived=row[14] is not None,
             )
             for row in result.all()
         ]
+
+    # --- Detalle, notas y cierre de un caso de Mensajes ---
+
+    async def get_justification(
+        self, justification_id: UUID, institution_id: UUID
+    ) -> AttendanceJustification | None:
+        """La justificación, validando que pertenece a la institución.
+
+        El tenant se comprueba por el registro de asistencia:
+        `attendance_justifications` no denormaliza `institution_id`.
+        """
+        result = await self.session.execute(
+            select(AttendanceJustification)
+            .join(AttendanceRecord, AttendanceRecord.id == AttendanceJustification.attendance_record_id)
+            .where(
+                AttendanceJustification.id == justification_id,
+                AttendanceRecord.institution_id == institution_id,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def get_justification_detail(
+        self, justification_id: UUID, institution_id: UUID
+    ) -> JustificationDetailRow | None:
+        result = await self.session.execute(
+            select(
+                AttendanceJustification,
+                AttendanceRecord.id,
+                AttendanceRecord.date,
+                Student.id,
+                func.concat(Student.first_name, " ", Student.last_name),
+                Student.photo_url,
+                Group.name,
+                Grade.name,
+            )
+            .join(AttendanceRecord, AttendanceRecord.id == AttendanceJustification.attendance_record_id)
+            .join(Student, Student.id == AttendanceRecord.student_id)
+            .join(Group, Group.id == AttendanceRecord.group_id)
+            .join(Grade, Grade.id == Group.grade_id)
+            .where(
+                AttendanceJustification.id == justification_id,
+                AttendanceRecord.institution_id == institution_id,
+            )
+        )
+        row = result.first()
+        if not row:
+            return None
+        return JustificationDetailRow(
+            justification=row[0],
+            record_id=row[1],
+            date=row[2],
+            student_id=row[3],
+            student_name=row[4],
+            photo_url=row[5],
+            group_name=row[6],
+            grade_name=row[7],
+        )
+
+    async def list_justification_notes(self, justification_id: UUID) -> list[JustificationNoteRow]:
+        result = await self.session.execute(
+            select(
+                AttendanceJustificationNote.id,
+                AttendanceJustificationNote.note,
+                func.concat(User.first_name, " ", User.last_name),
+                AttendanceJustificationNote.created_at,
+            )
+            .join(User, User.id == AttendanceJustificationNote.author_user_id)
+            .where(AttendanceJustificationNote.justification_id == justification_id)
+            .order_by(AttendanceJustificationNote.created_at.asc())
+        )
+        return [
+            JustificationNoteRow(id=r[0], note=r[1], author_name=r[2], created_at=r[3])
+            for r in result.all()
+        ]
+
+    async def add_justification_note(
+        self,
+        note_id: UUID,
+        justification_id: UUID,
+        institution_id: UUID,
+        author_user_id: UUID,
+        note: str,
+    ) -> AttendanceJustificationNote:
+        obj = AttendanceJustificationNote(
+            id=note_id,
+            justification_id=justification_id,
+            institution_id=institution_id,
+            author_user_id=author_user_id,
+            note=note,
+        )
+        self.session.add(obj)
+        await self.session.flush()
+        await self.session.refresh(obj)
+        return obj
+
+    async def set_justification_archived(
+        self, justification: AttendanceJustification, archived_at: datetime | None
+    ) -> None:
+        justification.archived_at = archived_at
+        await self.session.flush()
+
+    # --- Inasistencias de primera hora sin justificar ---
+
+    def _unjustified_absence_base(self, user_id: UUID, institution_id: UUID):
+        """Criterio único de la sección, compartido por listado y detalle.
+
+        Sale de aquí en cuanto **existe** una justificación, no cuando el estado
+        pasa a JUSTIFIED: es la existencia del descargo lo que mueve el caso a
+        Mensajes. `LATE` queda fuera a propósito — el estudiante sí llegó.
+        """
+        sin_justificar = ~select(AttendanceJustification.id).where(
+            AttendanceJustification.attendance_record_id == AttendanceRecord.id
+        ).exists()
+
+        return (
+            select(
+                AttendanceRecord.id,
+                Student.id,
+                func.concat(Student.first_name, " ", Student.last_name),
+                Student.photo_url,
+                Grade.name,
+                Group.name,
+                AttendanceRecord.date,
+                ClassPeriod.name,
+                ClassPeriod.start_time,
+                ClassPeriod.end_time,
+                AttendanceRecord.created_at,
+                AttendanceRecord.status,
+                select(func.count(AttendanceAbsenceNote.id))
+                .where(AttendanceAbsenceNote.attendance_record_id == AttendanceRecord.id)
+                .correlate(AttendanceRecord)
+                .scalar_subquery(),
+                select(AttendanceToken.id)
+                .where(AttendanceToken.attendance_record_id == AttendanceRecord.id)
+                .correlate(AttendanceRecord)
+                .exists(),
+                AttendanceRecord.absence_closed_at,
+            )
+            .join(Student, Student.id == AttendanceRecord.student_id)
+            .join(ClassPeriod, ClassPeriod.id == AttendanceRecord.class_period_id)
+            .join(Group, Group.id == AttendanceRecord.group_id)
+            .join(Grade, Grade.id == Group.grade_id)
+            .where(
+                AttendanceRecord.institution_id == institution_id,
+                AttendanceRecord.recorded_by_user_id == user_id,
+                ClassPeriod.period_order == 1,
+                AttendanceRecord.status == AttendanceStatus.ABSENT,
+                sin_justificar,
+            )
+        )
+
+    @staticmethod
+    def _to_absence_row(row) -> AbsenceRow:
+        return AbsenceRow(
+            record_id=row[0], student_id=row[1], student_name=row[2], photo_url=row[3],
+            grade_name=row[4], group_name=row[5], date=row[6], period_name=row[7],
+            start_time=row[8], end_time=row[9], recorded_at=row[10], status=row[11],
+            note_count=row[12], guardian_notified=row[13],
+            closed=row[14] is not None,
+        )
+
+    async def list_unjustified_absences(
+        self,
+        user_id: UUID,
+        institution_id: UUID,
+        student_id: UUID | None = None,
+        include_closed: bool = False,
+        skip: int = 0,
+        limit: int = 50,
+    ) -> list[AbsenceRow]:
+        stmt = self._unjustified_absence_base(user_id, institution_id)
+        if not include_closed:
+            stmt = stmt.where(AttendanceRecord.absence_closed_at.is_(None))
+        if student_id:
+            stmt = stmt.where(AttendanceRecord.student_id == student_id)
+        stmt = stmt.order_by(AttendanceRecord.date.desc()).offset(skip).limit(limit)
+        result = await self.session.execute(stmt)
+        return [self._to_absence_row(r) for r in result.all()]
+
+    async def get_unjustified_absence(
+        self, record_id: UUID, user_id: UUID, institution_id: UUID
+    ) -> AbsenceRow | None:
+        stmt = self._unjustified_absence_base(user_id, institution_id).where(
+            AttendanceRecord.id == record_id
+        )
+        row = (await self.session.execute(stmt)).first()
+        return self._to_absence_row(row) if row else None
+
+    async def list_absence_notes(self, record_id: UUID) -> list[JustificationNoteRow]:
+        result = await self.session.execute(
+            select(
+                AttendanceAbsenceNote.id,
+                AttendanceAbsenceNote.note,
+                func.concat(User.first_name, " ", User.last_name),
+                AttendanceAbsenceNote.created_at,
+            )
+            .join(User, User.id == AttendanceAbsenceNote.author_user_id)
+            .where(AttendanceAbsenceNote.attendance_record_id == record_id)
+            .order_by(AttendanceAbsenceNote.created_at.asc())
+        )
+        return [
+            JustificationNoteRow(id=r[0], note=r[1], author_name=r[2], created_at=r[3])
+            for r in result.all()
+        ]
+
+    async def add_absence_note(
+        self,
+        note_id: UUID,
+        record_id: UUID,
+        institution_id: UUID,
+        author_user_id: UUID,
+        note: str,
+    ) -> AttendanceAbsenceNote:
+        obj = AttendanceAbsenceNote(
+            id=note_id,
+            attendance_record_id=record_id,
+            institution_id=institution_id,
+            author_user_id=author_user_id,
+            note=note,
+        )
+        self.session.add(obj)
+        await self.session.flush()
+        await self.session.refresh(obj)
+        return obj
+
+    async def set_absence_closed(self, record_id: UUID, closed_at: datetime | None) -> None:
+        record = await self.session.get(AttendanceRecord, record_id)
+        if record is None:
+            return
+        record.absence_closed_at = closed_at
+        await self.session.flush()

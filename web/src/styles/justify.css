@@ -1,3 +1,9 @@
+/* Tipografías alineadas con el dashboard del docente. Donde el dashboard es
+   MAYOR se adopta su valor exacto (título = .dash__page-title, etiqueta
+   superior = .dash__nav-label); donde es menor no se reduce, porque esta
+   página la abre un acudiente desde el móvil y no es una UI densa de
+   escritorio. El textarea sube a 1rem = 16px a propósito: por debajo de eso
+   iOS Safari hace zoom al enfocar el campo. */
 .justify {
   min-height: 100vh;
   display: flex;
@@ -27,13 +33,13 @@
 
 .justify__logo-text {
   font-weight: 800;
-  font-size: 1.15rem;
+  font-size: 1.3rem;
   letter-spacing: 0.06em;
   color: #1a1730;
 }
 
 .justify__label {
-  font-size: 0.66rem;
+  font-size: 0.87rem;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -42,7 +48,7 @@
 }
 
 .justify__title {
-  font-size: 1.3rem;
+  font-size: 1.6rem;
   font-weight: 800;
   color: #1a1730;
   margin-bottom: 6px;
@@ -50,7 +56,7 @@
 }
 
 .justify__sub {
-  font-size: 0.9rem;
+  font-size: 1rem;
   color: #6b6880;
   line-height: 1.55;
   margin-bottom: 20px;
@@ -66,12 +72,12 @@
   margin-bottom: 22px;
 }
 
-.justify__student-name { font-size: 1.05rem; font-weight: 700; color: #1a1730; }
-.justify__student-meta { font-size: 0.8rem; color: #6b6880; }
+.justify__student-name { font-size: 1.2rem; font-weight: 700; color: #1a1730; }
+.justify__student-meta { font-size: 0.9rem; color: #6b6880; }
 
 .justify__field-label {
   display: block;
-  font-size: 0.78rem;
+  font-size: 0.9rem;
   font-weight: 600;
   color: #6b6880;
   margin-bottom: 8px;
@@ -83,7 +89,7 @@
   padding: 12px 14px;
   border: 1px solid #e8e6f0;
   border-radius: 12px;
-  font-size: 0.9rem;
+  font-size: 1rem;
   font-family: inherit;
   color: #1a1730;
   resize: vertical;
@@ -104,7 +110,7 @@
   border-radius: 12px;
   background: #4A0A9E;
   color: #fff;
-  font-size: 0.92rem;
+  font-size: 1.05rem;
   font-weight: 700;
   cursor: pointer;
   transition: background 0.13s, transform 0.1s;
@@ -114,7 +120,7 @@
 .justify__btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .justify__error {
-  font-size: 0.82rem;
+  font-size: 0.92rem;
   color: #b91c1c;
   background: #fef2f2;
   border-left: 3px solid #ef4444;
@@ -142,4 +148,80 @@
 .justify__state-icon--warn { background: #fef3c7; color: #b45309; }
 .justify__state-icon--err  { background: #fee2e2; color: #991b1b; }
 
-.justify__muted { font-size: 0.84rem; color: #6b6880; }
+.justify__muted { font-size: 0.94rem; color: #6b6880; }
+
+/* ─── Soporte adjunto (opcional) ──────────────────────────────── */
+.justify__field-label--spaced { margin-top: 20px; }
+
+.justify__optional {
+  font-weight: 500;
+  color: #a8a4be;
+}
+
+.justify__hint {
+  font-size: 0.84rem;
+  color: #6b6880;
+  line-height: 1.45;
+  margin: -4px 0 10px;
+}
+
+/* El input real se oculta y el <label> hace de botón: el control nativo de
+   archivo no se puede estilar y se ve distinto en cada navegador. */
+.justify__file-pick {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px;
+  border: 1.5px dashed #d5d0e6;
+  border-radius: 12px;
+  color: #4A0A9E;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.13s, background 0.13s;
+}
+
+.justify__file-pick:hover { border-color: #6d28d9; background: #faf9ff; }
+.justify__file-pick input { display: none; }
+
+.justify__file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: #f6f4fb;
+  border: 1px solid #e8e6f0;
+  border-radius: 12px;
+}
+
+.justify__file-icon { display: flex; color: #4A0A9E; flex-shrink: 0; }
+
+.justify__file-info { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+
+.justify__file-name {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: #1a1730;
+  /* Los nombres largos no deben empujar el botón de quitar fuera de la tarjeta. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.justify__file-size { font-size: 0.8rem; color: #6b6880; }
+
+.justify__file-remove {
+  background: none;
+  border: none;
+  color: #6b6880;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 6px;
+  cursor: pointer;
+  flex-shrink: 0;
+  border-radius: 8px;
+}
+
+.justify__file-remove:hover:not(:disabled) { background: #ece9f6; color: #1a1730; }
+.justify__file-remove:disabled { opacity: 0.5; cursor: not-allowed; }

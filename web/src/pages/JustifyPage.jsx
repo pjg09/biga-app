@@ -9,11 +9,24 @@ function fmtDate(iso) {
   return d.toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 }
 
+// Debe coincidir con `_ALLOWED_ATTACHMENT_TYPES` y `JUSTIFICATION_MAX_UPLOAD_MB`
+// del backend. Aquí solo evita un viaje inútil: la validación que manda es la
+// del servidor.
+const ACCEPTED_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+const MAX_MB = 5;
+
+function fmtSize(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
 export default function JustifyPage() {
   const { token } = useParams();
   const [info, setInfo]       = useState(null);
   const [loading, setLoading] = useState(true);
   const [reason, setReason]   = useState('');
+  const [file, setFile]       = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone]       = useState(null);
   const [error, setError]     = useState(null);
@@ -25,6 +38,25 @@ export default function JustifyPage() {
       .finally(() => setLoading(false));
   }, [token]);
 
+  const handleFile = useCallback((e) => {
+    const f = e.target.files?.[0] ?? null;
+    setError(null);
+    if (!f) { setFile(null); return; }
+    if (!ACCEPTED_TYPES.includes(f.type)) {
+      setError('Formato no admitido. Adjunte un PDF o una imagen (JPG, PNG o WEBP).');
+      e.target.value = '';
+      setFile(null);
+      return;
+    }
+    if (f.size > MAX_MB * 1024 * 1024) {
+      setError(`El archivo supera el máximo de ${MAX_MB} MB.`);
+      e.target.value = '';
+      setFile(null);
+      return;
+    }
+    setFile(f);
+  }, []);
+
   const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
     if (reason.trim().length < 3) {
@@ -34,14 +66,14 @@ export default function JustifyPage() {
     setSubmitting(true);
     setError(null);
     try {
-      const res = await attendanceService.submitJustification(token, reason.trim());
+      const res = await attendanceService.submitJustification(token, reason.trim(), file);
       setDone(res);
     } catch (err) {
       setError(err.message);
     } finally {
       setSubmitting(false);
     }
-  }, [token, reason]);
+  }, [token, reason, file]);
 
   return (
     <div className="justify">
@@ -93,6 +125,43 @@ export default function JustifyPage() {
               required
             />
 
+            <p className="justify__field-label justify__field-label--spaced">
+              Soporte <span className="justify__optional">(opcional)</span>
+            </p>
+            <p className="justify__hint">
+              Adjunte una incapacidad, constancia u otro documento. PDF o imagen, hasta {MAX_MB} MB.
+            </p>
+
+            {file ? (
+              <div className="justify__file">
+                <span className="justify__file-icon" aria-hidden="true"><FileIcon /></span>
+                <span className="justify__file-info">
+                  <span className="justify__file-name">{file.name}</span>
+                  <span className="justify__file-size">{fmtSize(file.size)}</span>
+                </span>
+                <button
+                  type="button"
+                  className="justify__file-remove"
+                  onClick={() => setFile(null)}
+                  aria-label="Quitar el archivo adjunto"
+                  disabled={submitting}
+                >
+                  ✕
+                </button>
+              </div>
+            ) : (
+              <label className="justify__file-pick">
+                <input
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
+                  onChange={handleFile}
+                  disabled={submitting}
+                />
+                <span className="justify__file-icon" aria-hidden="true"><UploadIcon /></span>
+                <span>Seleccionar archivo</span>
+              </label>
+            )}
+
             {error && <p className="justify__error">{error}</p>}
 
             <button className="justify__btn" type="submit" disabled={submitting}>
@@ -141,3 +210,5 @@ function Logo() {
 }
 function CheckIcon() { return <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>; }
 function AlertIcon() { return <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>; }
+function UploadIcon() { return <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>; }
+function FileIcon()   { return <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>; }
