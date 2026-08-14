@@ -1,10 +1,16 @@
 services:
+  # TZ en api/worker/beat/postgres: las imágenes base corren en UTC y, sin esto,
+  # `date.today()` adelanta un día entre las 19:00 y medianoche hora de Colombia.
+  # Eso escribía la fecha equivocada en attendance_records, pae_deliveries y
+  # early_departures — no era un problema de presentación, el dato entraba mal.
   api:
     build:
       context: ./api
     ports:
-      - "8001:8000"
+      - "8000:8000"
     env_file: .env
+    environment:
+      TZ: America/Bogota
     depends_on:
       postgres:
         condition: service_healthy
@@ -20,6 +26,8 @@ services:
     build:
       context: ./api
     env_file: .env
+    environment:
+      TZ: America/Bogota
     depends_on:
       postgres:
         condition: service_healthy
@@ -35,6 +43,8 @@ services:
     build:
       context: ./api
     env_file: .env
+    environment:
+      TZ: America/Bogota
     depends_on:
       - redis
     volumes:
@@ -47,10 +57,15 @@ services:
       POSTGRES_DB: biga
       POSTGRES_USER: biga
       POSTGRES_PASSWORD: biga
+      TZ: America/Bogota
+      PGTZ: America/Bogota
     ports:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    # `TZ`/`PGTZ` solo aplican al initdb de un cluster nuevo; este ya existía con
+    # timezone='Etc/UTC' en postgresql.conf, así que hay que forzarlo por flag.
+    command: postgres -c timezone=America/Bogota -c log_timezone=America/Bogota
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U biga"]
       interval: 5s
@@ -100,11 +115,11 @@ services:
     build:
       context: ./web
     ports:
-      - "5175:5175"
+      - "5173:5173"
     volumes:
       - ./web:/app
       - /app/node_modules
-    command: npm run dev -- --host --port 5175
+    command: npm run dev -- --host
 
 volumes:
   postgres_data:

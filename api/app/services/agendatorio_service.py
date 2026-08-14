@@ -1,5 +1,5 @@
 import logging
-from datetime import date as PyDate, datetime, timezone
+from datetime import date as PyDate, datetime
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
@@ -297,5 +297,5 @@ class AgendatorioService:
         record = await self.agendatorio_repo.get_record_owned(record_id, user_id, institution_id)
         if not record:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Registro no encontrado")
-        archived_at = datetime.now(timezone.utc).replace(tzinfo=None) if archived else None
+        archived_at = datetime.now() if archived else None
         await self.agendatorio_repo.set_archived(record, archived_at)

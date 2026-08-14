@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
@@ -89,7 +89,10 @@ class PAEService:
                 detail="El estudiante ya está inscrito en el PAE para este año académico",
             )
 
-        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        # Hora local (los contenedores fijan TZ=America/Bogota). `enrolled_at`
+        # entra en el hash, pero la auditoría lo recalcula desde el valor
+        # almacenado, así que cambiar la zona no invalida las firmas anteriores.
+        now = datetime.now()
         enrollment_hash = compute_enrollment_hash(
             student_id=student_id,
             institution_id=institution_id,
@@ -162,7 +165,7 @@ class PAEService:
                 detail="El estudiante ya recibió su entrega PAE hoy",
             )
 
-        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        now = datetime.now()  # local; ver nota en enroll_student sobre el hash
         # Capa 2 de la cadena: el hash de la entrega incorpora el de la
         # inscripción, atando la entrega a la inscripción exacta que la habilitó.
         delivery_hash = compute_delivery_hash(
