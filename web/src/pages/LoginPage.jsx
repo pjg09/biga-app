@@ -77,42 +77,7 @@ export default function LoginPage() {
 
   return (
     <div className="login">
-      {/* ── Left brand panel ── */}
-      <aside className="login__brand" aria-label="BIGA — presentación">
-        <div className="login__brand-bg" aria-hidden="true">
-          <div className="login__orb login__orb--1" />
-          <div className="login__orb login__orb--2" />
-          <div className="login__grid" />
-        </div>
-
-        <div className="login__brand-content">
-          <Link to="/" className="login__logo" aria-label="Volver al inicio">
-            <LogoIcon />
-            <span className="login__logo-text">BIGA</span>
-          </Link>
-
-          <div className="login__brand-body">
-            <h1 className="login__brand-title">
-              La plataforma que conecta
-              <span className="gradient-text"> familia, escuela</span>
-              <br />e institución.
-            </h1>
-
-            <ul className="login__brand-features" aria-label="Características principales">
-              {BRAND_FEATURES.map(({ icon, text }) => (
-                <li key={text} className="login__brand-feature">
-                  <span className="login__brand-feature-icon" aria-hidden="true">{icon}</span>
-                  <span>{text}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <p className="login__brand-footer">
-            BIGA — Construyendo entornos protectores con tecnología.
-          </p>
-        </div>
-      </aside>
+      <LoginBrandPanel />
 
       {/* ── Right form panel ── */}
       <main className="login__panel" aria-label="Formulario de acceso">
@@ -169,9 +134,9 @@ export default function LoginPage() {
                 <label htmlFor={passwordId} className="form-label">
                   Contraseña
                 </label>
-                <a href="#" className="form-forgot" tabIndex={0}>
+                <Link to="/recuperar" className="form-forgot">
                   ¿Olvidaste tu contraseña?
-                </a>
+                </Link>
               </div>
               <div className={`form-input-wrap${errors.password ? ' form-input-wrap--error' : ''}`}>
                 <input
@@ -253,6 +218,49 @@ export default function LoginPage() {
   );
 }
 
+/* ── Panel de marca ──────────────────────────────────── */
+// Exportado porque la pantalla de recuperación de contraseña usa el mismo
+// layout de dos columnas. Mantenerlo duplicado garantizaba que se desincronizaran.
+export function LoginBrandPanel() {
+  return (
+    <aside className="login__brand" aria-label="BIGA — presentación">
+      <div className="login__brand-bg" aria-hidden="true">
+        <div className="login__orb login__orb--1" />
+        <div className="login__orb login__orb--2" />
+        <div className="login__grid" />
+      </div>
+
+      <div className="login__brand-content">
+        <Link to="/" className="login__logo" aria-label="Volver al inicio">
+          <LogoIcon />
+          <span className="login__logo-text">BIGA</span>
+        </Link>
+
+        <div className="login__brand-body">
+          <h1 className="login__brand-title">
+            La plataforma que conecta
+            <span className="gradient-text"> familia, escuela</span>
+            <br />e institución.
+          </h1>
+
+          <ul className="login__brand-features" aria-label="Características principales">
+            {BRAND_FEATURES.map(({ icon, text }) => (
+              <li key={text} className="login__brand-feature">
+                <span className="login__brand-feature-icon" aria-hidden="true">{icon}</span>
+                <span>{text}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <p className="login__brand-footer">
+          BIGA — Construyendo entornos protectores con tecnología.
+        </p>
+      </div>
+    </aside>
+  );
+}
+
 /* ── Data ────────────────────────────────────────────── */
 const BRAND_FEATURES = [
   { icon: <CheckIcon />, text: 'Asistencia y PAE en tiempo real' },
@@ -262,7 +270,7 @@ const BRAND_FEATURES = [
 ];
 
 /* ── Icons ───────────────────────────────────────────── */
-function LogoIcon() {
+export function LogoIcon() {
   // useId genera IDs únicos por instancia: el logo se renderiza dos veces
   // (desktop + mobile) y con IDs fijos los gradientes colisionaban, dejando
   // el ícono sin relleno en mobile. Sin colones para evitar edge cases en url().
@@ -300,7 +308,7 @@ function CheckIcon() {
   );
 }
 
-function EyeIcon() {
+export function EyeIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
       <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
@@ -309,7 +317,7 @@ function EyeIcon() {
   );
 }
 
-function EyeOffIcon() {
+export function EyeOffIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
       <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19M1 1l22 22"/>
@@ -318,7 +326,7 @@ function EyeOffIcon() {
   );
 }
 
-function ErrorIcon() {
+export function ErrorIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5"/>
@@ -327,7 +335,7 @@ function ErrorIcon() {
   );
 }
 
-function ArrowIcon() {
+export function ArrowIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"/>
@@ -335,7 +343,7 @@ function ArrowIcon() {
   );
 }
 
-function Spinner() {
+export function Spinner() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true" className="login__spinner">
       <circle cx="12" cy="12" r="10" stroke="rgba(255,255,255,0.25)" strokeWidth="2.5"/>

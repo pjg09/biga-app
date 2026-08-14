@@ -206,7 +206,8 @@
 }
 
 .form-forgot {
-  font-size: 0.8rem;
+  /* Mismo tamaño que `.login__back` ("¿Aún no tienes acceso?"). */
+  font-size: 0.96rem;
   color: var(--clr-purple-300);
   font-weight: 500;
   transition: color var(--transition-fast);

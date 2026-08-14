@@ -1,0 +1,148 @@
+/* Recuperación de contraseña.
+   Reutiliza el layout y los campos de login.css; aquí solo lo propio del
+   asistente por pasos. Prefijo `fp-` para no chocar con `.login__`/`.form-`. */
+
+/* Indicador de pasos, un 30% más grande que el tamaño original
+   (dot 24→31px, texto 0.78→1.01rem, número 0.72→0.94rem). */
+.fp-steps {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-bottom: 2rem;
+  list-style: none;
+  padding: 0;
+}
+
+.fp-step {
+  display: flex;
+  align-items: center;
+  gap: 0.58rem;
+  flex: 1;
+  font-size: 1.01rem;
+  font-weight: 600;
+  color: var(--clr-gray-400);
+  white-space: nowrap;
+}
+
+.fp-step__dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 31px;
+  height: 31px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  font-size: 0.94rem;
+  font-weight: 700;
+}
+
+/* El tick del paso completado se escala con el dot: el SVG lleva 14px fijos
+   en el JSX y se quedaría pequeño dentro del círculo más grande. */
+.fp-step__dot svg {
+  width: 18px;
+  height: 18px;
+}
+
+.fp-step--active {
+  color: var(--clr-purple-600);
+}
+
+.fp-step--done {
+  color: var(--clr-purple-400);
+}
+
+.fp-step--done .fp-step__dot {
+  background: var(--clr-purple-600);
+  border-color: var(--clr-purple-600);
+  color: #fff;
+}
+
+/* Código OTP: monoespaciado y espaciado para que se lea dígito a dígito. */
+.fp-code-input {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: 0.5em;
+  text-align: center;
+  /* El letter-spacing añade un hueco tras el último dígito y descentra el
+     texto; se compensa con el padding izquierdo. */
+  padding-left: calc(1rem + 0.5em);
+}
+
+.fp-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 0.25rem;
+}
+
+/* "Cambiar correo", "Reenviar código", "Pedir un código nuevo": estaban al
+   tamaño del antiguo "¿Olvidaste tu contraseña?"; ahora igualan a `.login__back`. */
+.fp-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.96rem;
+  font-weight: 600;
+  color: var(--clr-purple-600);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.fp-link:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.fp-link:disabled {
+  color: var(--clr-gray-400);
+  cursor: not-allowed;
+}
+
+.fp-link--inline {
+  display: block;
+  margin-top: 0.4rem;
+}
+
+/* El .form-alert base es de error (rojo); esta variante es para confirmaciones. */
+.form-alert.form-alert--ok {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #065f46;
+}
+
+.fp-done {
+  text-align: center;
+  padding: 2rem 0;
+}
+
+.fp-done__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 1rem;
+  border-radius: 50%;
+  background: #d1fae5;
+  color: #059669;
+}
+
+.fp-done__icon svg {
+  width: 26px;
+  height: 26px;
+}
+
+@media (max-width: 520px) {
+  .fp-step__label {
+    display: none;
+  }
+
+  .fp-steps {
+    gap: 0.75rem;
+  }
+
+  .fp-step {
+    flex: 0 0 auto;
+  }
+}

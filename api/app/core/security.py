@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import secrets
 from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
 
@@ -16,6 +17,15 @@ def hash_password(password: str) -> str:
 
 def verify_password(plain: str, hashed: str) -> bool:
     return bcrypt.checkpw(plain.encode(), hashed.encode())
+
+
+def generate_otp_code(digits: int = 6) -> str:
+    """Código numérico de un solo uso, con CSPRNG.
+
+    `secrets` y no `random`: este último es un Mersenne Twister predecible a
+    partir de unas pocas salidas observadas.
+    """
+    return f"{secrets.randbelow(10 ** digits):0{digits}d}"
 
 
 def create_access_token(subject: str) -> str:

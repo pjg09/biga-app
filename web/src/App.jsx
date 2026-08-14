@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import LandingPage      from './pages/LandingPage';
 import LoginPage        from './pages/LoginPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import TeacherDashboard from './pages/TeacherDashboard';
 import PAEDashboard     from './pages/PAEDashboard';
 import AdminDashboard   from './pages/AdminDashboard';
@@ -12,6 +13,7 @@ export default function App() {
     <Routes>
       <Route path="/"       element={<LandingPage />} />
       <Route path="/login"  element={<LoginPage />} />
+      <Route path="/recuperar" element={<ForgotPasswordPage />} />
       <Route path="/justificar/:token" element={<JustifyPage />} />
 
       <Route
