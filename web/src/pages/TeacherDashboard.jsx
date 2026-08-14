@@ -216,10 +216,12 @@ export function AttendanceView() {
               {c.grade_name} {c.group_name} · {c.start_time?.slice(0, 5)} - {c.end_time?.slice(0, 5)}
             </p>
           </div>
-          {c.is_first_hour && <span className="dash__badge dash__badge--blue">1ª hora</span>}
-          <span className={`dash__badge dash__badge--${c.already_taken ? 'green' : 'yellow'}`}>
-            {c.already_taken ? 'Tomada' : 'Pendiente'}
-          </span>
+          <div className="att-class-row__badges">
+            {c.is_first_hour && <span className="dash__badge dash__badge--blue">1ª hora</span>}
+            <span className={`dash__badge dash__badge--${c.already_taken ? 'green' : 'yellow'}`}>
+              {c.already_taken ? 'Tomada' : 'Pendiente'}
+            </span>
+          </div>
         </button>
       ))}
     </div>
@@ -390,21 +392,20 @@ function ClassAttendance({ classPeriodId, onBack }) {
               </div>
 
               {data.already_taken ? (
-                <>
+                <div className="att-roster-row__status">
                   <span className={`dash__badge dash__badge--${STATUS_CLASS[s.status] || 'green'}`}>
                     {STATUS_LABEL[s.status] || s.status}
                   </span>
                   {s.status === 'ABSENT' && (
                     <button
                       className="dash__table-register-btn"
-                      style={{ marginLeft: 10 }}
                       onClick={() => markArrived(s)}
                       disabled={arrivingId === s.student_id}
                     >
                       {arrivingId === s.student_id ? 'Marcando…' : 'Llegó (tardanza)'}
                     </button>
                   )}
-                </>
+                </div>
               ) : (
                 <div className="att-choice" role="group" aria-label={`Asistencia de ${s.first_name} ${s.last_name}`}>
                   <button

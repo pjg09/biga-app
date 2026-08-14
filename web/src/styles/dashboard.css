@@ -1090,16 +1090,37 @@ body { background: var(--bg); }
 .att-head__counts .dash__badge { font-size: 0.78rem; }
 .att-roster-row .dash__badge { font-size: 0.78rem; }
 
+/* "1ª hora" + estado (Tomada/Pendiente) van juntos como una sola unidad para
+   que no se separen al hacer wrap: se apilan en columna en vez de ir cada
+   badge por su lado. */
+.att-class-row__badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* Estado + botón "Llegó (tardanza)" de la toma/registro de asistencia: el
+   botón va apilado debajo del badge, ambos anclados a la derecha de la fila. */
+.att-roster-row__status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-left: auto; /* se mantiene pegado a la derecha aunque la fila haga wrap en móvil */
+}
+
 /* "Clases de hoy" — tabla resumen +50% en todos sus elementos */
 .att-today .dash__list-title    { font-size: 1.06rem; }
 .att-today .dash__student-avatar { width: 44px; height: 44px; font-size: 0.81rem; }
 .att-today .dash__table-photo   { width: 44px; height: 44px; }
 .att-today .dash__field-input   { font-size: 1rem; padding: 12px 14px; }
 .att-today .att-choice__btn         { font-size: 0.95rem; }
-.att-today .dash__table-register-btn { font-size: 0.95rem; }
+.att-today .dash__table-register-btn { font-size: 0.665rem; } /* mismo tamaño que las badges de esta lista */
 .att-today .dash__student-name  { font-size: 1.02rem; }
 .att-today .dash__student-group { font-size: 0.97rem; }
-.att-today .dash__badge         { font-size: 0.95rem; }
+.att-today .dash__badge         { font-size: 0.665rem; } /* -30% sobre 0.95rem */
 
 .att-toggle {
   border: none;
@@ -1618,4 +1639,9 @@ body { background: var(--bg); }
   .dash__modal-student    { flex-wrap: wrap; }
 
   .att-form { padding: 16px; }
+
+  /* "1ª hora" pasa a apilarse encima de "Tomada"/"Pendiente" en vez de ir
+     lado a lado: como unidad son más angostas y caben junto al nombre en
+     lugar de forzar el wrap de toda la fila. */
+  .att-class-row__badges { flex-direction: column; align-items: flex-end; gap: 4px; }
 }
