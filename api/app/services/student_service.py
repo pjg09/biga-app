@@ -1,9 +1,11 @@
+from datetime import date
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
 
 from app.adapters.storage.s3 import S3StorageAdapter
 from app.core.photos import resolve_photo_url
+from app.models.enums import UserRole
 from app.models.student import Student
 from app.repositories.student_repository import StudentRepository
 from app.schemas.students import StudentCreate, StudentResponse
@@ -49,8 +51,35 @@ class StudentService:
         saved = await self.repo.create(student)
         return self._to_response(saved)
 
-    async def list_students(self, institution_id: UUID) -> list[StudentResponse]:
-        students = await self.repo.list_by_institution(institution_id=institution_id)
+    async def list_students(
+        self,
+        institution_id: UUID,
+        user_id: UUID,
+        role: UserRole,
+    ) -> list[StudentResponse]:
+        """Listado de "Mis estudiantes" (módulo de Aula), acotado según el rol.
+
+        Docente y operador PAE ven solo los estudiantes de los salones que
+        tienen asignados: el operador PAE es un docente con funciones extra, y
+        su módulo de Aula debe comportarse como el de cualquier docente. Solo el
+        administrador ve la institución entera.
+
+        Esto **no** afecta a los módulos del PAE: `/pae/students/today` y las
+        matrículas del PAE consultan `pae_enrollments`/`pae_deliveries` filtrando
+        únicamente por institución, así que el operador sigue viendo a todos los
+        que reclaman o están matriculados, den o no clase con él.
+
+        El recorte se hace aquí y no en el front: cualquiera puede llamar a
+        `GET /students` a mano, y un filtro que solo vive en React no filtra nada.
+        """
+        if role in (UserRole.TEACHER, UserRole.PAE_OPERATOR):
+            students = await self.repo.list_for_teacher(
+                institution_id=institution_id,
+                user_id=user_id,
+                academic_year=date.today().year,
+            )
+        else:
+            students = await self.repo.list_by_institution(institution_id=institution_id)
         return [self._to_response(s) for s in students]
 
     async def set_photo(

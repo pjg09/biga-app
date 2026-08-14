@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.storage.s3 import S3StorageAdapter
 from app.core.database import get_db
-from app.core.dependencies import get_current_user, get_storage_adapter
+from app.core.dependencies import get_current_user, get_storage_adapter, require_admin
 from app.models.enums import UserRole
 from app.models.user import User
 from app.repositories.pae_repository import PAERepository
@@ -40,7 +40,8 @@ def require_pae_operator(current_user: User = Depends(get_current_user)) -> User
     return current_user
 
 
-# El admin también gestiona inscripciones PAE y consulta el listado del día.
+# El listado del día lo consultan tanto el operador como el admin. La
+# inscripción NO: ver `enroll_student`.
 def require_pae_or_admin(current_user: User = Depends(get_current_user)) -> User:
     if current_user.role not in (UserRole.PAE_OPERATOR, UserRole.ADMIN):
         raise HTTPException(
@@ -65,9 +66,15 @@ async def list_students_today(
 @router.post("/enrollments", response_model=PAEEnrollmentResponse, status_code=status.HTTP_201_CREATED)
 async def enroll_student(
     body: PAEEnrollmentCreate,
-    current_user: User = Depends(require_pae_or_admin),
+    current_user: User = Depends(require_admin),
     service: PAEService = Depends(get_pae_service),
 ):
+    """Matricular a un estudiante en el PAE. **Solo ADMIN.**
+
+    Regla de dominio: el operador PAE *opera* el programa (toma el listado, ve
+    métricas y consulta matriculados) pero **no decide quién entra**. Admitir a
+    un estudiante al PAE es una decisión administrativa, no del punto de entrega.
+    """
     return await service.enroll_student(
         student_id=body.student_id,
         institution_id=current_user.institution_id,

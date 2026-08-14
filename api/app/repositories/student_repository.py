@@ -8,6 +8,7 @@ from app.models.grade import Grade
 from app.models.group import Group
 from app.models.student import Student
 from app.models.student_group import StudentGroup
+from app.models.user_group import UserGroup
 
 
 @dataclass
@@ -56,6 +57,40 @@ class StudentRepository:
             .where(
                 Student.institution_id == institution_id,
                 Student.is_active == True,
+            )
+            .order_by(Student.last_name, Student.first_name)
+        )
+        return list(result.scalars().all())
+
+    async def list_for_teacher(
+        self,
+        institution_id: UUID,
+        user_id: UUID,
+        academic_year: int,
+    ) -> list[Student]:
+        """Estudiantes de los salones asignados al docente en `user_groups`.
+
+        El filtro es por **asignación docente-grupo**, no por horario: da igual
+        que la clase sea primera hora o la última, y un docente sin ninguna
+        clase hoy sigue viendo a sus estudiantes.
+
+        No necesita `DISTINCT`: `student_groups` es UNIQUE(student_id,
+        academic_year) y `user_groups` es UNIQUE(user_id, group_id,
+        academic_year), así que ningún estudiante puede aparecer dos veces.
+        """
+        result = await self.session.execute(
+            select(Student)
+            .join(
+                StudentGroup,
+                (StudentGroup.student_id == Student.id) & (StudentGroup.is_active == True),
+            )
+            .join(UserGroup, UserGroup.group_id == StudentGroup.group_id)
+            .where(
+                Student.institution_id == institution_id,
+                Student.is_active == True,
+                StudentGroup.academic_year == academic_year,
+                UserGroup.user_id == user_id,
+                UserGroup.academic_year == academic_year,
             )
             .order_by(Student.last_name, Student.first_name)
         )

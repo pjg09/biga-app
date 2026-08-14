@@ -51,7 +51,16 @@ async def list_students(
     current_user: User = Depends(get_current_user),
     service: StudentService = Depends(get_student_service),
 ):
-    return await service.list_students(institution_id=current_user.institution_id)
+    """"Mis estudiantes". Al docente le devuelve solo los de sus salones.
+
+    No confundir con `GET /students/search`, que sigue alcanzando a toda la
+    institución: convivencia necesita poder registrar a cualquier estudiante.
+    """
+    return await service.list_students(
+        institution_id=current_user.institution_id,
+        user_id=current_user.id,
+        role=current_user.role,
+    )
 
 
 @router.post("/{student_id}/photo", response_model=StudentResponse)

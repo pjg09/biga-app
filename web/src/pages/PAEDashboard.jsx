@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { paeService } from '../services/pae';
 import { studentService } from '../services/students';
-import { AttendanceView, DeparturesView, ScheduleView, ConvivenciaView, HistorialView, MensajesView, StudentPhoto } from './TeacherDashboard';
+import { AttendanceView, DeparturesView, ScheduleView, ConvivenciaView, HistorialView, MensajesView, StudentPhoto, TeacherStudentsView, AbsencesView } from './TeacherDashboard';
 import '../styles/dashboard.css';
 
 const AVATARS = [
@@ -22,6 +22,7 @@ const NAV_TITLES = {
   departures:     'Salidas tempranas',
   schedule:       'Horario',
   conduct:        'Convivencia',
+  absences:       'Inasistencias sin justificar',
   history:        'Historial',
   messages:       'Mensajes',
 };
@@ -83,7 +84,8 @@ export default function PAEDashboard() {
           </div>
           <div className="dash__nav-section">
             <p className="dash__nav-label">Seguimiento</p>
-            <NavItem id="conduct"  active={activeNav} icon={<ShieldIcon />}  label="Convivencia" onClick={setActiveNav} />
+            <NavItem id="conduct"  active={activeNav} icon={<ShieldIcon />}    label="Convivencia"   onClick={setActiveNav} />
+            <NavItem id="absences" active={activeNav} icon={<ClipboardIcon />} label="Inasistencias" onClick={setActiveNav} />
             <NavItem id="history"  active={activeNav} icon={<BookIcon />}    label="Historial"   onClick={setActiveNav} />
             <NavItem id="messages" active={activeNav} icon={<MessageIcon />} label="Mensajes"    onClick={setActiveNav} />
           </div>
@@ -117,11 +119,16 @@ export default function PAEDashboard() {
           {activeNav === 'pae-register' && <PAERegisterView />}
           {activeNav === 'pae-report'   && <PAEReportView />}
           {activeNav === 'pae-enrolled' && <PAEEnrolledView />}
-          {activeNav === 'students'     && <StudentsView />}
+          {/* Aula → Estudiantes es EXACTAMENTE el módulo del docente: el
+              operador PAE da clase igual que él y no matricula a nadie en el
+              PAE. `StudentsView` (con alta de estudiante e inscripción al PAE)
+              queda solo para el admin. */}
+          {activeNav === 'students'     && <TeacherStudentsView />}
           {activeNav === 'attendance'   && <AttendanceView />}
           {activeNav === 'departures'   && <DeparturesView />}
           {activeNav === 'schedule'     && <ScheduleView />}
           {activeNav === 'conduct'      && <ConvivenciaView />}
+          {activeNav === 'absences'     && <AbsencesView />}
           {activeNav === 'history'      && <HistorialView />}
           {activeNav === 'messages'     && <MensajesView />}
         </main>
@@ -550,6 +557,10 @@ function PAEEnrolledView() {
 /* ── Estudiantes: registro + inscripción PAE ──────────────────────── */
 const EMPTY_FORM = { document_number: '', first_name: '', last_name: '', birth_date: '' };
 
+// Solo la usa AdminDashboard. Trae alta de estudiante e inscripción al PAE, dos
+// cosas que ni el docente ni el operador PAE pueden hacer; el dashboard del PAE
+// monta `TeacherStudentsView`. Vive aquí por historia — moverla a
+// AdminDashboard.jsx sería lo coherente.
 export function StudentsView() {
   const [students, setStudents]   = useState([]);
   const [enrolledIds, setEnrolled] = useState(new Set());
