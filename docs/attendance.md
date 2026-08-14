@@ -231,7 +231,7 @@ notificación solo se encola en primera hora.)
 | Método y ruta | Descripción |
 |---|---|
 | `POST /departures` | Body `{ student_id, departure_time, reason? }`. Crea y notifica |
-| `GET /departures` | Salidas de hoy (incluye `student_name`, `photo_url` presignado) |
+| `GET /departures` | Salidas de hoy **registradas por el usuario autenticado** (`recorded_by_user_id`), no toda la institución. Incluye `student_name`, `photo_url` presignado |
 
 ---
 

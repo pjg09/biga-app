@@ -29,6 +29,7 @@ class DepartureRepository:
         self,
         institution_id: UUID,
         date: PyDate,
+        recorded_by_user_id: UUID,
     ) -> list[tuple[EarlyDeparture, str, str | None]]:
         from sqlalchemy import func
 
@@ -42,6 +43,7 @@ class DepartureRepository:
             .where(
                 EarlyDeparture.institution_id == institution_id,
                 EarlyDeparture.departure_date == date,
+                EarlyDeparture.recorded_by_user_id == recorded_by_user_id,
             )
             .order_by(EarlyDeparture.departure_time.desc())
         )

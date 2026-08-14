@@ -38,4 +38,4 @@ async def list_departures(
     current_user: User = Depends(require_staff),
     service: DepartureService = Depends(get_departure_service),
 ):
-    return await service.list_today(institution_id=current_user.institution_id)
+    return await service.list_today(institution_id=current_user.institution_id, user_id=current_user.id)

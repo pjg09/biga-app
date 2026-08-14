@@ -61,8 +61,10 @@ class DepartureService:
             created_at=saved.created_at,
         )
 
-    async def list_today(self, institution_id: UUID) -> list[DepartureResponse]:
-        rows = await self.repo.list_for_date(institution_id=institution_id, date=date.today())
+    async def list_today(self, institution_id: UUID, user_id: UUID) -> list[DepartureResponse]:
+        rows = await self.repo.list_for_date(
+            institution_id=institution_id, date=date.today(), recorded_by_user_id=user_id
+        )
         return [
             DepartureResponse(
                 id=d.id,
