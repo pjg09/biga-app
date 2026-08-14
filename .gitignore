@@ -188,3 +188,5 @@ celerybeat.pid
 *.swo
 .tmp/
 tmp/
+
+TODO.md
