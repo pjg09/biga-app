@@ -49,9 +49,12 @@ function dateLabel() {
 
 export default function TeacherDashboard() {
   const [activeNav, setActiveNav] = useState('attendance');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => { document.title = 'BIGA - Profesores'; }, []);
+  // Cierra el cajón móvil al navegar entre secciones sin tocar cada NavItem.
+  useEffect(() => { setSidebarOpen(false); }, [activeNav]);
   const user     = JSON.parse(localStorage.getItem('user') || '{}');
   const initials = `${user.first_name?.[0] ?? ''}${user.last_name?.[0] ?? ''}`.toUpperCase();
   const fullName = `${user.first_name ?? ''} ${user.last_name ?? ''}`.trim();
@@ -64,8 +67,10 @@ export default function TeacherDashboard() {
 
   return (
     <div className="dash dash--teacher">
+      {sidebarOpen && <div className="dash__sidebar-overlay" onClick={() => setSidebarOpen(false)} />}
+
       {/* Sidebar */}
-      <aside className="dash__sidebar">
+      <aside className={`dash__sidebar${sidebarOpen ? ' dash__sidebar--open' : ''}`}>
         <a href="/" className="dash__logo">
           <LogoIcon />
           <span className="dash__logo-text">BIGA</span>
@@ -105,9 +110,20 @@ export default function TeacherDashboard() {
       {/* Main */}
       <div className="dash__main">
         <div className="dash__page-header">
-          <div>
-            <p className="dash__page-greeting">{greeting()} · {dateLabel()}</p>
-            <h1 className="dash__page-title">{NAV_TITLES[activeNav]}</h1>
+          <div className="dash__page-header-main">
+            <button
+              type="button"
+              className={`dash__burger${sidebarOpen ? ' dash__burger--open' : ''}`}
+              onClick={() => setSidebarOpen(v => !v)}
+              aria-label={sidebarOpen ? 'Cerrar menú' : 'Abrir menú'}
+              aria-expanded={sidebarOpen}
+            >
+              <span /><span /><span />
+            </button>
+            <div className="dash__page-header-text">
+              <p className="dash__page-greeting">{greeting()} · {dateLabel()}</p>
+              <h1 className="dash__page-title">{NAV_TITLES[activeNav]}</h1>
+            </div>
           </div>
           <span className="dash__page-badge dash__page-badge--teacher">Docente</span>
         </div>

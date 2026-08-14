@@ -46,10 +46,13 @@ function initials(first, last) {
 
 export default function PAEDashboard() {
   const [activeNav, setActiveNav] = useState('pae-register');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const navigate = useNavigate();
   const user     = JSON.parse(localStorage.getItem('user') || '{}');
 
   useEffect(() => { document.title = 'BIGA - PAE'; }, []);
+  // Cierra el cajón móvil al navegar entre secciones sin tocar cada NavItem.
+  useEffect(() => { setSidebarOpen(false); }, [activeNav]);
   const userInitials = initials(user.first_name, user.last_name);
   const fullName     = `${user.first_name ?? ''} ${user.last_name ?? ''}`.trim();
 
@@ -61,8 +64,10 @@ export default function PAEDashboard() {
 
   return (
     <div className="dash dash--pae">
+      {sidebarOpen && <div className="dash__sidebar-overlay" onClick={() => setSidebarOpen(false)} />}
+
       {/* Sidebar */}
-      <aside className="dash__sidebar">
+      <aside className={`dash__sidebar${sidebarOpen ? ' dash__sidebar--open' : ''}`}>
         <a href="/" className="dash__logo">
           <LogoIcon />
           <span className="dash__logo-text">BIGA</span>
@@ -108,9 +113,20 @@ export default function PAEDashboard() {
       {/* Main */}
       <div className="dash__main">
         <div className="dash__page-header">
-          <div>
-            <p className="dash__page-greeting">{greeting()} · {dateLabel()}</p>
-            <h1 className="dash__page-title">{NAV_TITLES[activeNav]}</h1>
+          <div className="dash__page-header-main">
+            <button
+              type="button"
+              className={`dash__burger${sidebarOpen ? ' dash__burger--open' : ''}`}
+              onClick={() => setSidebarOpen(v => !v)}
+              aria-label={sidebarOpen ? 'Cerrar menú' : 'Abrir menú'}
+              aria-expanded={sidebarOpen}
+            >
+              <span /><span /><span />
+            </button>
+            <div className="dash__page-header-text">
+              <p className="dash__page-greeting">{greeting()} · {dateLabel()}</p>
+              <h1 className="dash__page-title">{NAV_TITLES[activeNav]}</h1>
+            </div>
           </div>
           <span className="dash__page-badge dash__page-badge--pae">Operario PAE</span>
         </div>
@@ -376,6 +392,7 @@ function PAERegisterView() {
               : <span>No hay estudiantes inscritos en el PAE para hoy. Inscribilos desde <strong>Estudiantes</strong>.</span>}
           </div>
         ) : (
+          <div className="dash__table-scroll">
           <table className="dash__table">
             <thead>
               <tr>
@@ -424,6 +441,7 @@ function PAERegisterView() {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </>
@@ -517,6 +535,7 @@ function PAEEnrolledView() {
         <span className="dash__table-title">Estudiantes matriculados en PAE</span>
         <span className="dash__table-count" style={{ fontSize: '0.75rem', color: 'var(--t3)' }}>{students.length} estudiantes</span>
       </div>
+      <div className="dash__table-scroll">
       <table className="dash__table">
         <thead>
           <tr><th>Estudiante</th><th>Documento</th><th>Estado hoy</th></tr>
@@ -550,6 +569,7 @@ function PAEEnrolledView() {
           })}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
@@ -733,7 +753,7 @@ export function StudentsView() {
         </div>
       )}
 
-      <div className="dash__search-wrap" style={{ display: 'flex', gap: 12 }}>
+      <div className="dash__search-wrap dash__search-wrap--btn">
         <div className="dash__search-inner" style={{ flex: 1 }}>
           <SearchIcon />
           <input className="dash__search" type="search" placeholder="Buscar por nombre o documento…"
@@ -744,7 +764,7 @@ export function StudentsView() {
             </button>
           )}
         </div>
-        <button className="btn--confirm" style={{ flex: '0 0 auto', whiteSpace: 'nowrap' }} onClick={() => setShowForm(true)}>
+        <button className="btn--confirm dash__search-btn" onClick={() => setShowForm(true)}>
           + Registrar estudiante
         </button>
       </div>
@@ -763,6 +783,7 @@ export function StudentsView() {
             <span>{students.length === 0 ? 'Aún no hay estudiantes registrados.' : `Sin resultados para "${query}"`}</span>
           </div>
         ) : (
+          <div className="dash__table-scroll">
           <table className="dash__table">
             <thead>
               <tr><th>Estudiante</th><th>Documento</th><th>PAE</th><th></th></tr>
@@ -804,6 +825,7 @@ export function StudentsView() {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </>

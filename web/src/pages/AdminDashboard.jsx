@@ -70,6 +70,10 @@ export default function AdminDashboard() {
   useEffect(() => { document.title = 'BIGA - Administración'; }, []);
   const fullName = `${user.first_name ?? ''} ${user.last_name ?? ''}`.trim();
   const [activeNav, setActiveNav] = useState('overview');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Cierra el cajón móvil al navegar entre secciones sin tocar cada NavItem.
+  useEffect(() => { setSidebarOpen(false); }, [activeNav]);
 
   const logout = useCallback(() => {
     localStorage.removeItem('token');
@@ -79,7 +83,9 @@ export default function AdminDashboard() {
 
   return (
     <div className="dash dash--admin">
-      <aside className="dash__sidebar">
+      {sidebarOpen && <div className="dash__sidebar-overlay" onClick={() => setSidebarOpen(false)} />}
+
+      <aside className={`dash__sidebar${sidebarOpen ? ' dash__sidebar--open' : ''}`}>
         <a href="/" className="dash__logo"><LogoIcon /><span className="dash__logo-text">BIGA</span></a>
 
         <nav className="dash__nav" aria-label="Navegación">
@@ -114,9 +120,20 @@ export default function AdminDashboard() {
 
       <div className="dash__main">
         <div className="dash__page-header">
-          <div>
-            <p className="dash__page-greeting">{greeting()} · {dateLabel()}</p>
-            <h1 className="dash__page-title">{NAV_TITLES[activeNav]}</h1>
+          <div className="dash__page-header-main">
+            <button
+              type="button"
+              className={`dash__burger${sidebarOpen ? ' dash__burger--open' : ''}`}
+              onClick={() => setSidebarOpen(v => !v)}
+              aria-label={sidebarOpen ? 'Cerrar menú' : 'Abrir menú'}
+              aria-expanded={sidebarOpen}
+            >
+              <span /><span /><span />
+            </button>
+            <div className="dash__page-header-text">
+              <p className="dash__page-greeting">{greeting()} · {dateLabel()}</p>
+              <h1 className="dash__page-title">{NAV_TITLES[activeNav]}</h1>
+            </div>
           </div>
           <span className="dash__page-badge dash__page-badge--admin">Administrador</span>
         </div>
