@@ -2,6 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Documentación
+
+`docs/README.md` es el índice de los 11 documentos del proyecto — consultarlo antes de tocar un módulo. Dos tienen valor de regla: **`docs/scope.md`** es la fuente de verdad de *qué* se construye, y **`docs/database-schema.md`** debe actualizarse **antes** de escribir cada migración.
+
+Al cerrar un cambio de módulo, sincronizar también su doc temático (`attendance.md`, `pae.md`, `frontend.md`, `landing-page.md`…), no solo `database-schema.md`: es la deuda que más rápido se acumula.
+
 ## Arquitectura
 
 El proyecto usa **monolito por capas**: Router → Service → Repository. La arquitectura detallada vive en `docs/architecture.md`.
@@ -27,6 +33,10 @@ Restricciones que no deben violarse:
 
 - **Strategy**: módulo PAE usa `PAEIdentificationStrategy` (documento en MVP, facial recognition en fase 2).
 - **Adapter**: email y storage se abstraen detrás de un Protocol. Nunca se llama directamente al SDK del proveedor desde un Service.
+
+## Frontend
+
+Las convenciones de CSS/JSX y los gotchas del navegador viven en **`web/CLAUDE.md`** (se carga solo al trabajar en `web/`). **Leerlo antes de tocar el frontend**: casi toda tarea en este repo es full-stack y esos gotchas — Vite 200 ≠ pantalla viva, propagación en portales, `backdrop-filter` y bloques contenedores — muerden antes de que te des cuenta.
 
 ## Convenciones de base de datos
 
@@ -81,7 +91,7 @@ Correr localmente fuera del contenedor: `set -a && source ../.env && set +a` ant
 
 Sin virtualenv local y con el stack abajo, correr unitarios en contenedor efímero (sin levantar servicios): `docker compose run --rm --no-deps api sh -c "pip install -q -r requirements-dev.txt && pytest tests/unit -q"`
 
-Verificar que un cambio de front compila sin levantar navegador: `curl -s -o /dev/null -w "%{http_code}" http://localhost:5173/src/pages/X.jsx` (200 = transforma OK; un error de sintaxis da 500) y `docker compose logs web | grep -iE "error|Internal server"`.
+Verificar que un cambio de front compila: `curl -s -o /dev/null -w "%{http_code}" http://localhost:5173/src/pages/X.jsx` (200 = transforma OK; un error de sintaxis da 500) y `docker compose logs web | grep -iE "error|Internal server"`. **200 y logs limpios NO significan que la pantalla funcione**: un error en tiempo de ejecución (p. ej. borrar por accidente un helper compartido como `fmtShort`) deja la app **en blanco** con Vite sirviendo 200 y sin registrar nada. Comprobar siempre el DOM renderizado; para ver el error real, capturar `Runtime.exceptionThrown` / `Log.entryAdded` por CDP.
 
 ## Gestión de dependencias
 
@@ -95,7 +105,19 @@ Verificar que un cambio de front compila sin levantar navegador: `curl -s -o /de
 
 ## Módulos del dominio
 
-Módulos implementados: `auth`, `agendatorio` (registro de convivencia + historial del docente: notas de seguimiento append-only y ocultar del panel vía `archived_at`, sin borrar), `students` (registro append-only + búsqueda), `pae` (inscripción, entrega, reporte semanal, auditoría, notificación de no reclamo), `attendance` (clase a clase; notificación solo primera hora + justificación por link), `departures` (salidas anticipadas), `admin` (estadísticas `GET /admin/stats` + consola de gestión: usuarios, grados, grupos, matrículas, horarios `class_periods` y asignación docente-grupo). Pendientes: `imports`.
+Módulos implementados: `auth`, `agendatorio` (registro de convivencia + historial del docente: notas de seguimiento append-only y ocultar del panel vía `archived_at`, sin borrar), `students` (registro append-only + búsqueda), `pae` (inscripción, entrega, reporte semanal, auditoría, notificación de no reclamo), `attendance` (clase a clase; notificación solo primera hora + justificación por link), `departures` (salidas anticipadas), `admin` (estadísticas `GET /admin/stats` + consola de gestión: usuarios, grados, grupos, matrículas, horarios `class_periods` y asignación docente-grupo), `leads` (`POST /leads` **público** desde el formulario de la landing: guarda en `demo_leads` y encola un aviso interno a `LEADS_NOTIFY_EMAIL`). Pendientes: `imports`.
+
+`demo_leads` es la **única tabla sin `institution_id`**, por decisión explícita: un visitante que pide una demo no pertenece a ninguna institución. Su estado de envío vive en columnas `notification_*` propias, no en `notifications_log` (esa tabla exige `institution_id`/`student_id`/`guardian_id` NOT NULL). El endpoint público lleva rate limit por IP en Redis (`app/core/rate_limit.py`); si Redis cae, deja pasar la petición en vez de perder el lead.
+
+Se consultan desde la consola de admin (`GET /admin/leads`, sección "Comercial" del `AdminDashboard`). **Al no haber `institution_id` no hay filtro de tenant en el WHERE**: el aislamiento lo da `require_leads_reader` (`app/core/dependencies.py`), que exige ADMIN + estar en `LEADS_ADMIN_EMAILS`. Con esa lista vacía **cualquier ADMIN de cualquier institución ve todos los leads** — sostenible solo mientras haya una única institución en la BD. Llenarla antes de dar de alta a la segunda, o sustituirla por un rol de superusuario real.
+
+**`GET /students` (módulo "Estudiantes" de la sección Aula) está acotado por rol**: a `TEACHER` y `PAE_OPERATOR` les devuelve solo los estudiantes de los salones que tienen en `user_groups` (por asignación docente-grupo, **no** por horario: da igual la hora de la clase). Solo `ADMIN` recibe la institución entera. El operador PAE es un docente con funciones extra, así que su módulo de Aula se comporta como el de cualquier docente. El recorte vive en `StudentService.list_students`, no en el front: cualquiera puede llamar al endpoint a mano.
+
+Los **módulos del PAE no se ven afectados**: `/pae/students/today` y las matrículas consultan `pae_enrollments`/`pae_deliveries` filtrando solo por institución, así que el operador sigue viendo a todos los que reclaman o están matriculados, den o no clase con él.
+
+**El operador PAE NO matricula a nadie en el PAE.** `POST /pae/enrollments` exige `require_admin`. Regla de dominio: el operador *opera* el programa (toma el listado, ve métricas, consulta matriculados) pero admitir a un estudiante al PAE es una decisión administrativa. Sus módulos de Aula son **literalmente los del docente**: `PAEDashboard` monta `TeacherStudentsView` (exportada de `TeacherDashboard`), no `StudentsView`. Esta última —con alta de estudiante e inscripción al PAE— la usa **solo** `AdminDashboard`, aunque por historia siga definida en `PAEDashboard.jsx`.
+
+No confundir con `GET /students/search`, que **sigue alcanzando a toda la institución** a propósito: convivencia debe poder registrar a cualquier estudiante, sea o no de sus salones.
 
 Búsqueda de estudiantes (`GET /students/search`): `q` es **opcional** — con `grade_id`/`group_id` se navega por grado/salón sin escribir. Es **insensible a acentos** vía la extensión `unaccent` (`Lopez` encuentra `López`; migración `d4a2c7e91b05`). Los selectores de grado/salón se llenan con `GET /agendatorio/grades` y `GET /agendatorio/groups` (accesibles a **staff**, no solo admin). El front reutiliza el componente `StudentSearch` en Convivencia e Historial.
 
@@ -103,18 +125,50 @@ Foto del estudiante: se **sube a MinIO** vía `POST /students/{id}/photo` (multi
 
 Para exponer `photo_url` en un endpoint de **lista/detalle nuevo**: (1) agregar el campo al Row/dataclass del repo y al schema de respuesta, (2) `select(Student.photo_url)` en la query + mapearlo, (3) presignar con `resolve_photo_url(self.storage, key)` en el service (que debe recibir `S3StorageAdapter` vía `Depends(get_storage_adapter)`). Sin migración (solo lee `students.photo_url`). El front renderiza `<StudentPhoto src={x.photo_url}>` con fallback a avatar de iniciales.
 
-Roles (`user_role`): `TEACHER`, `PAE_OPERATOR`, `ADMIN`. El operador PAE es un docente con funciones extra del PAE — las funciones de aula usan `require_staff` (TEACHER+PAE_OPERATOR); la gestión y estadísticas usan `require_admin`. Inscripción PAE y listado del día admiten PAE_OPERATOR o ADMIN (`require_pae_or_admin` en el router PAE). Dependencies en `app/core/dependencies.py`.
+## Recuperación de contraseña
+
+Tres endpoints **públicos** en `/auth` (`password-reset/request` → `verify` → `confirm`) y la página `/recuperar` en el front (`ForgotPasswordPage.jsx`, asistente de 3 pasos que reutiliza `login.css` + `LoginBrandPanel` exportado de `LoginPage`).
+
+Reglas que no deben relajarse:
+- `request` devuelve **siempre** `{"sent": true}`, exista o no la cuenta. Distinguir convierte el endpoint en un oráculo de qué correos tienen cuenta.
+- El código va **bcrypt-hasheado** en `password_reset_otps.code_hash`. Seis dígitos con un hash rápido se revierten en segundos si se filtra la BD.
+- El paso 3 exige el `reset_token` que emite el servidor al validar el OTP, no el correo. Sin él, cualquiera cambiaría la contraseña de otro afirmando haber pasado el código.
+- **`verify_code` no lanza `HTTPException` en el camino de fallo**: devuelve `None` y el router responde el 400 con `JSONResponse`. `get_db()` hace rollback ante excepción, así que lanzar revertiría el `attempts += 1` y el bloqueo por fuerza bruta nunca contaría nada.
+- El OTP se manda vía Celery (`app/jobs/auth_jobs.py`) y no dentro del request para que el tiempo de respuesta sea idéntico exista o no la cuenta — si no, el cronómetro delata lo que la respuesta genérica oculta. El `apply_async` pasa `argsrepr` para que el código **no salga en los logs del worker**. Contrapartida: viaja en claro por Redis, así que en producción el puerto de Redis no debe publicarse fuera de la red de Docker.
+
+Roles (`user_role`): `TEACHER`, `PAE_OPERATOR`, `ADMIN`. El operador PAE es un docente con funciones extra del PAE — las funciones de aula usan `require_staff` (TEACHER+PAE_OPERATOR); la gestión y estadísticas usan `require_admin`. En el router PAE: el **listado del día** admite PAE_OPERATOR o ADMIN (`require_pae_or_admin`); entrega, reporte semanal y auditoría son solo del operador (`require_pae_operator`); la **inscripción al PAE es solo del ADMIN** (`require_admin`). Dependencies en `app/core/dependencies.py`.
 Cada módulo sigue el mismo patrón de archivos paralelos en cada capa.
 
 Para proteger un endpoint con autenticación: `current_user: User = Depends(get_current_user)` desde `app.core.dependencies`. El `current_user.institution_id` es la fuente del tenant para todos los queries.
 
 ## Asistencia, salidas y jobs de notificación
 
-- **Asistencia clase a clase**: el docente toma lista de **cualquier** clase del día, no solo la primera hora (scope 3.2). `GET /attendance/today` lista sus clases de hoy (resueltas vía `user_groups` → `class_periods` por `day_of_week`, con badge `already_taken`); `GET /attendance/classes/{class_period_id}` devuelve el roster de una clase; `POST /attendance` registra la lista. La UNIQUE `(student_id, class_period_id, date)` permite un registro por estudiante por clase por día (no requiere migración: el esquema ya lo soportaba). **La notificación al acudiente solo se dispara en primera hora** (`period_order == 1`): ahí, por cada `ABSENT` se encola `notify_absence_first_hour` con `countdown = ATTENDANCE_GRACE_MINUTES * 60` (default 50, bajar en dev). Las clases 2–N se registran para historial, sin correo. Si el alumno llega dentro de la ventana, el docente lo marca tardanza (`POST /attendance/records/{id}/arrived` → `LATE`) y el job, al disparar, relee el estado y no notifica.
-- **Justificación por link**: el correo de inasistencia lleva un enlace de un solo uso `FRONTEND_URL/justificar/{token}` (tabla `attendance_tokens`, vence a medianoche). Los endpoints `GET/POST /attendance/justify/{token}` son **públicos** (sin JWT): el token UUID es la autorización. Al justificar, el registro pasa a `JUSTIFIED`.
-- **Salidas anticipadas**: `POST /departures` crea el registro y encola `notify_early_departure` (correo informativo, sin token).
-- **Jobs Celery + BD async**: las tareas son síncronas pero la BD es async. `app/jobs/runner.py::run_db_job` levanta un engine `NullPool` propio por tarea, hace commit/rollback y lo descarta. Cada job arma su notifier (`AttendanceNotifier`/`DepartureNotifier`/`DisciplineRecordNotifier`/`PAENotifier`) con esa sesión y un `EmailAdapter`. Un fallo de correo se registra en `notifications_log` como `FAILED` y **no** relanza. Sin una API key real de Resend el correo no sale, pero el enlace de justificación queda en los logs del worker.
-- **PAE no reclamado**: único job **programado** (no por evento). `beat_schedule` en `app/core/celery.py` corre `sweep_pae_no_claim` cada 15 min → por cada institución cuya `pae_delivery_end_time` (columna en `institutions`) ya pasó hoy, encola `notify_pae_no_claim(institution_id, date)`. `PAENotifier` es idempotente (omite a quienes ya tienen log `PAE_NO_CLAIM` hoy) y no notifica si hubo 0 entregas ese día. Requiere el servicio `beat` levantado.
+> Referencia completa del módulo en **`docs/attendance.md`** (flujos, endpoints, tablas). Aquí solo los
+> invariantes que no deben romperse.
+
+- **La notificación al acudiente solo se dispara en primera hora** (`period_order == 1`). Se encola con
+  `countdown = ATTENDANCE_GRACE_MINUTES * 60` y, al disparar, el job **relee el estado**: si el docente
+  marcó tardanza, no envía. La tarea **no se desencola** — releer al disparar cubre también el caso de
+  que la justificación llegue antes.
+- Los endpoints `GET/POST /attendance/justify/{token}` son **públicos** (sin JWT): el token UUID es la
+  autorización. `POST` es **multipart** (adjunto opcional, PDF/imagen ≤ `JUSTIFICATION_MAX_UPLOAD_MB`).
+  Al ser público, la lista blanca de content-types y el tope de tamaño **son la única defensa**: la
+  extensión sale de esa lista, nunca del nombre que manda el cliente.
+- Los adjuntos se suben al bucket **antes** de escribir en BD (un huérfano en storage es preferible a una
+  fila apuntando a nada) y los intentos rechazados **no consumen el token**.
+- **Inasistencias** (sin justificar) y **Mensajes** (excusas recibidas) son secciones de Seguimiento con
+  el patrón del Historial: filtros, detalle, notas append-only y cierre reversible. El caso pasa de una a
+  otra por la **existencia de `attendance_justifications`**, no por el estado del registro. Aislamiento
+  doble: institución **y** `recorded_by_user_id`.
+- `attendance_justifications` **no denormaliza `institution_id`**: el tenant se valida con join a
+  `attendance_records`. Comprobarlo antes de escribir queries nuevas sobre esa tabla.
+- El cierre de una inasistencia es `attendance_records.absence_closed_at`, **no** `archived_at`: el
+  registro sigue contando en el roster y en las estadísticas; solo se cierra el seguimiento.
+- **Jobs Celery + BD async**: `app/jobs/runner.py::run_db_job` levanta un engine `NullPool` por tarea,
+  hace commit/rollback y lo descarta. Un fallo de correo se registra como `FAILED` y **no** relanza.
+- **PAE no reclamado**: único job **programado** (`beat_schedule`, cada 15 min). `PAENotifier` es
+  idempotente y no notifica si hubo 0 entregas ese día. Requiere el servicio `beat` levantado.
+- **Salidas anticipadas**: `POST /departures` encola `notify_early_departure` (correo informativo, sin token).
 
 ## Integridad PAE — doble hash encadenado (regla crítica)
 
@@ -127,23 +181,14 @@ Funciones en `app/core/security.py`. `register_delivery` verifica la capa 1 ante
 
 - Los `created_at`/`enrolled_at` de estos dos modelos se fijan en la app (no `server_default`) porque entran en el hash. No cambiar a `server_default` sin ajustar el cálculo del hash.
 
-## Convenciones del frontend
-
-- Cada componente tiene su propio archivo CSS en `web/src/styles/` con el mismo nombre: `Hero.jsx` → `styles/hero.css`.
-- Los estilos globales y variables van en `web/src/index.css`.
-- El CSS de `web/src` es plano y **global (sin scope por componente)**; `dashboard.css` lo comparten Teacher/PAE/Admin (los cambios se reflejan en los tres). Para retocar una sola vista, scopear con una clase wrapper/modificadora en el card (ej. `.att-today`, `.dep-scale`, `.hist-scale`); para pisar reglas base compartidas (`.btn`, `.dash__student-group`) usar selectores de **2 clases** (una sola pierde el desempate de especificidad). Colisión conocida: `dashboard.css` define `.btn--primary{width:100%}` sin scope → App.jsx importa los dashboards eager, así que se filtra a la landing (scopeado bajo `.dash`).
-- Componente `StudentPhoto` (exportado de `TeacherDashboard.jsx`): miniatura de foto + lightbox click-para-ampliar (reusa `.pae-lightbox`). Usarlo en vez de `<img className="dash__table-photo">` suelto.
-- Las páginas viven en `web/src/pages/`, los componentes reutilizables en `web/src/components/`.
-- Los hooks personalizados van en `web/src/hooks/`.
-- El frontend requiere `web/.env` (gitignored, sin `.env.example`) con `VITE_API_URL=http://localhost:8000`. Sin esa var, `fetch` va a `undefined/...` y todo el front falla en silencio. El CORS del API ya permite `http://localhost:5173`. (`vite.config.js` tiene un proxy `/api-proxy` que el código actual no usa.)
-- `PAEDashboard.jsx` **reutiliza** las vistas de aula de `TeacherDashboard.jsx` (`import { AttendanceView, ConvivenciaView, HistorialView, ... }`). El operador PAE es un docente con funciones extra: un módulo de aula nuevo debe exportarse desde `TeacherDashboard` y engancharse en **ambos** dashboards (nav + render). El componente `StudentSearch` (buscador grado/salón/nombre) vive en `TeacherDashboard` y se reutiliza.
-
 ## Pitfalls conocidos
 
-- Los dashboards están tras `ProtectedRoute` (JWT): no se capturan en headless sin login (redirige a `/login`). Para verificar cambios visuales: repro estático con el CSS servido por Vite, o `google-chrome-stable --headless=new --remote-debugging-port=N` + Python `websockets` (CDP) para leer estilos/anchos computados reales (`CSS.getMatchedStylesForNode`, `getBoundingClientRect`). El hero de la landing es `100svh`: para capturar secciones inferiores en headless, overridear temporalmente `.hero{min-height:auto}` y `.reveal{opacity:1 !important;transform:none !important}`.
-- Al escribir texto con acentos/caracteres especiales en JSX vía las tools de edición, a veces quedan como escape literal (ej. `Sal\u00f3n` se ve literal en vez de `Salón`; `\u2026` en vez de `…`). En **JSX-texto/atributo** esos escapes NO se interpretan y se ven literales en la UI. Detectar con `grep -rn '\\u00\|\\u2026' web/src`; corregir con `perl -CSD -i -pe 's/\\u2026/\x{2026}/g' <archivo>` (al carácter UTF-8 real).
-- El servicio `web` monta un volumen anónimo en `/app/node_modules` (compose). Tras agregar una dependencia npm nueva, Vite falla con `Failed to resolve import "..."` aunque esté en `package.json`: el volumen viejo tapa el `node_modules` de la imagen. Rebuildear renovando el volumen: `docker compose up -d --build --force-recreate --renew-anon-volumes web` (y matar el contenedor viejo con el workaround de AppArmor si `stop` falla).
+- Al editar ficheros con scripts (`python3 - <<EOF` o `sed`), **poner `assert <ancla> in t` antes de cada `.replace()`**: una sustitución que no coincide no falla, deja el fichero intacto y el fallo aparece mucho después. Pasó con el `NAV_TITLES` de `PAEDashboard.jsx`, que difiere en alineación del de `TeacherDashboard.jsx`.
+- `psql -c "..."` **no interpola** variables `-v` (`:'x'`): hay que pasar el SQL por stdin (`psql -v h="$H" <<'SQL' ... SQL`). Y `psql -tAc "INSERT ... RETURNING x"` imprime el valor **y** la etiqueta `INSERT 0 1`: encadenar `| head -1`.
 - El build backend en cualquier `pyproject.toml` de este repo debe ser `setuptools.build_meta`. `setuptools.backends.legacy:build` no existe en `python:3.12-slim` y rompe el build de Docker.
+- `api`, `worker`, `beat` y `postgres` fijan `TZ=America/Bogota` en `docker-compose.yml` (y `postgres` además `-c timezone=America/Bogota` por flag, porque `TZ`/`PGTZ` solo aplican al initdb de un cluster nuevo). Sin eso las imágenes corren en UTC y `date.today()` **adelanta un día entre las 19:00 y medianoche hora Colombia**, escribiendo la fecha equivocada en `attendance_records`, `pae_deliveries` y `early_departures`. No es un problema de presentación: el dato entra mal en la BD.
+- Todo el código usa ya hora local (`datetime.now()` / `date.today()`). **El único UTC explícito que queda es el `exp` del JWT** en `security.py`, y debe seguir así: es un instante absoluto que se codifica a epoch. No reintroducir `datetime.now(timezone.utc)` en los services.
+- Las columnas `TIMESTAMP` son naive y mezclan zonas por historia: las filas creadas **antes** del 2026-08-14 guardan UTC, las posteriores hora de Bogotá. No afecta a los hashes del PAE (la auditoría recalcula desde el valor almacenado, verificado con 18 firmas viejas + 1 nueva conviviendo, 0 manipuladas), pero sí a cualquier consulta que compare marcas de tiempo de ambos lados de esa fecha.
 - La variable `DATABASE_URL` en `.env` usa el hostname `postgres` (nombre del servicio Docker). Para conectar desde fuera de Docker (TablePlus, psql local) usar `localhost:5433`.
 - El `DATABASE_URL` requiere el driver `postgresql+asyncpg://` — no `postgresql://` ni `postgres://`.
 - `passlib` es incompatible con `bcrypt>=4.0`. Este proyecto usa `bcrypt` directamente (sin passlib). No reintroducir `passlib[bcrypt]`.
@@ -162,4 +207,3 @@ Funciones en `app/core/security.py`. `register_delivery` verifica la capa 1 ante
 - Los tests de repository (queries SQL reales, joins, M2M) no se pueden mockear con sentido. No existe infraestructura de fixtures contra Postgres real (`tests/integration/` vacío) — definir esa infraestructura antes de escribir `test_*_repository.py` en cualquier módulo.
 - Probar correos sin dominio verificado en Resend: `EMAIL_FROM=onboarding@resend.dev` y el destinatario **debe** ser el correo dueño de la cuenta Resend — cualquier otro destinatario da 403 y el notifier lo registra como `FAILED`. Verificar `biga.app` (SPF/DKIM) es requisito para enviar a acudientes reales.
 - `scripts/seed_dev_users.sql` usa `ON CONFLICT (id) DO NOTHING`: re-correrlo **no** actualiza filas existentes. Para cambiar datos ya seedeados (ej. el correo de los acudientes) usar `UPDATE` directo: `UPDATE guardians SET email='...' WHERE is_primary = true;`
-

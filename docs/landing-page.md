@@ -70,6 +70,21 @@ Herramientas alineadas con el enfoque de garantía de derechos de niños, niñas
 
 [Solicita una demo gratuita]
 
+### Implementación (módulo `leads`)
+
+El formulario **no es decorativo**: `CallToAction.jsx` hace `POST /leads` (público, sin JWT) y solo
+muestra "¡Gracias!" cuando el backend responde 201. Hasta 2026-08-13 era un placeholder que descartaba
+el correo en memoria mostrando un éxito falso.
+
+- El lead se guarda **siempre** en `demo_leads`; el aviso interno por correo a `LEADS_NOTIFY_EMAIL` es
+  un efecto secundario asíncrono (job Celery). Si el correo falla, el lead no se pierde.
+- Rate limit por IP en Redis (5/hora). Si Redis cae, **deja pasar** la petición: perder un lead es peor
+  que aceptar un envío de más.
+- Un mismo correo dentro de 24 h se guarda pero se marca `SUPPRESSED` y no genera segundo aviso.
+- Se consultan en la consola de admin: **Comercial → Solicitudes** (`GET /admin/leads`).
+
+Ver `docs/database-schema.md` para la tabla y `CLAUDE.md` para la decisión de dejarla fuera del tenant.
+
 ---
 
 *BIGA — Construyendo entornos protectores con tecnología.*

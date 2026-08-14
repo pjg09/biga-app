@@ -48,6 +48,7 @@ Rutas en `App.jsx`:
 |---|---|---|
 | `/` | LandingPage | pública |
 | `/login` | LoginPage | pública |
+| `/recuperar` | ForgotPasswordPage | pública — asistente de 3 pasos (correo → OTP → nueva contraseña) |
 | `/justificar/:token` | JustifyPage | **pública** (el token UUID es la autorización) |
 | `/dashboard/teacher` | TeacherDashboard | `ProtectedRoute allowedRoles={['TEACHER']}` |
 | `/dashboard/pae` | PAEDashboard | `ProtectedRoute allowedRoles={['PAE_OPERATOR']}` |
@@ -152,8 +153,34 @@ Título de pestaña: cada dashboard setea `document.title` con un `useEffect` al
 
 ---
 
+## Secciones añadidas (2026-08)
+
+| Vista | Dónde vive | Notas |
+|---|---|---|
+| `ForgotPasswordPage` | `pages/` | Reutiliza `login.css` y `LoginBrandPanel`, exportado de `LoginPage` |
+| `AbsencesView` + `AbsenceDetail` | `TeacherDashboard` | Seguimiento → **Inasistencias**. Montada también en `PAEDashboard` |
+| `MensajesView` + `MessageDetail` | `TeacherDashboard` | Pasó de lista de solo lectura a gestión de casos |
+| `LeadsView` | `AdminDashboard` | Comercial → Solicitudes (`GET /admin/leads`) |
+
+`StudentsView` (alta de estudiante + inscripción al PAE) la usa **solo** `AdminDashboard`, aunque por
+historia siga definida en `PAEDashboard.jsx`. El dashboard PAE monta `TeacherStudentsView`.
+
+En `services/api.js` hay cuatro entradas según autenticación y formato: `post` / `postForm` (con JWT)
+y `postPublic` / `postFormPublic` (sin `Authorization`, para la landing y el enlace de justificación).
+
 ## Gotchas del frontend
 
+- **Vite 200 ≠ pantalla funcionando**: un error en tiempo de ejecución (p. ej. borrar un helper
+  compartido) deja la app **en blanco** con Vite sirviendo 200 y sin registrar nada en los logs.
+  Verificar siempre el DOM renderizado, no solo el código HTTP.
+- **Propagación de eventos y portales**: un `createPortal` **no** corta la propagación — React propaga
+  por el árbol de componentes, no por el del DOM. `StudentPhoto` necesita `stopPropagation` explícito en
+  la imagen, en el fondo del lightbox y en la ✕, porque las filas que lo contienen son `<button>`.
+- **`backdrop-filter`, `filter`, `transform` y `will-change`** convierten al elemento en bloque
+  contenedor de sus descendientes `position: fixed`. Rompió el menú móvil; el cristal vive ahora en
+  `.navbar::before`.
+- **Inputs controlados por React**: asignar `.value` no basta, React lo ignora. Usar el setter nativo
+  del prototipo + evento `input` (necesario para automatizar el front en headless).
 - **Escapes `\uXXXX` literales en JSX**: al escribir texto con acentos/caracteres
   especiales vía tools de edición, a veces quedan como escape literal (`Salón`,
   `…`). En **JSX-texto/atributo** NO se interpretan y se ven literales en la UI.

@@ -15,6 +15,7 @@
 | Notificaciones por acudiente | Si un acudiente tiene dos estudiantes en la institución, recibe una notificación independiente por cada uno. No se agrupan. |
 | Firma del estudiante | Se guarda como archivo PNG en object storage. La columna `signature_url` almacena la URL. No se guarda base64 en la base de datos. |
 | Multi-tenancy | Todas las tablas operativas incluyen `institution_id`. El MVP puede arrancar con una sola institución sin cambios de esquema. |
+| Leads de la landing | `demo_leads` es la **única** tabla sin `institution_id`, por decisión explícita. Un visitante que pide una demo todavía no pertenece a ninguna institución: forzar un tenant obligaría a inventar una institución "prospectos" que no representa nada real. Es una tabla pre-tenant, no operativa, y ningún flujo autenticado la lee. |
 | Identificación PAE | `identification_method` registra si la entrega fue por documento o reconocimiento facial. El valor `FACIAL` queda reservado para fase 2. |
 
 ---
@@ -307,6 +308,7 @@ Un registro por estudiante por clase por día. El campo `status` puede actualiza
 | `recorded_by_user_id` | UUID | NOT NULL, FK → users | |
 | `date` | DATE | NOT NULL | |
 | `status` | ENUM | NOT NULL | `PRESENT`, `ABSENT`, `LATE`, `JUSTIFIED` |
+| `absence_closed_at` | TIMESTAMP | NULLABLE | Caso cerrado por el docente en la sección "Inasistencias". **No oculta el registro**: sigue contando en el roster, en la toma de lista y en las estadísticas |
 | `created_at` | TIMESTAMP | NOT NULL, DEFAULT NOW() | |
 
 **ENUMs:**
@@ -351,7 +353,66 @@ Respuesta del acudiente al formulario de justificación de inasistencia.
 | `attendance_record_id` | UUID | NOT NULL, FK → attendance_records, UNIQUE | |
 | `token_id` | UUID | NOT NULL, FK → attendance_tokens, UNIQUE | |
 | `reason` | TEXT | NOT NULL | Texto libre ingresado por el acudiente |
+| `attachment_key` | VARCHAR(500) | NULLABLE | **Key** del soporte en object storage. Se presigna al leer, nunca se guarda la URL |
+| `attachment_filename` | VARCHAR(255) | NULLABLE | Nombre original del archivo, para mostrarlo y descargarlo con sentido |
+| `attachment_content_type` | VARCHAR(100) | NULLABLE | `application/pdf`, `image/jpeg`, `image/png` o `image/webp` |
+| `attachment_size_bytes` | INTEGER | NULLABLE | Tamaño real medido en el servidor, no el declarado por el cliente |
+| `archived_at` | TIMESTAMP | NULLABLE | Caso cerrado por el docente. No borra nada: la excusa sigue siendo consultable |
 | `submitted_at` | TIMESTAMP | NOT NULL, DEFAULT NOW() | |
+
+> El soporte es **opcional**: las cuatro columnas van juntas (o las cuatro con valor, o las cuatro nulas). Una justificación sin adjunto sigue siendo válida.
+>
+> **Un soporte por justificación.** `attendance_record_id` ya es UNIQUE, así que hay como mucho una justificación por inasistencia y, por tanto, un archivo. Permitir varios exigiría una tabla hija `attendance_justification_attachments`; no se hizo porque el formulario del acudiente pide un solo documento.
+>
+> Se guarda la **key**, no la URL, igual que `students.photo_url`: las URLs presignadas caducan y guardarlas dejaría enlaces muertos en la BD. La key va en `justifications/{institution_id}/{attendance_record_id}.{ext}`.
+>
+> `archived_at` es "caso cerrado", el mismo mecanismo que `discipline_records.archived_at`: se oculta del panel por defecto pero **nunca se borra**. Una excusa es la respuesta de un acudiente a un reporte institucional; borrarla dejaría la inasistencia sin su descargo.
+
+---
+
+### `attendance_absence_notes`
+
+Notas de seguimiento que el docente añade a una inasistencia **sin justificar**. Append-only, igual que las otras dos tablas de notas.
+
+| Columna | Tipo | Restricciones | Descripción |
+|---|---|---|---|
+| `id` | UUID | PK | |
+| `attendance_record_id` | UUID | NOT NULL, FK → attendance_records | |
+| `institution_id` | UUID | NOT NULL, FK → institutions | Denormalizado |
+| `author_user_id` | UUID | NOT NULL, FK → users | |
+| `note` | TEXT | NOT NULL | |
+| `created_at` | TIMESTAMP | NOT NULL, DEFAULT NOW() | |
+
+**Índices:**
+```sql
+CREATE INDEX idx_absence_notes_record ON attendance_absence_notes (attendance_record_id, created_at);
+```
+
+> La sección "Inasistencias" del docente lista los registros con `period_order = 1`, `status = ABSENT` y **sin fila en `attendance_justifications`**. El criterio de salida es la existencia de la justificación, no el estado del registro: en cuanto el acudiente usa el enlace, la inasistencia sale de aquí y aparece en Mensajes.
+>
+> Las notas **no se borran** cuando eso pasa. Quedan colgadas del `attendance_record`, así que el seguimiento previo del docente sigue siendo consultable aunque el caso se haya movido de sección.
+
+---
+
+### `attendance_justification_notes`
+
+Notas de seguimiento que el docente añade a una excusa. **Append-only**, igual que `discipline_record_notes`: no hay endpoint de edición ni de borrado.
+
+| Columna | Tipo | Restricciones | Descripción |
+|---|---|---|---|
+| `id` | UUID | PK | |
+| `justification_id` | UUID | NOT NULL, FK → attendance_justifications | |
+| `institution_id` | UUID | NOT NULL, FK → institutions | Denormalizado, para filtrar por tenant sin join |
+| `author_user_id` | UUID | NOT NULL, FK → users | |
+| `note` | TEXT | NOT NULL | |
+| `created_at` | TIMESTAMP | NOT NULL, DEFAULT NOW() | |
+
+**Índices:**
+```sql
+CREATE INDEX idx_justification_notes_justification ON attendance_justification_notes (justification_id, created_at);
+```
+
+> Se guarda `author_user_id` y no solo el nombre: el nombre se resuelve por join al mostrar, así que si el docente cambia de apellido las notas antiguas siguen coherentes.
 
 ---
 
@@ -482,7 +543,7 @@ CREATE TYPE notification_type AS ENUM (
   'EARLY_DEPARTURE'
 );
 
-CREATE TYPE notification_status AS ENUM ('PENDING', 'SENT', 'FAILED');
+CREATE TYPE notification_status AS ENUM ('PENDING', 'SENT', 'FAILED', 'SUPPRESSED');
 ```
 
 > `email_to` se guarda como snapshot del correo en el momento del envío. Si el acudiente cambia su email después, el log mantiene el correo al que efectivamente se notificó.
@@ -512,6 +573,63 @@ Estado de los procesos de carga masiva desde Excel. El cliente consulta este reg
 CREATE TYPE import_job_type AS ENUM ('STUDENTS', 'PAE_ENROLLMENT', 'CONVIVENCIA_ARTICLES');
 CREATE TYPE import_job_status AS ENUM ('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED');
 ```
+
+---
+
+### `demo_leads`
+
+Solicitudes de demo enviadas desde el formulario de la landing pública. **Tabla pre-tenant: no lleva `institution_id`** (ver "Decisiones de diseño"). El endpoint que la escribe es público, sin JWT.
+
+| Columna | Tipo | Restricciones | Descripción |
+|---|---|---|---|
+| `id` | UUID | PK | |
+| `email` | VARCHAR(320) | NOT NULL | Normalizado a minúsculas y sin espacios al guardar |
+| `source` | VARCHAR(50) | NOT NULL, DEFAULT 'LANDING_CTA' | Origen del lead, por si se añaden más formularios |
+| `notification_status` | ENUM | NOT NULL, DEFAULT 'PENDING' | `PENDING`, `SENT`, `FAILED`, `SUPPRESSED` — reutiliza `notification_status` |
+| `notification_error` | TEXT | NULLABLE | Detalle del fallo si `notification_status = FAILED` |
+| `notified_at` | TIMESTAMP | NULLABLE | |
+| `created_at` | TIMESTAMP | NOT NULL, DEFAULT NOW() | |
+
+**Índices:**
+```sql
+CREATE INDEX idx_demo_leads_created ON demo_leads (created_at DESC);
+CREATE INDEX idx_demo_leads_email_created ON demo_leads (email, created_at DESC);
+```
+
+> El lead **se persiste siempre**, aunque el correo de aviso falle. El envío es un efecto secundario asíncrono (job Celery); la fuente de verdad es esta tabla. El segundo índice soporta la supresión de avisos duplicados: si el mismo correo ya solicitó demo en las últimas 24 h, la fila se guarda igual, se marca `SUPPRESSED` y no se encola aviso. `SUPPRESSED` ≠ `PENDING`: el primero es "no se intentó a propósito", el segundo "encolado y sin resolver" — sin esa distinción, una fila atascada por un worker caído sería indistinguible de una supresión deliberada.
+>
+> No se registra en `notifications_log`: esa tabla exige `institution_id`, `student_id` y `guardian_id` NOT NULL, y un lead no tiene ninguno de los tres. El estado del envío vive en las columnas `notification_*` de esta misma tabla.
+
+---
+
+### `password_reset_otps`
+
+Códigos de un solo uso para el flujo de recuperación de contraseña. Sin `institution_id`: el flujo ocurre **antes** de autenticarse, el usuario se resuelve por su correo (único en `users`) y el tenant se deriva del `user_id`.
+
+| Columna | Tipo | Restricciones | Descripción |
+|---|---|---|---|
+| `id` | UUID | PK | |
+| `user_id` | UUID | NOT NULL, FK → users | |
+| `code_hash` | VARCHAR(255) | NOT NULL | bcrypt del código de 6 dígitos. **Nunca en claro** |
+| `attempts` | SMALLINT | NOT NULL, DEFAULT 0 | Intentos fallidos; al llegar al máximo el código queda inservible |
+| `expires_at` | TIMESTAMP | NOT NULL | |
+| `consumed_at` | TIMESTAMP | NULLABLE | Se sella al validar el código |
+| `reset_token` | UUID | NULLABLE, UNIQUE | Prueba de OTP validado; habilita el cambio de contraseña |
+| `reset_token_expires_at` | TIMESTAMP | NULLABLE | |
+| `reset_token_used_at` | TIMESTAMP | NULLABLE | Se sella al cambiar la contraseña |
+| `created_at` | TIMESTAMP | NOT NULL, DEFAULT NOW() | |
+
+**Índices:**
+```sql
+CREATE INDEX idx_password_reset_user  ON password_reset_otps (user_id, created_at);
+CREATE INDEX idx_password_reset_token ON password_reset_otps (reset_token);
+```
+
+> El código se guarda con **bcrypt**, no con un hash rápido: seis dígitos son un millón de combinaciones y un SHA-256 filtrado se revierte en segundos.
+>
+> `reset_token` existe para que el tercer paso (cambiar la contraseña) no tenga que fiarse del cliente. Sin él, cualquiera podría llamar al endpoint de cambio con un correo ajeno afirmando haber validado el OTP. El token se emite en el servidor solo tras validar el código y vive pocos minutos.
+>
+> Pedir un código nuevo caduca los anteriores del mismo usuario: solo el último es válido.
 
 ---
 

@@ -75,6 +75,10 @@ vacía. La UNIQUE `(student_id, class_period_id, date)` permite un registro por
 estudiante por clase por día. **La notificación se encola solo cuando
 `period_order == 1`.**
 
+> **Zona horaria:** los contenedores fijan `TZ=America/Bogota` (y `postgres` además por flag). Sin eso
+> corren en UTC y `date.today()` adelanta un día entre las 19:00 y medianoche hora Colombia, escribiendo
+> la fecha equivocada en `attendance_records`. No era un problema de presentación: el dato entraba mal.
+
 ### Por qué la notificación es diferida y idempotente
 
 - Se encola con `countdown` (la ventana de gracia), no de inmediato. Cuando la
@@ -98,6 +102,69 @@ El correo de inasistencia contiene `FRONTEND_URL/justificar/{token}`:
   aunque sea sintácticamente correcto.
 - Al justificar: se crea `attendance_justifications`, se marca el token como usado
   y el registro pasa a `JUSTIFIED`.
+
+### Soporte adjunto (2026-08-14)
+
+El acudiente puede adjuntar **un** PDF o imagen (JPG/PNG/WEBP) hasta `JUSTIFICATION_MAX_UPLOAD_MB` (5).
+
+- El endpoint pasa a ser **multipart**, no JSON: `reason` como `Form`, `attachment` como `UploadFile`
+  opcional.
+- El archivo va al bucket en `justifications/{institution_id}/{attendance_record_id}.{ext}`; en la BD se
+  guarda la **key**, no la URL (las presignadas caducan). Metadatos en las columnas `attachment_*`.
+- La **extensión sale de la tabla blanca de content-types, nunca del nombre del cliente**, y el nombre
+  original se sanea (`_safe_filename`) porque acaba en un atributo `download` del navegador del docente.
+- Se sube al bucket **antes** de escribir en la BD: si la transacción revierte queda un objeto huérfano,
+  que es preferible a una fila apuntando a un archivo inexistente.
+- Los intentos rechazados (tipo o tamaño inválidos) **no consumen el token**: el acudiente puede corregir.
+
+Al ser un endpoint público, el tope de tamaño y la lista blanca son la única defensa. No relajarlos.
+
+---
+
+## Seguimiento del docente: Inasistencias y Mensajes (2026-08-14)
+
+Dos secciones de **Seguimiento**, con el mismo patrón que el Historial de convivencia: filtro por
+estudiante, filas clicables, detalle, notas append-only y cierre de caso reversible. Ambas están
+también en el dashboard del operador PAE.
+
+### Inasistencias — lo que nadie justificó
+
+Criterio: `period_order = 1` + `status = ABSENT` + **sin fila en `attendance_justifications`**.
+
+- El criterio de salida es la **existencia de la justificación**, no el estado del registro: en cuanto
+  el acudiente usa el enlace, el caso desaparece de aquí y aparece en Mensajes.
+- `LATE` queda fuera a propósito: el estudiante sí llegó.
+- Badge **"Aviso enviado" / "Sin aviso"** según exista el `attendance_token`, que es lo que crea el
+  notifier al mandar el correo. Responde a "¿el acudiente se enteró siquiera?".
+- Cierre reversible en `attendance_records.absence_closed_at` — **no** se llama `archived_at` porque el
+  registro sigue contando en el roster, en la toma de lista y en las estadísticas; lo único que se
+  cierra es el seguimiento.
+- Notas en `attendance_absence_notes`. **Sobreviven** si el caso pasa a Mensajes: cuelgan del
+  `attendance_record`, no de la justificación.
+
+| Método y ruta | Descripción |
+|---|---|
+| `GET /attendance/absences` | `student_id`, `include_closed`, `skip`, `limit` |
+| `GET /attendance/absences/{record_id}` | Detalle. Accesible aunque el caso esté cerrado |
+| `POST /attendance/absences/{record_id}/notes` | Body `{ note }` |
+| `POST /attendance/absences/{record_id}/archive` · `/unarchive` | Cerrar / reabrir |
+
+### Mensajes — las excusas recibidas
+
+Cierre en `attendance_justifications.archived_at`, notas en `attendance_justification_notes`.
+
+| Método y ruta | Descripción |
+|---|---|
+| `GET /attendance/justifications` | `student_id`, `include_archived`, `skip`, `limit` |
+| `GET /attendance/justifications/{id}` | Detalle con soporte y notas |
+| `POST /attendance/justifications/{id}/notes` | Body `{ note }` |
+| `POST /attendance/justifications/{id}/archive` · `/unarchive` | Cerrar / reabrir |
+
+En ambas el aislamiento es **doble**: por institución y por `recorded_by_user_id`. Un docente solo ve
+los casos de las inasistencias que él reportó.
+
+> `attendance_justifications` **no denormaliza `institution_id`**: el tenant se valida con join a
+> `attendance_records`. Tenerlo presente al escribir queries nuevas sobre esa tabla.
 
 ---
 
@@ -153,11 +220,11 @@ notificación solo se encola en primera hora.)
 | Método y ruta | Descripción |
 |---|---|
 | `GET /attendance/justify/{token}` | Info para mostrar en la página (validez, estudiante, fecha) |
-| `POST /attendance/justify/{token}` | Body `{ reason }`. Registra la justificación → `JUSTIFIED` |
+| `POST /attendance/justify/{token}` | **multipart**: `reason` (Form) + `attachment` (File, opcional). Registra la justificación → `JUSTIFIED` |
 
 `GET` responde siempre `200` con `valid` y un `message` describiendo el estado
 (válido, expirado, ya justificado, inválido). `POST`: `404` token inválido ·
-`409` ya justificada · `410` expirado.
+`409` ya justificada · `410` expirado · `400` formato de adjunto no admitido · `413` adjunto > 5 MB.
 
 ### Salidas tempranas (rol docente / operador PAE — `require_staff`)
 
@@ -216,7 +283,8 @@ Servicios: `web/src/services/attendance.js`, `web/src/services/departures.js`.
 
 | Variable | Default | Descripción |
 |----------|---------|-------------|
-| `ATTENDANCE_GRACE_MINUTES` | `50` | Minutos de gracia antes de notificar la inasistencia. Bajar a `1` en dev para probar sin esperar. |
+| `ATTENDANCE_GRACE_MINUTES` | `50` | Minutos de gracia antes de notificar. **Bajado a `2` en el `.env` local desde 2026-08-14 para pruebas — revertir antes de producción** (ver `runbook.md`). |
+| `JUSTIFICATION_MAX_UPLOAD_MB` | `5` | Tope del soporte que adjunta el acudiente. |
 | `FRONTEND_URL` | `http://localhost:5173` | Base de los enlaces de justificación que van en el correo. |
 
 ---

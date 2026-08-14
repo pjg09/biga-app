@@ -55,6 +55,7 @@ biga-api/
       attendance.py
       agendatorio.py
       departures.py
+      leads.py
       auth.py
       imports.py        # Carga masiva desde Excel
     services/           # Lógica de negocio

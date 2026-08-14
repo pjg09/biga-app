@@ -91,8 +91,12 @@ recibieron entrega hoy.
 ]
 ```
 
-### `POST /pae/enrollments`
+### `POST /pae/enrollments` — **solo ADMIN** (`require_admin`)
 Inscribe a un estudiante al PAE del año vigente. Genera el `enrollment_hash`.
+
+> **Regla de dominio (2026-08-13):** el operador PAE **no matricula a nadie**. Opera el programa —toma
+> el listado, ve métricas, consulta matriculados— pero admitir a un estudiante al PAE es una decisión
+> administrativa. Antes este endpoint admitía `PAE_OPERATOR`.
 ```json
 // request
 { "student_id": "…" }
@@ -127,6 +131,22 @@ Recomputa ambas capas de hash de todas las entregas y reporta manipulaciones.
 la cadena rota.
 
 ---
+
+## Roles
+
+| Acción | Endpoint | Quién |
+|---|---|---|
+| Listado del día | `GET /pae/students/today` | PAE_OPERATOR o ADMIN |
+| Registrar entrega | `POST /pae/deliveries` | Solo PAE_OPERATOR |
+| Reporte semanal / auditoría | `GET /pae/report/weekly`, `/pae/audit` | Solo PAE_OPERATOR |
+| **Matricular al PAE** | `POST /pae/enrollments` | **Solo ADMIN** |
+
+Los módulos de **Aula** del operador PAE (Asistencia, Estudiantes, Horario, Salidas) son literalmente
+los del docente: `PAEDashboard` monta `TeacherStudentsView`, no `StudentsView`. Su listado de
+"Mis estudiantes" está acotado a sus salones igual que el de cualquier docente.
+
+Desajuste conocido: el ADMIN puede matricular pero **no** accede a `/pae/report/weekly` ni `/pae/audit`,
+que siguen restringidos al operador.
 
 ## Frontend
 

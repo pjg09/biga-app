@@ -39,6 +39,14 @@ Si `worker`/`beat` crashean al arrancar con `ValueError: Field required`, es est
 | `beat` | — | Celery beat (job programado del PAE) |
 | `storage-init` | — | Crea el bucket en MinIO y sale |
 
+### ⚠️ Ajustes temporales de desarrollo — revertir antes de producción
+
+| Variable | Valor de producción | Valor local actual | Por qué se bajó |
+|---|---|---|---|
+| `ATTENDANCE_GRACE_MINUTES` | **50** | **2** (desde 2026-08-11) | Es la ventana entre tomar lista en primera hora y avisar al acudiente. Con 50 min cada prueba del flujo de inasistencia cuesta casi una hora de espera. **Con 2 minutos el correo sale antes de que al estudiante le dé tiempo a llegar**, así que no puede quedarse así con docentes reales. |
+
+`.env` está gitignored: el aviso también está como comentario junto a la variable, pero solo en la máquina donde se cambió. `.env.example` conserva el valor de producción.
+
 ---
 
 ## 3. Primer arranque (BD limpia)
