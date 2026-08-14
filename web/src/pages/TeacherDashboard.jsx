@@ -753,6 +753,12 @@ export function ScheduleView() {
   const [items, setItems]   = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError]   = useState(null);
+  // Filtro de día solo visible en móvil (ver .sched__day-filter en dashboard.css):
+  // arranca en el día de hoy si es entre semana, si no en lunes.
+  const [mobileDay, setMobileDay] = useState(() => {
+    const jsDay = new Date().getDay(); // 0=domingo … 6=sábado
+    return jsDay >= 1 && jsDay <= 5 ? jsDay : 1;
+  });
 
   useEffect(() => {
     attendanceService.schedule()
@@ -771,22 +777,33 @@ export function ScheduleView() {
   items.forEach(it => { (byDay[it.day_of_week] ??= []).push(it); });
 
   return (
-    <div className="sched">
-      {[1, 2, 3, 4, 5].map(day => (
-        <div className="card sched__col" key={day}>
-          <p className="sched__day">{DAY_NAMES[day]}</p>
-          {(byDay[day] || []).length === 0 ? (
-            <p className="sched__free">Sin clases</p>
-          ) : byDay[day].map(it => (
-            <div className="sched__slot" key={it.class_period_id}>
-              <span className="sched__time">{it.start_time.slice(0, 5)} - {it.end_time.slice(0, 5)}</span>
-              <span className="sched__name">{it.name}</span>
-              <span className="sched__group">{it.grade_name} {it.group_name}{it.period_order === 1 ? ' · 1ª hora' : ''}</span>
-            </div>
-          ))}
-        </div>
-      ))}
-    </div>
+    <>
+      {/* Solo se muestra en móvil (dashboard.css); en escritorio las 5
+          columnas ya van una al lado de la otra y no hace falta filtrar. */}
+      <label className="sched__day-filter">
+        <span className="dash__field-label">Día</span>
+        <select className="dash__field-input" value={mobileDay} onChange={e => setMobileDay(Number(e.target.value))}>
+          {[1, 2, 3, 4, 5].map(day => <option key={day} value={day}>{DAY_NAMES[day]}</option>)}
+        </select>
+      </label>
+
+      <div className="sched">
+        {[1, 2, 3, 4, 5].map(day => (
+          <div className={`card sched__col${day === mobileDay ? ' sched__col--mobile-active' : ''}`} key={day}>
+            <p className="sched__day">{DAY_NAMES[day]}</p>
+            {(byDay[day] || []).length === 0 ? (
+              <p className="sched__free">Sin clases</p>
+            ) : byDay[day].map(it => (
+              <div className="sched__slot" key={it.class_period_id}>
+                <span className="sched__time">{it.start_time.slice(0, 5)} - {it.end_time.slice(0, 5)}</span>
+                <span className="sched__name">{it.name}</span>
+                <span className="sched__group">{it.grade_name} {it.group_name}{it.period_order === 1 ? ' · 1ª hora' : ''}</span>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </>
   );
 }
 

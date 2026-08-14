@@ -1302,6 +1302,10 @@ body { background: var(--bg); }
 }
 @media (max-width: 900px) { .sched { grid-template-columns: 1fr; } }
 .sched__col { padding: 14px; }
+
+/* Selector de día — solo en móvil (ver @media max-width:640px más abajo);
+   en escritorio las 5 columnas van lado a lado y no hace falta filtrar. */
+.sched__day-filter { display: none; }
 .sched__day {
   font-size: 0.88rem; font-weight: 700; color: var(--t1);
   text-transform: uppercase; letter-spacing: 0.04em;
@@ -1680,4 +1684,24 @@ body { background: var(--bg); }
      lado a lado: como unidad son más angostas y caben junto al nombre en
      lugar de forzar el wrap de toda la fila. */
   .att-class-row__badges { flex-direction: column; align-items: flex-end; gap: 4px; }
+
+  /* Horario: en vez de las 5 columnas apiladas (una debajo de otra, mucho
+     scroll), un selector de día muestra solo la columna elegida. */
+  .sched__day-filter {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+  .sched__day-filter .dash__field-label { font-size: 1.036rem; } /* +40% sobre 0.74rem */
+  /* El <select> nativo no hereda tipografía por defecto (hoja de estilos del
+     navegador, no la de la app) -- se fija explícitamente Inter + los colores
+     de marca en vez de dejar la fuente/color del sistema operativo. */
+  .sched__day-filter select {
+    font-family: inherit;
+    font-size: 1.032rem; /* +20% sobre 0.86rem */
+    color: var(--t1);
+  }
+  .sched__col { display: none; }
+  .sched__col--mobile-active { display: block; }
 }
