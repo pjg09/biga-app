@@ -5,16 +5,36 @@
   right: 0;
   z-index: 100;
   padding-block: 1.25rem;
-  transition: padding-block var(--transition-base), background var(--transition-base),
+  transition: padding-block var(--transition-base),
     box-shadow var(--transition-base), border-color var(--transition-base);
   border-bottom: 1px solid transparent;
 }
 
-.navbar--scrolled {
-  padding-block: 0.875rem;
+/* El cristal esmerilado vive en un pseudo-elemento, NO en `.navbar`.
+   `backdrop-filter` (igual que `filter` o `transform`) convierte al elemento en
+   bloque contenedor de sus descendientes `position: fixed`. Aplicado sobre
+   `.navbar`, el panel móvil y su overlay dejaban de medirse contra el viewport
+   y se recortaban a la altura de la barra (~79px) en cuanto había scroll.
+   En el pseudo-elemento el efecto es idéntico y no atrapa a nadie. */
+.navbar::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
   background: rgba(5, 0, 13, 0.75);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
+  opacity: 0;
+  transition: opacity var(--transition-base);
+  pointer-events: none;
+}
+
+.navbar--scrolled::before {
+  opacity: 1;
+}
+
+.navbar--scrolled {
+  padding-block: 0.875rem;
   border-bottom-color: rgba(124, 58, 237, 0.18);
   box-shadow: 0 4px 32px rgba(0, 0, 0, 0.3);
 }
@@ -219,24 +239,35 @@
     width: min(320px, 80vw);
     flex-direction: column;
     align-items: flex-start;
-    justify-content: center;
+    /* `flex-start` + márgenes auto en el primer y último hijo: centra el bloque
+       cuando sobra espacio y se alinea arriba cuando no cabe. Con
+       `justify-content: center` el contenido desbordado se recorta por arriba
+       y queda inalcanzable aunque haya scroll (móvil en horizontal). */
+    justify-content: flex-start;
+    overflow-y: auto;
     gap: 2.5rem;
     padding: 3rem 2.5rem;
     background: var(--clr-dark-800);
     border-left: 1px solid rgba(124, 58, 237, 0.2);
     transform: translateX(100%);
-    transition: transform var(--transition-slow);
+    /* `visibility` evita que los enlaces del panel cerrado sigan siendo
+       tabulables fuera de pantalla. */
+    visibility: hidden;
+    transition: transform var(--transition-slow), visibility var(--transition-slow);
     z-index: 200;
   }
 
   .navbar__nav--open {
     transform: translateX(0);
+    visibility: visible;
   }
 
   .navbar__links {
     flex-direction: column;
     align-items: flex-start;
     gap: 1.5rem;
+    margin-top: auto;
+    flex-shrink: 0;
   }
 
   .navbar__link {
@@ -249,5 +280,7 @@
     padding-block: 0.875rem;
     font-size: 1rem;
     text-align: center;
+    margin-bottom: auto;
+    flex-shrink: 0;
   }
 }
