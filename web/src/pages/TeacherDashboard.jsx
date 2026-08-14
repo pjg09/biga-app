@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { attendanceService } from '../services/attendance';
@@ -444,6 +444,22 @@ export function DeparturesView() {
   const [saving, setSaving]     = useState(false);
   const [list, setList]         = useState([]);
   const [toast, setToast]       = useState(null);
+  const infoRef = useRef(null);
+  const [photoSize, setPhotoSize] = useState(56);
+
+  // La miniatura del estudiante seleccionado debe medir exactamente el alto
+  // del bloque de texto (nombre + documento), borde a borde: se mide en JS
+  // en vez de con CSS porque el tamaño intrínseco de la foto real (cientos
+  // de px) rompe cualquier truco de `align-items: stretch` + `aspect-ratio`.
+  useLayoutEffect(() => {
+    if (!selected || !infoRef.current) return;
+    const el = infoRef.current;
+    const update = () => setPhotoSize(el.offsetHeight);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [selected]);
 
   const showToast = useCallback((msg, type = 'success') => {
     setToast({ msg, type });
@@ -494,14 +510,21 @@ export function DeparturesView() {
         </div>
       )}
 
-      <div className="dep-scale">
+      <div className="dep-scale dep-scale--sm">
       <form className="card att-form" onSubmit={submit}>
         <p className="dash__list-title" style={{ marginBottom: 4 }}>Registrar salida anticipada</p>
 
         {selected ? (
-          <div className="att-selected">
-            <span className="dash__student-name">{selected.full_name}</span>
-            <span className="dash__student-group">Doc. {selected.document_number}{[selected.grade_name, selected.group_name].filter(Boolean).length ? ` · ${[selected.grade_name, selected.group_name].filter(Boolean).join(' ')}` : ''}</span>
+          <div className="att-selected att-selected--photo att-selected--dep">
+            {selected.photo_url
+              ? <StudentPhoto src={selected.photo_url} alt={selected.full_name} caption={selected.full_name} className="att-selected__photo" style={{ width: photoSize, height: photoSize }} />
+              : <div className="dash__student-avatar att-selected__photo" style={{ background: '#ede9fe', color: '#6d28d9', width: photoSize, height: photoSize }}>
+                  {(selected.full_name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+                </div>}
+            <div className="att-selected__info" ref={infoRef}>
+              <span className="dash__student-name">{selected.full_name}</span>
+              <span className="dash__student-group">Doc. {selected.document_number}{[selected.grade_name, selected.group_name].filter(Boolean).length ? ` · ${[selected.grade_name, selected.group_name].filter(Boolean).join(' ')}` : ''}</span>
+            </div>
             <button type="button" className="att-selected__clear" onClick={() => setSelected(null)} aria-label="Cambiar">✕</button>
           </div>
         ) : (
@@ -529,7 +552,7 @@ export function DeparturesView() {
         <div className="att-form__row">
           <label className="dash__field" style={{ maxWidth: 160 }}>
             <span className="dash__field-label">Hora de salida</span>
-            <input className="dash__field-input" type="time" value={time} onChange={e => setTime(e.target.value)} required />
+            <input className="dash__field-input" type="time" value={time} onChange={e => setTime(e.target.value)} required style={{ width: 'auto', maxWidth: 110, textAlign: 'center' }} />
           </label>
         </div>
 
@@ -584,7 +607,7 @@ export function DeparturesView() {
 
 // Foto de estudiante con lightbox: click amplía la imagen a pantalla completa.
 // Reutiliza el overlay .pae-lightbox. Se usa en todos los dashboards.
-export function StudentPhoto({ src, alt = '', caption, className = 'dash__table-photo' }) {
+export function StudentPhoto({ src, alt = '', caption, className = 'dash__table-photo', style }) {
   const [open, setOpen] = useState(false);
   useEffect(() => {
     if (!open) return;
@@ -604,7 +627,7 @@ export function StudentPhoto({ src, alt = '', caption, className = 'dash__table-
         src={src}
         alt={alt}
         onClick={(e) => { e.stopPropagation(); setOpen(true); }}
-        style={{ cursor: 'zoom-in' }}
+        style={{ cursor: 'zoom-in', ...style }}
       />
       {/* Portal a <body>: el lightbox vive dentro de la fila, y una fila puede
           ser un <button>. Un <button> y un role="dialog" anidados dentro de otro

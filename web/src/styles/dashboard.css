@@ -1227,6 +1227,25 @@ body { background: var(--bg); }
   flex-shrink: 0;
 }
 
+/* Salidas tempranas: la miniatura no lleva un tamaño fijo -- el componente
+   mide en JS la altura real del bloque de texto (nombre + documento) y la
+   aplica como width/height inline, así que aquí solo van las propiedades
+   visuales. Con `aspect-ratio`/`align-items:stretch` puro el navegador usaba
+   el tamaño intrínseco de la foto (cientos de px) en vez de la del texto —
+   por eso el tamaño se resuelve en JS y no en CSS. */
+.att-selected--dep .att-selected__photo {
+  border-radius: 10px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.att-selected--dep .dash__student-avatar.att-selected__photo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
 .att-selected__clear {
   position: absolute;
   top: 10px; right: 12px;
@@ -1250,6 +1269,23 @@ body { background: var(--bg); }
 .dep-scale .att-selected__clear  { font-size: 1.17rem; }
 .dep-scale .att-selected .dash__student-group { font-size: 1rem; color: var(--t2); }
 .dep-scale .dash__student-row .dash__student-group { font-size: 1rem; color: var(--t2); }
+
+/* Salidas tempranas usa el mismo .dep-scale que Convivencia (arriba), pero
+   solo su instancia (`.dep-scale--sm`, en DeparturesView) se reduce un 15%
+   más -- Convivencia no se toca. -15% sobre los valores de arriba. */
+.dep-scale--sm .dash__list-title     { font-size: 0.969rem; }
+.dep-scale--sm .dash__student-name   { font-size: 0.927rem; }
+.dep-scale--sm .dash__student-group  { font-size: 0.74rem; }
+.dep-scale--sm .dash__student-time   { font-size: 0.799rem; }
+.dep-scale--sm .dash__student-avatar { width: 40px; height: 40px; font-size: 0.74rem; }
+.dep-scale--sm .dash__field-label    { font-size: 0.816rem; }
+.dep-scale--sm .dash__field-input    { font-size: 0.952rem; }
+.dep-scale--sm .btn--confirm         { font-size: 0.927rem; }
+.dep-scale--sm .dash__empty          { font-size: 0.91rem; }
+.dep-scale--sm .att-selected__clear  { font-size: 0.995rem; }
+.dep-scale--sm .att-selected .dash__student-group { font-size: 0.85rem; }
+.dep-scale--sm .dash__student-row .dash__student-group { font-size: 0.85rem; }
+
 /* Convivencia — elementos propios del form, mismo escalado que salidas */
 .dep-scale .conv-article__code  { font-size: 1.01rem; }
 .dep-scale .conv-article__title { font-size: 1.04rem; }
