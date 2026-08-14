@@ -744,11 +744,13 @@ body { background: var(--bg); }
 }
 
 /* Buscador + botón de acción a la derecha (ej. "+ Registrar estudiante").
-   `.btn--confirm` trae `flex: 2` de fábrica (pensado para pares de botones de
-   modal); aquí se pisa con un selector de 2 clases para que el botón se ancle
-   a su ancho de contenido y no le robe espacio al buscador. */
+   `.dash .btn--confirm` (2 clases, línea ~950) trae `flex: 2` de fábrica
+   (pensado para pares de botones de modal). Un selector de 2 clases aquí
+   empata en especificidad con ese y pierde por orden de cascada (aparece
+   antes en el archivo) — el botón terminaba con flex:2 real pese al override
+   "aparente". Se necesitan 3 clases para ganar de verdad. */
 .dash__search-wrap--btn { display: flex; gap: 12px; }
-.btn--confirm.dash__search-btn { flex: 0 0 auto; white-space: nowrap; }
+.dash .btn--confirm.dash__search-btn { flex: 0 0 auto; white-space: nowrap; }
 
 /* ─── Table student cell ─────────────────────────────────────── */
 .dash__table-student {
@@ -1831,7 +1833,7 @@ body { background: var(--bg); }
      `.dash__content` (invisible: sin barra de scroll visible). */
   .dash__search-inner { min-width: 0; }
   .dash__search-wrap--btn { flex-wrap: wrap; }
-  .btn--confirm.dash__search-btn { flex: 1 1 100%; }
+  .dash .btn--confirm.dash__search-btn { flex: 1 1 100%; }
 
   .dash__table-header,
   .dash__list-header { flex-wrap: wrap; gap: 6px; }
