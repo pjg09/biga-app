@@ -1,38 +1,62 @@
 import { useState, useCallback } from 'react';
 import { useScrollReveal } from '../hooks/useScrollReveal';
+import { api } from '../services/api';
 import '../styles/cta.css';
 
 // Basic RFC 5322 email validation — no eval, no XSS risk
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+const MESSAGES = {
+  invalid: 'Por favor ingresa un correo electrónico válido.',
+  success: '¡Gracias! Nos pondremos en contacto pronto.',
+  rateLimited: 'Recibimos varias solicitudes desde aquí. Intenta de nuevo más tarde.',
+  failed: 'No pudimos registrar tu solicitud. Intenta de nuevo en unos minutos.',
+};
+
 export default function CallToAction() {
   const [email, setEmail] = useState('');
-  const [status, setStatus] = useState('idle'); // idle | success | error
+  const [status, setStatus] = useState('idle'); // idle | sending | success | error
+  const [message, setMessage] = useState('');
 
   const titleRef = useScrollReveal();
   const formRef = useScrollReveal();
 
   const isEmailValid = EMAIL_PATTERN.test(email.trim());
+  const isSending = status === 'sending';
 
   const handleSubmit = useCallback(
-    (e) => {
+    async (e) => {
       e.preventDefault();
+      if (isSending) return;
 
       const trimmed = email.trim();
       if (!EMAIL_PATTERN.test(trimmed)) {
         setStatus('error');
+        setMessage(MESSAGES.invalid);
         return;
       }
 
-      // Placeholder: connect to your API endpoint
-      setStatus('success');
-      setEmail('');
+      setStatus('sending');
+      setMessage('');
+      try {
+        await api.postPublic('/leads', { email: trimmed });
+        setStatus('success');
+        setMessage(MESSAGES.success);
+        setEmail('');
+      } catch (err) {
+        // Solo se declara éxito cuando el backend confirma. Un fallo de red no
+        // puede seguir pintando "nos pondremos en contacto": el lead se perdería
+        // sin que nadie se entere, ni el visitante ni nosotros.
+        setStatus('error');
+        setMessage(err.status === 429 ? MESSAGES.rateLimited : MESSAGES.failed);
+      }
     },
-    [email]
+    [email, isSending]
   );
 
   const handleEmailChange = useCallback((e) => {
     setStatus('idle');
+    setMessage('');
     setEmail(e.target.value);
   }, []);
 
@@ -84,29 +108,28 @@ export default function CallToAction() {
               value={email}
               onChange={handleEmailChange}
               autoComplete="email"
-              aria-describedby={status !== 'idle' ? 'cta-status' : undefined}
+              aria-describedby={message ? 'cta-status' : undefined}
               aria-invalid={status === 'error'}
               maxLength={320}
+              disabled={isSending}
             />
             <button
               type="submit"
               className="btn btn--primary cta__submit"
-              disabled={!isEmailValid}
-              aria-disabled={!isEmailValid}
+              disabled={!isEmailValid || isSending}
+              aria-disabled={!isEmailValid || isSending}
             >
-              Solicitar demo
+              {isSending ? 'Enviando…' : 'Solicitar demo'}
             </button>
           </div>
 
-          {status !== 'idle' && (
+          {message && (
             <p
               id="cta-status"
               role="status"
               className={`cta__feedback${status === 'error' ? ' cta__feedback--error' : ' cta__feedback--success'}`}
             >
-              {status === 'success'
-                ? '¡Gracias! Nos pondremos en contacto pronto.'
-                : 'Por favor ingresa un correo electrónico válido.'}
+              {message}
             </p>
           )}
         </form>

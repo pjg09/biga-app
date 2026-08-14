@@ -19,4 +19,8 @@ export const adminService = {
   createClassPeriod: (cp) => api.post('/admin/class-periods', cp),
   listAssignments: () => api.get('/admin/teacher-assignments'),
   assignTeacher:   (a) => api.post('/admin/teacher-assignments', a),
+
+  // Leads de la landing. `status` opcional: PENDING | SENT | FAILED | SUPPRESSED
+  listLeads: (status) =>
+    api.get(`/admin/leads${status ? `?status=${status}` : ''}`),
 };

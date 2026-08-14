@@ -43,6 +43,9 @@ class NotificationStatus(str, enum.Enum):
     PENDING = "PENDING"
     SENT = "SENT"
     FAILED = "FAILED"
+    # No se intentó enviar a propósito (ej. lead duplicado dentro de la ventana
+    # de 24h). Distinto de PENDING, que significa "encolado, aún sin resolver".
+    SUPPRESSED = "SUPPRESSED"
 
 
 class ImportJobType(str, enum.Enum):

@@ -16,7 +16,24 @@ const NAV_TITLES = {
   staff:     'Personal',
   academic:  'Académico',
   schedule:  'Horarios',
+  leads:     'Solicitudes de demo',
 };
+
+// Estados de envío del aviso interno de un lead. SUPPRESSED = duplicado dentro
+// de la ventana de 24h, no se intentó enviar a propósito.
+const LEAD_STATUS = {
+  SENT:       { label: 'Avisado',    cls: 'green' },
+  FAILED:     { label: 'Falló',      cls: 'red' },
+  PENDING:    { label: 'En cola',    cls: 'yellow' },
+  SUPPRESSED: { label: 'Duplicado',  cls: 'gray' },
+};
+const LEAD_FILTERS = [
+  { id: '',           label: 'Todos' },
+  { id: 'FAILED',     label: 'Fallidos' },
+  { id: 'SENT',       label: 'Avisados' },
+  { id: 'PENDING',    label: 'En cola' },
+  { id: 'SUPPRESSED', label: 'Duplicados' },
+];
 
 function greeting() {
   const h = new Date().getHours();
@@ -77,6 +94,10 @@ export default function AdminDashboard() {
             <NavItem id="academic" active={activeNav} icon={<ListIcon />}     label="Académico"   onClick={setActiveNav} />
             <NavItem id="schedule" active={activeNav} icon={<CalendarIcon />} label="Horarios"    onClick={setActiveNav} />
           </div>
+          <div className="dash__nav-section">
+            <p className="dash__nav-label">Comercial</p>
+            <NavItem id="leads" active={activeNav} icon={<InboxIcon />} label="Solicitudes" onClick={setActiveNav} />
+          </div>
         </nav>
 
         <div className="dash__sidebar-footer">
@@ -106,6 +127,7 @@ export default function AdminDashboard() {
           {activeNav === 'staff'    && <StaffView />}
           {activeNav === 'academic' && <AcademicView />}
           {activeNav === 'schedule' && <ScheduleView />}
+          {activeNav === 'leads'    && <LeadsView />}
         </main>
       </div>
     </div>
@@ -468,6 +490,94 @@ function ScheduleView() {
   );
 }
 
+/* ── Solicitudes de demo (leads de la landing) ───────────────── */
+function LeadsView() {
+  const [data, setData] = useState({ items: [], total: 0, counts: {} });
+  const [filter, setFilter] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const load = useCallback(async () => {
+    setLoading(true); setError(null);
+    try { setData(await adminService.listLeads(filter)); }
+    catch (e) { setError(e.status === 403 ? 'Tu usuario no tiene acceso a las solicitudes de demo.' : e.message); }
+    finally { setLoading(false); }
+  }, [filter]);
+  useEffect(() => { load(); }, [load]);
+
+  const failed = data.counts.FAILED ?? 0;
+
+  if (error) return <div className="dash__empty"><AlertIcon color="#ef4444" /><span>{error}</span></div>;
+
+  return (
+    <>
+      {/* El aviso de fallos va arriba y siempre visible: si un correo no salió,
+          el lead sigue aquí pero nadie se enteró por bandeja. */}
+      {failed > 0 && (
+        <div className="card leads-alert">
+          <AlertIcon color="#ef4444" />
+          <span>
+            <strong>{failed}</strong> {failed === 1 ? 'aviso no se pudo enviar' : 'avisos no se pudieron enviar'} por correo.
+            El contacto está registrado abajo — escríbele a mano.
+          </span>
+        </div>
+      )}
+
+      <div className="leads-filters">
+        {LEAD_FILTERS.map(f => (
+          <button
+            key={f.id || 'all'}
+            className={`leads-filter${filter === f.id ? ' leads-filter--active' : ''}`}
+            onClick={() => setFilter(f.id)}
+          >
+            {f.label}
+            {f.id && data.counts[f.id] > 0 && <span className="leads-filter__count">{data.counts[f.id]}</span>}
+          </button>
+        ))}
+      </div>
+
+      <div className="card dash__list-card">
+        <div className="dash__list-header">
+          <span className="dash__list-title">Solicitudes recibidas</span>
+          <span className="dash__student-group">{data.total}</span>
+        </div>
+
+        {loading && <div className="dash__empty"><Spinner /><span>Cargando solicitudes…</span></div>}
+
+        {!loading && data.items.length === 0 && (
+          <div className="dash__empty">
+            <InboxIcon />
+            <span>{filter ? 'Ninguna solicitud con ese estado.' : 'Todavía no hay solicitudes de demo.'}</span>
+          </div>
+        )}
+
+        {!loading && data.items.map(lead => {
+          const st = LEAD_STATUS[lead.notification_status] ?? { label: lead.notification_status, cls: 'gray' };
+          return (
+            <div className="dash__student-row" key={lead.id}>
+              <div className="dash__student-avatar" style={{ background: '#ede9fe', color: '#6d28d9' }}>
+                {lead.email[0]?.toUpperCase() ?? '?'}
+              </div>
+              <div className="dash__student-info">
+                <p className="dash__student-name">
+                  <a className="leads-mail" href={`mailto:${lead.email}`}>{lead.email}</a>
+                </p>
+                <p className="dash__student-group">
+                  {new Date(lead.created_at).toLocaleString('es-CO', {
+                    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+                  })}
+                  {lead.notification_error && ` · ${lead.notification_error.slice(0, 90)}`}
+                </p>
+              </div>
+              <span className={`dash__badge dash__badge--${st.cls}`}>{st.label}</span>
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
 /* ── Reusable ────────────────────────────────────────────────── */
 function Section({ title, children }) {
   return <div className="admin-section"><p className="admin-section__title">{title}</p><div className="dash__stats">{children}</div></div>;
@@ -516,6 +626,7 @@ function ShieldIcon() { return <svg width="18" height="18" viewBox="0 0 24 24" f
 function MailIcon()   { return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2" /><path d="M22 7l-10 6L2 7" /></svg>; }
 function ListIcon()   { return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" /></svg>; }
 function CalendarIcon() { return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>; }
+function InboxIcon()  { return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12" /><path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z" /></svg>; }
 function LogoutIcon() { return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>; }
 function Spinner({ color = '#4f46e5', size = 20 }) {
   return (

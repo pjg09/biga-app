@@ -5,6 +5,7 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.storage.s3 import S3StorageAdapter
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import decode_access_token
 from app.models.enums import UserRole
@@ -41,6 +42,24 @@ def require_admin(current_user: User = Depends(get_current_user)) -> User:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Solo administradores pueden acceder a este recurso",
+        )
+    return current_user
+
+
+def require_leads_reader(current_user: User = Depends(require_admin)) -> User:
+    """ADMIN + estar en la lista blanca de `LEADS_ADMIN_EMAILS`.
+
+    `demo_leads` no tiene `institution_id`: no hay filtro de tenant que aísle
+    unos leads de otros. Con varias instituciones en la BD, `require_admin` a
+    secas dejaría que el admin de un colegio cliente leyera las solicitudes de
+    demo de todos los demás. La lista vacía mantiene el comportamiento simple
+    del MVP de una sola institución.
+    """
+    allowed = [e.strip().lower() for e in settings.leads_admin_emails if e.strip()]
+    if allowed and current_user.email.lower() not in allowed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Este usuario no tiene acceso a las solicitudes de demo",
         )
     return current_user
 

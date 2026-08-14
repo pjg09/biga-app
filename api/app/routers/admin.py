@@ -1,13 +1,15 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import require_admin
+from app.core.dependencies import require_admin, require_leads_reader
+from app.models.enums import NotificationStatus
 from app.models.user import User
 from app.repositories.admin_management_repository import AdminManagementRepository
 from app.repositories.admin_repository import AdminRepository
+from app.repositories.lead_repository import LeadRepository
 from app.schemas.admin import (
     AdminStats,
     AdminUserCreate,
@@ -23,8 +25,10 @@ from app.schemas.admin import (
     UserGroupCreate,
     UserGroupResponse,
 )
+from app.schemas.leads import LeadsPage
 from app.services.admin_management_service import AdminManagementService
 from app.services.admin_service import AdminService
+from app.services.lead_service import LeadService
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -35,6 +39,10 @@ def get_admin_service(db: AsyncSession = Depends(get_db)) -> AdminService:
 
 def get_mgmt_service(db: AsyncSession = Depends(get_db)) -> AdminManagementService:
     return AdminManagementService(AdminManagementRepository(db))
+
+
+def get_lead_service(db: AsyncSession = Depends(get_db)) -> LeadService:
+    return LeadService(LeadRepository(db))
 
 
 # --- Estadísticas ---
@@ -152,3 +160,21 @@ async def list_teacher_assignments(
     service: AdminManagementService = Depends(get_mgmt_service),
 ):
     return await service.list_teacher_assignments(current_user.institution_id)
+
+
+# --- Leads de la landing ---
+
+@router.get("/leads", response_model=LeadsPage)
+async def list_leads(
+    status_filter: NotificationStatus | None = Query(default=None, alias="status"),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    current_user: User = Depends(require_leads_reader),
+    service: LeadService = Depends(get_lead_service),
+):
+    """Solicitudes de demo de la landing.
+
+    No recibe `institution_id`: `demo_leads` es pre-tenant. El aislamiento lo da
+    `require_leads_reader`, no un filtro en el WHERE.
+    """
+    return await service.list_leads(status=status_filter, limit=limit, offset=offset)
