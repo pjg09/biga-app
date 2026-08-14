@@ -13,7 +13,13 @@ case "${PROCESS_TYPE:-api}" in
     exec uvicorn app.main:app --host 0.0.0.0 --port "${PORT:-8000}"
     ;;
   worker)
-    exec celery -A app.core.celery:celery_app worker --loglevel=info
+    # --concurrency fijo: sin esto Celery mira los núcleos del host de Railway
+    # (48) y levanta 48 procesos con una copia entera de la app cada uno, ~1 GB
+    # de RAM sin procesar una sola tarea. El límite de CPU del contenedor no lo
+    # evita: es un cgroup y os.cpu_count() sigue viendo los 48 del host.
+    # Las tareas son envíos de correo (I/O, de a uno): con 2 procesos sobra.
+    exec celery -A app.core.celery:celery_app worker --loglevel=info \
+      --concurrency=2 --without-gossip --without-mingle
     ;;
   beat)
     # El schedule de beat se guarda en disco. En Railway el filesystem es
