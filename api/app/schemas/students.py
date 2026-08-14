@@ -42,5 +42,7 @@ class StudentResponse(BaseModel):
     photo_url: str | None
     is_active: bool
     created_at: datetime
+    grade_name: str | None = None
+    group_name: str | None = None
 
     model_config = {"from_attributes": True}

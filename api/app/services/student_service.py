@@ -18,9 +18,16 @@ class StudentService:
         self.repo = repo
         self.storage = storage
 
-    def _to_response(self, student: Student) -> StudentResponse:
+    def _to_response(
+        self,
+        student: Student,
+        grade_name: str | None = None,
+        group_name: str | None = None,
+    ) -> StudentResponse:
         resp = StudentResponse.model_validate(student)
         resp.photo_url = resolve_photo_url(self.storage, student.photo_url)
+        resp.grade_name = grade_name
+        resp.group_name = group_name
         return resp
 
     async def create_student(
@@ -56,6 +63,8 @@ class StudentService:
         institution_id: UUID,
         user_id: UUID,
         role: UserRole,
+        grade_id: UUID | None = None,
+        group_id: UUID | None = None,
     ) -> list[StudentResponse]:
         """Listado de "Mis estudiantes" (módulo de Aula), acotado según el rol.
 
@@ -71,6 +80,10 @@ class StudentService:
 
         El recorte se hace aquí y no en el front: cualquiera puede llamar a
         `GET /students` a mano, y un filtro que solo vive en React no filtra nada.
+
+        `grade_id`/`group_id` solo se aplican al listado del administrador: el
+        de docente/operador PAE ya viene acotado a sus propios salones, que
+        normalmente es un conjunto chico y no necesita este filtro.
         """
         if role in (UserRole.TEACHER, UserRole.PAE_OPERATOR):
             students = await self.repo.list_for_teacher(
@@ -78,9 +91,12 @@ class StudentService:
                 user_id=user_id,
                 academic_year=date.today().year,
             )
-        else:
-            students = await self.repo.list_by_institution(institution_id=institution_id)
-        return [self._to_response(s) for s in students]
+            return [self._to_response(s) for s in students]
+
+        rows = await self.repo.list_by_institution(
+            institution_id=institution_id, grade_id=grade_id, group_id=group_id
+        )
+        return [self._to_response(s, grade_name, group_name) for s, grade_name, group_name in rows]
 
     async def set_photo(
         self,

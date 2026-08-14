@@ -1,7 +1,13 @@
 import { api } from './api';
 
 export const studentService = {
-  list: () => api.get('/students'),
+  list: ({ gradeId, groupId } = {}) => {
+    const params = new URLSearchParams();
+    if (gradeId) params.set('grade_id', gradeId);
+    if (groupId) params.set('group_id', groupId);
+    const qs = params.toString();
+    return api.get(`/students${qs ? `?${qs}` : ''}`);
+  },
 
   // Búsqueda con filtros opcionales. `q` puede ir vacío si se filtra por grado/salón.
   search: (q, { gradeId, groupId } = {}) => {

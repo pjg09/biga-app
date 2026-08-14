@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { paeService } from '../services/pae';
 import { studentService } from '../services/students';
+import { adminService } from '../services/admin';
 import { AttendanceView, DeparturesView, ScheduleView, ConvivenciaView, HistorialView, MensajesView, StudentPhoto, TeacherStudentsView, AbsencesView } from './TeacherDashboard';
 import '../styles/dashboard.css';
 
@@ -652,6 +653,10 @@ export function StudentsView() {
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState(null);
   const [query, setQuery]         = useState('');
+  const [grades, setGrades]       = useState([]);
+  const [groups, setGroups]       = useState([]);
+  const [gradeId, setGradeId]     = useState('');
+  const [groupId, setGroupId]     = useState('');
   const [showForm, setShowForm]   = useState(false);
   const [form, setForm]           = useState(EMPTY_FORM);
   const [photoFile, setPhotoFile] = useState(null);
@@ -665,12 +670,26 @@ export function StudentsView() {
     setTimeout(() => setToast(null), 3500);
   }, []);
 
+  useEffect(() => {
+    Promise.all([adminService.listGrades(), adminService.listGroups()])
+      .then(([g, gr]) => { setGrades(g); setGroups(gr); })
+      .catch(() => { /* filtros opcionales: si fallan, el listado sin filtrar sigue funcionando */ });
+  }, []);
+
+  const groupsForGrade = groups.filter(g => !gradeId || g.grade_id === gradeId);
+
+  // Si el salón elegido queda fuera del grado nuevo, se limpia (mismo patrón
+  // que StudentSearch en TeacherDashboard.jsx).
+  useEffect(() => {
+    if (groupId && !groupsForGrade.some(g => g.id === groupId)) setGroupId('');
+  }, [gradeId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const [all, enrolled] = await Promise.all([
-        studentService.list(),
+        studentService.list({ gradeId, groupId }),
         paeService.listStudentsToday(),
       ]);
       setStudents(all);
@@ -680,8 +699,11 @@ export function StudentsView() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [gradeId, groupId]);
 
+  // `load` cambia de identidad cuando cambia el filtro (useCallback la
+  // recrea), así que este mismo efecto recarga tanto en el montaje inicial
+  // como cada vez que se elige un grado/salón distinto.
   useEffect(() => { load(); }, [load]);
 
   const updateField = (field) => (e) => setForm(prev => ({ ...prev, [field]: e.target.value }));
@@ -818,6 +840,17 @@ export function StudentsView() {
         </div>
       )}
 
+      <div className="conv-article-filters" style={{ marginBottom: 12 }}>
+        <select className="dash__field-input" value={gradeId} onChange={e => setGradeId(e.target.value)}>
+          <option value="">Todos los grados</option>
+          {grades.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+        </select>
+        <select className="dash__field-input" value={groupId} onChange={e => setGroupId(e.target.value)}>
+          <option value="">Todos los salones</option>
+          {groupsForGrade.map(g => <option key={g.id} value={g.id}>{g.grade_name} {g.name}</option>)}
+        </select>
+      </div>
+
       <div className="dash__search-wrap dash__search-wrap--btn">
         <div className="dash__search-inner" style={{ flex: 1 }}>
           <SearchIcon />
@@ -851,7 +884,7 @@ export function StudentsView() {
           <div className="dash__table-scroll">
           <table className="dash__table">
             <thead>
-              <tr><th>Estudiante</th><th>Documento</th><th>PAE</th><th></th></tr>
+              <tr><th>Estudiante</th><th>Documento</th><th>Grado / Salón</th><th>PAE</th><th></th></tr>
             </thead>
             <tbody>
               {filtered.map((s, i) => {
@@ -872,6 +905,11 @@ export function StudentsView() {
                       </div>
                     </td>
                     <td style={{ fontVariantNumeric: 'tabular-nums', color: 'var(--t2)' }}>{s.document_number}</td>
+                    <td style={{ color: 'var(--t2)' }}>
+                      {s.grade_name || s.group_name
+                        ? [s.grade_name, s.group_name].filter(Boolean).join(' ')
+                        : <span style={{ color: 'var(--t3)' }}>Sin salón</span>}
+                    </td>
                     <td>
                       {enrolled
                         ? <span className="dash__badge dash__badge--green">Inscrito</span>

@@ -51,16 +51,34 @@ class StudentRepository:
     async def list_by_institution(
         self,
         institution_id: UUID,
-    ) -> list[Student]:
-        result = await self.session.execute(
-            select(Student)
+        grade_id: UUID | None = None,
+        group_id: UUID | None = None,
+    ) -> list[tuple[Student, str | None, str | None]]:
+        # LEFT JOIN (no INNER): un estudiante sin matrícula activa debe seguir
+        # apareciendo en el listado del admin, solo que sin grado/salón. El
+        # mismo patrón de join que `search()`, pero sin su `limit` — este
+        # método alimenta el listado completo de gestión, no un autocompletado.
+        stmt = (
+            select(Student, Group.name, Grade.name)
+            .outerjoin(
+                StudentGroup,
+                (StudentGroup.student_id == Student.id) & (StudentGroup.is_active == True),
+            )
+            .outerjoin(Group, Group.id == StudentGroup.group_id)
+            .outerjoin(Grade, Grade.id == Group.grade_id)
             .where(
                 Student.institution_id == institution_id,
                 Student.is_active == True,
             )
             .order_by(Student.last_name, Student.first_name)
         )
-        return list(result.scalars().all())
+        if grade_id:
+            stmt = stmt.where(Group.grade_id == grade_id)
+        if group_id:
+            stmt = stmt.where(StudentGroup.group_id == group_id)
+
+        result = await self.session.execute(stmt)
+        return [(row[0], row[2], row[1]) for row in result]  # (student, grade_name, group_name)
 
     async def list_for_teacher(
         self,

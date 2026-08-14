@@ -171,7 +171,10 @@ que siguen restringidos al operador.
 - **Estudiantes** — registrar estudiante (`POST /students`) con **subida de foto a
   MinIO** (file picker → `POST /students/{id}/photo`; se guarda la key y se presigna
   al leer, ver `app/core/photos.py`) e **inscribir al PAE** (`POST /pae/enrollments`)
-  por estudiante.
+  por estudiante. Filtro por grado/salón (selects que reusan `adminService.listGrades`/
+  `listGroups`, mismo patrón que `StudentSearch`) contra `GET /students?grade_id=&group_id=`
+  — recarga el listado en servidor, no filtra en cliente (ver nota en CLAUDE.md sobre
+  `GET /students`). El buscador por texto sigue siendo 100% cliente sobre ese resultado.
 
 Además, el operador PAE es un docente con funciones extra: `PAEDashboard` reutiliza
 las vistas de aula de `TeacherDashboard` (Asistencia, Convivencia, Historial, etc.).

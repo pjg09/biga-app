@@ -48,6 +48,8 @@ async def create_student(
 
 @router.get("", response_model=list[StudentResponse])
 async def list_students(
+    grade_id: UUID | None = None,
+    group_id: UUID | None = None,
     current_user: User = Depends(get_current_user),
     service: StudentService = Depends(get_student_service),
 ):
@@ -55,11 +57,16 @@ async def list_students(
 
     No confundir con `GET /students/search`, que sigue alcanzando a toda la
     institución: convivencia necesita poder registrar a cualquier estudiante.
+
+    `grade_id`/`group_id` filtran el listado del administrador (ver
+    `StudentService.list_students`); el de docente/operador PAE los ignora.
     """
     return await service.list_students(
         institution_id=current_user.institution_id,
         user_id=current_user.id,
         role=current_user.role,
+        grade_id=grade_id,
+        group_id=group_id,
     )
 
 
