@@ -896,8 +896,8 @@ export function AbsencesView() {
                     {a.note_count > 0 ? ` · ${a.note_count} nota${a.note_count > 1 ? 's' : ''}` : ''}
                   </p>
                 </div>
-                {a.closed && <span className="dash__badge dash__badge--gray">Cerrado</span>}
-                <div className="hist-sev">
+                <div className="att-class-row__badges att-class-row__badges--force-stack">
+                  {a.closed && <span className="dash__badge dash__badge--gray">Cerrado</span>}
                   <span className={`dash__badge dash__badge--${a.guardian_notified ? 'blue' : 'yellow'}`}>
                     {a.guardian_notified ? 'Aviso enviado' : 'Sin aviso'}
                   </span>
@@ -992,17 +992,17 @@ function AbsenceDetail({ recordId, onBack }) {
             : <div className="dash__student-avatar" style={{ background: '#ede9fe', color: '#6d28d9' }}>
                 {(data.student_name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
               </div>}
-          <div>
-            <p className="att-head__period">
-              {data.student_name}
-              <span className="dash__badge dash__badge--red">Sin justificar</span>
-              {data.closed && <span className="dash__badge dash__badge--gray">Cerrado</span>}
-            </p>
+          <div className="rec-head__text">
+            <p className="att-head__period">{data.student_name}</p>
             <p className="att-head__sub">
               {[data.grade_name, data.group_name].filter(Boolean).join(' ')}
               {[data.grade_name, data.group_name].filter(Boolean).length ? ' · ' : ''}
               {fmtShort(data.date)}
             </p>
+            <div className="rec-head__badges">
+              <span className="dash__badge dash__badge--red">Sin justificar</span>
+              {data.closed && <span className="dash__badge dash__badge--gray">Cerrado</span>}
+            </div>
           </div>
         </div>
         <button className="btn--secondary" style={{ width: 'auto' }} onClick={toggleClosed} disabled={closing}>

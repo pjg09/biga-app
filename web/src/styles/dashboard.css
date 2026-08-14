@@ -1507,6 +1507,21 @@ body { background: var(--bg); }
 .rec-head__student .dash__table-photo,
 .rec-head__student .dash__student-avatar { width: 64px; height: 64px; flex-shrink: 0; }
 
+/* Detalle de inasistencia: nombre, grado/fecha y badge("s") de estado.
+   En escritorio el badge va junto al nombre (como antes); en móvil se
+   fuerza el orden nombre → grado y fecha → badge, cada uno en su línea.
+   Scopeado bajo `.rec-head__text` para no tocar el otro uso de
+   `.att-head__period`/`.att-head__sub` (encabezado de clase en Asistencia). */
+.rec-head__text {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 8px;
+}
+.rec-head__text .att-head__period { order: 1; }
+.rec-head__badges { order: 2; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.rec-head__text .att-head__sub { order: 3; flex-basis: 100%; }
+
 /* ─── Admin ──────────────────────────────────────────────────── */
 .admin-section { margin-bottom: 22px; }
 .admin-section__title {
@@ -1706,7 +1721,9 @@ body { background: var(--bg); }
      mensajes, historial…): con el ancho fijo de las badges, el texto de
      `.dash__student-info` se aplastaba a unos pocos px y cada palabra caía en
      su propia línea. Se deja que las badges bajen a una segunda línea en vez
-     de exprimir el nombre/grupo. */
+     de exprimir el nombre/grupo. Afecta también a las variantes escaladas
+     (dep-scale, msg-scale, hist-scale), donde el problema es peor por el
+     +30/50% de tamaño de fuente. */
   .dash__student-row {
     flex-wrap: wrap;
     row-gap: 6px;
@@ -1714,16 +1731,34 @@ body { background: var(--bg); }
   }
   .dash__student-info { flex: 1 1 150px; min-width: 150px; }
 
+  /* "1ª hora" pasa a apilarse encima de "Tomada"/"Pendiente" en vez de ir
+     lado a lado: como unidad son más angostas y caben junto al nombre en
+     lugar de forzar el wrap de toda la fila. */
+  .att-class-row__badges { flex-direction: column; align-items: flex-end; gap: 4px; }
+
+  /* Inasistencias: a diferencia de "Clases de hoy", acá la(s) badge(s)
+     siempre van en su propia línea debajo de nombre+grado -- nunca al
+     lado, aunque quepan. Modificador propio para no tocar el otro uso
+     de `.att-class-row__badges`. */
+  .att-class-row__badges--force-stack { flex-basis: 100%; justify-content: flex-end; }
+
+  /* Detalle de inasistencia: nombre → grado y fecha → badge, cada uno en
+     su propia línea (en desktop el badge va junto al nombre, ver arriba). */
+  .rec-head__text .att-head__period {
+    flex-basis: 100%; order: 1;
+    font-size: 0.927rem !important; /* nombre más chico, mismo tier que .dash__student-name en móvil */
+  }
+  /* Grado+grupo+fecha y la badge comparten la segunda línea, badge pegada
+     a la derecha -- ninguno lleva basis:100%, así que caben en la misma
+     línea de wrap (la única que fuerza línea propia es el nombre, arriba). */
+  .rec-head__text .att-head__sub { order: 2; flex-basis: auto; }
+  .rec-head__badges { order: 3; flex-basis: auto; margin-left: auto; }
+
   .dash__modal            { padding: 24px 18px 20px; }
   .dash__modal-actions    { flex-wrap: wrap; }
   .dash__modal-student    { flex-wrap: wrap; }
 
   .att-form { padding: 16px; }
-
-  /* "1ª hora" pasa a apilarse encima de "Tomada"/"Pendiente" en vez de ir
-     lado a lado: como unidad son más angostas y caben junto al nombre en
-     lugar de forzar el wrap de toda la fila. */
-  .att-class-row__badges { flex-direction: column; align-items: flex-end; gap: 4px; }
 
   /* Horario: en vez de las 5 columnas apiladas (una debajo de otra, mucho
      scroll), un selector de día muestra solo la columna elegida. */
