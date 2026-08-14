@@ -156,6 +156,36 @@ class PAERepository:
         )
         return list(result.scalars().all())
 
+    async def get_pae_delivery_end_time(self, institution_id: UUID) -> time | None:
+        result = await self.session.execute(
+            select(Institution.pae_delivery_end_time).where(Institution.id == institution_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def has_no_claim_notification_today(
+        self,
+        institution_id: UUID,
+        student_id: UUID,
+        delivery_date: date,
+    ) -> bool:
+        result = await self.session.execute(
+            select(func.count())
+            .select_from(NotificationLog)
+            .where(
+                NotificationLog.institution_id == institution_id,
+                NotificationLog.student_id == student_id,
+                NotificationLog.type == NotificationType.PAE_NO_CLAIM,
+                func.date(NotificationLog.created_at) == delivery_date,
+            )
+        )
+        return result.scalar_one() > 0
+
+    async def get_primary_guardian(self, student_id: UUID) -> Guardian | None:
+        result = await self.session.execute(
+            select(Guardian).where(Guardian.student_id == student_id, Guardian.is_primary == True)
+        )
+        return result.scalar_one_or_none()
+
     async def count_deliveries_on(self, institution_id: UUID, delivery_date: date) -> int:
         result = await self.session.execute(
             select(func.count())

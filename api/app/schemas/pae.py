@@ -1,9 +1,13 @@
-from datetime import date, datetime
+from datetime import date, datetime, time
 from uuid import UUID
 
 from pydantic import BaseModel
 
 from app.models.enums import PAEIdentificationMethod
+
+
+class PAEDeliveryWindowResponse(BaseModel):
+    delivery_end_time: time
 
 
 class PAEStudentListItem(BaseModel):

@@ -48,7 +48,7 @@ Raíz del modelo multi-tenant. Cada registro representa una institución educati
 | `nit` | VARCHAR(20) | NOT NULL, UNIQUE | NIT de la institución |
 | `address` | VARCHAR(255) | NOT NULL | |
 | `city` | VARCHAR(100) | NOT NULL | |
-| `pae_delivery_end_time` | TIME | NOT NULL | Hora de cierre del PAE. El job de notificación se programa contra este valor. |
+| `pae_delivery_end_time` | TIME | NOT NULL | Hora de cierre del PAE. El sweep de notificación (`sweep_pae_no_claim`) se programa contra este valor, y `PAEService.register_delivery` la usa para **bloquear el registro de entregas** una vez pasada. |
 | `created_at` | TIMESTAMP | NOT NULL, DEFAULT NOW() | |
 
 ---
@@ -524,7 +524,7 @@ Registro de cada intento de envío de correo. Permite trazabilidad completa y di
 |---|---|---|---|
 | `id` | UUID | PK | |
 | `institution_id` | UUID | NOT NULL, FK → institutions | |
-| `type` | ENUM | NOT NULL | `PAE_NO_CLAIM`, `ABSENCE_FIRST_HOUR`, `DISCIPLINE_RECORD`, `EARLY_DEPARTURE` |
+| `type` | ENUM | NOT NULL | `PAE_NO_CLAIM`, `PAE_LATE_CLAIM_CORRECTION`, `ABSENCE_FIRST_HOUR`, `DISCIPLINE_RECORD`, `EARLY_DEPARTURE` |
 | `student_id` | UUID | NOT NULL, FK → students | |
 | `guardian_id` | UUID | NOT NULL, FK → guardians | |
 | `email_to` | VARCHAR(255) | NOT NULL | Snapshot del email al momento del envío |
@@ -538,6 +538,7 @@ Registro de cada intento de envío de correo. Permite trazabilidad completa y di
 ```sql
 CREATE TYPE notification_type AS ENUM (
   'PAE_NO_CLAIM',
+  'PAE_LATE_CLAIM_CORRECTION',
   'ABSENCE_FIRST_HOUR',
   'DISCIPLINE_RECORD',
   'EARLY_DEPARTURE'

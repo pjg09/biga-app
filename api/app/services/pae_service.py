@@ -12,6 +12,7 @@ from app.core.security import (
 )
 from app.adapters.storage.s3 import S3StorageAdapter
 from app.core.photos import resolve_photo_url
+from app.jobs.pae_jobs import notify_pae_late_claim_correction
 from app.models.enums import PAEIdentificationMethod
 from app.models.pae import PAEDelivery, PAEEnrollment
 from app.repositories.pae_repository import PAERepository
@@ -19,6 +20,7 @@ from app.schemas.pae import (
     PAEAuditItem,
     PAEAuditResponse,
     PAEDeliveryResponse,
+    PAEDeliveryWindowResponse,
     PAEEnrollmentResponse,
     PAEStudentListItem,
     PAEWeeklyReportItem,
@@ -38,6 +40,12 @@ class PAEService:
         self.repo = repo
         self.session = session
         self.storage = storage
+
+    async def get_delivery_window(self, institution_id: UUID) -> PAEDeliveryWindowResponse:
+        end_time = await self.repo.get_pae_delivery_end_time(institution_id)
+        if end_time is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Institución no encontrada")
+        return PAEDeliveryWindowResponse(delivery_end_time=end_time)
 
     async def list_students_today(
         self,
@@ -120,6 +128,19 @@ class PAEService:
         institution_id: UUID,
         academic_year: int,
     ) -> PAEDeliveryResponse:
+        # El sweep de "no reclamo" (beat) dispara apenas pasa esta misma hora de
+        # corte. Bloquear el registro aquí con el mismo criterio (`>=` en vez de
+        # `<=`, pero la misma comparación) es lo que garantiza que el sweep nunca
+        # vea una entrega tardía colarse después de notificar — sin este bloqueo,
+        # una entrega marcada después del corte deja al acudiente con un correo
+        # de "no reclamó" que nadie corrige.
+        cutoff = await self.repo.get_pae_delivery_end_time(institution_id)
+        if cutoff is not None and datetime.now().time() >= cutoff:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="El horario de entrega del PAE ya cerró por hoy",
+            )
+
         strategy = _get_strategy(identification_method)
         student = await strategy.identify(
             input_data={"student_id": student_id},
@@ -187,6 +208,15 @@ class PAEService:
             created_at=now,
         )
         saved = await self.repo.create_delivery(delivery)
+
+        # Red de seguridad (ver comentario del bloqueo de horario arriba): con el
+        # corte activo esto no debería dispararse en operación normal, salvo que
+        # un ADMIN haya adelantado `pae_delivery_end_time` a mitad del día.
+        if await self.repo.has_no_claim_notification_today(institution_id, student.id, today):
+            notify_pae_late_claim_correction.delay(
+                str(institution_id), str(student.id), today.isoformat()
+            )
+
         return PAEDeliveryResponse.model_validate(saved)
 
     async def weekly_report(self, institution_id: UUID) -> PAEWeeklyReportResponse:

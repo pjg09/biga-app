@@ -3,6 +3,8 @@ import { api } from './api';
 export const paeService = {
   listStudentsToday: () => api.get('/pae/students/today'),
 
+  getDeliveryWindow: () => api.get('/pae/delivery-window'),
+
   registerDelivery: (student_id) =>
     api.post('/pae/deliveries', {
       student_id,

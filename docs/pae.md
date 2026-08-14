@@ -91,6 +91,14 @@ recibieron entrega hoy.
 ]
 ```
 
+### `GET /pae/delivery-window`
+Hora de cierre del PAE de la institución (`institutions.pae_delivery_end_time`),
+para que el front calcule la cuenta regresiva y sepa cuándo cerrar la tabla.
+Accesible a PAE_OPERATOR o ADMIN, igual que el listado del día.
+```json
+{ "delivery_end_time": "12:00:00" }
+```
+
 ### `POST /pae/enrollments` — **solo ADMIN** (`require_admin`)
 Inscribe a un estudiante al PAE del año vigente. Genera el `enrollment_hash`.
 
@@ -137,6 +145,7 @@ la cadena rota.
 | Acción | Endpoint | Quién |
 |---|---|---|
 | Listado del día | `GET /pae/students/today` | PAE_OPERATOR o ADMIN |
+| Hora de cierre | `GET /pae/delivery-window` | PAE_OPERATOR o ADMIN |
 | Registrar entrega | `POST /pae/deliveries` | Solo PAE_OPERATOR |
 | Reporte semanal / auditoría | `GET /pae/report/weekly`, `/pae/audit` | Solo PAE_OPERATOR |
 | **Matricular al PAE** | `POST /pae/enrollments` | **Solo ADMIN** |
@@ -171,15 +180,51 @@ Servicios: `web/src/services/pae.js`, `web/src/services/students.js`.
 
 ---
 
-## Notificación de no-reclamo (pendiente)
+## Notificación de no-reclamo y bloqueo por hora de corte
 
-El job `app/jobs/pae_jobs.py::notify_pae_no_claim` es todavía un **stub**. La
-lógica prevista (ver `docs/database-schema.md`): al cierre de
-`institution.pae_delivery_end_time`, si hubo ≥1 entrega ese día, notificar a los
-acudientes de inscritos activos **sin** entrega registrada. Si no hubo ninguna
-entrega, se asume que el PAE no operó y no se notifica. Cuando se implemente,
-seguirá el mismo patrón de jobs que asistencia (`run_db_job` + notifier +
-`notifications_log`).
+`institution.pae_delivery_end_time` es la hora de cierre del PAE, **por
+institución**. Dos mecanismos dependen de ella:
+
+1. **Bloqueo de registro tardío** (`PAEService.register_delivery`): si
+   `datetime.now().time() >= pae_delivery_end_time`, el registro de una
+   entrega se rechaza con `403`. El operador PAE no puede marcar entregas
+   después del corte.
+2. **Sweep de no-reclamo** (`app/jobs/pae_jobs.py::sweep_pae_no_claim`, beat
+   cada 15 min, todo el día): para cada institución cuyo corte ya pasó,
+   encola `notify_pae_no_claim`. Ese job cuenta las entregas del día — si hay
+   0, asume que el PAE no operó (feriado) y no notifica; si hay ≥1, notifica
+   por correo a los acudientes de inscritos activos **sin** entrega y **sin**
+   notificación previa hoy (idempotente: correr el sweep varias veces la
+   tarde no duplica correos).
+
+**Por qué el bloqueo existe:** antes de agregarlo, el registro de una entrega
+no tenía restricción horaria, así que un operador podía marcar tarde a un
+estudiante (fila, olvido) después de que el sweep ya lo hubiera evaluado y
+notificado como "no reclamó" — el acudiente se quedaba con un correo
+incorrecto sin ninguna corrección. El bloqueo elimina esa carrera en
+operación normal: nadie puede registrar una entrega después del corte, así
+que el sweep nunca ve el estado cambiar bajo sus pies.
+
+**Reflejo en el front (`PAERegisterView`, `PAEDashboard.jsx`):** una 4ª stat
+card muestra la cuenta regresiva hasta el corte (`GET /pae/delivery-window` +
+tick de 1s vía `setInterval`, todo cliente); pasada la hora, muestra la hora a
+la que cerró. La determinación de "cerrado" es puramente visual — la comparo
+contra `new Date()` del navegador, asumiendo mismo huso horario que el
+servidor (América/Bogotá, app de una sola zona horaria). El bloqueo real lo
+sigue haciendo el backend en `register_delivery`; si el reloj del cliente
+está desincronizado, la UI puede tardar unos segundos en reflejarlo pero el
+`403` del backend es la autoridad. Pasado el corte, la tabla del listado del
+día pierde la columna de acción y el badge amarillo pasa de "Pendiente" a
+"No reclamado" (ya no hay nada pendiente, el día cerró).
+
+**Red de seguridad — `notify_pae_late_claim_correction`:** si pese al
+bloqueo llega a registrarse una entrega para un estudiante que ya tiene una
+notificación `PAE_NO_CLAIM` de hoy (único camino: un ADMIN adelanta y luego
+vuelve a abrir `pae_delivery_end_time` en el mismo día), `register_delivery`
+encola este job, que le manda al acudiente un correo aclaratorio y lo deja
+logueado como `NotificationType.PAE_LATE_CLAIM_CORRECTION`. En operación
+normal no debería dispararse nunca — es un catch para el caso borde de
+cambiar la hora de corte a mitad del día, no el mecanismo principal.
 
 ---
 

@@ -13,6 +13,7 @@ from app.schemas.pae import (
     PAEAuditResponse,
     PAEDeliveryCreate,
     PAEDeliveryResponse,
+    PAEDeliveryWindowResponse,
     PAEEnrollmentCreate,
     PAEEnrollmentResponse,
     PAEStudentListItem,
@@ -49,6 +50,14 @@ def require_pae_or_admin(current_user: User = Depends(get_current_user)) -> User
             detail="Solo operadores PAE o administradores pueden acceder a este recurso",
         )
     return current_user
+
+
+@router.get("/delivery-window", response_model=PAEDeliveryWindowResponse)
+async def get_delivery_window(
+    current_user: User = Depends(require_pae_or_admin),
+    service: PAEService = Depends(get_pae_service),
+):
+    return await service.get_delivery_window(institution_id=current_user.institution_id)
 
 
 @router.get("/students/today", response_model=list[PAEStudentListItem])

@@ -1974,3 +1974,14 @@ body { background: var(--bg); }
   .rec-head__student .dash__table-photo,
   .rec-head__student .dash__student-avatar { width: 48px !important; height: 48px !important; } /* -25% desde 64px */
 }
+
+/* Listado del día del PAE (registro de entregas): la columna del botón
+   "Registrar entrega" desborda en móvil. Se oculta y la fila entera queda
+   clicable (mismo onClick que el botón) para no perder la acción. Scopeado a
+   `.dash__table-card--pae-today` porque `.dash__table-register-btn` también
+   lo usa la tabla de matriculación PAE en Estudiantes, que no debe tocarse. */
+.dash__table-card--pae-today .pae-today__row--clickable { cursor: pointer; }
+
+@media (max-width: 640px) {
+  .dash__table-card--pae-today .pae-today__action-col { display: none; }
+}

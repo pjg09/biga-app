@@ -121,3 +121,52 @@ async def test_email_failure_marks_failed_and_continues_next_student():
 
         ok = env.notification_repo.create_log.call_args_list[1].kwargs
         assert ok["status"] == NotificationStatus.SENT
+
+
+async def test_late_claim_correction_sends_and_logs():
+    institution_id = uuid4()
+    student = make_student("Ana", "Gómez")
+    guardian = make_guardian()
+
+    with NotifierEnv() as env:
+        env.repo.get_active_student.return_value = student
+        env.repo.get_primary_guardian.return_value = guardian
+
+        await env.notifier.notify_late_claim_correction(institution_id, student.id, DELIVERY_DATE)
+
+        env.email_adapter.send.assert_called_once()
+        assert env.notification_repo.create_log.call_count == 1
+        logged = env.notification_repo.create_log.call_args.kwargs
+        assert logged["type"] == NotificationType.PAE_LATE_CLAIM_CORRECTION
+        assert logged["status"] == NotificationStatus.SENT
+        assert logged["student_id"] == student.id
+        assert logged["guardian_id"] == guardian.id
+
+
+async def test_late_claim_correction_skips_without_guardian():
+    with NotifierEnv() as env:
+        env.repo.get_active_student.return_value = make_student()
+        env.repo.get_primary_guardian.return_value = None
+
+        await env.notifier.notify_late_claim_correction(uuid4(), uuid4(), DELIVERY_DATE)
+
+        env.email_adapter.send.assert_not_called()
+        env.notification_repo.create_log.assert_not_called()
+
+
+async def test_late_claim_correction_email_failure_marks_failed():
+    institution_id = uuid4()
+    student = make_student("Ana", "Gómez")
+    guardian = make_guardian()
+
+    with NotifierEnv() as env:
+        env.repo.get_active_student.return_value = student
+        env.repo.get_primary_guardian.return_value = guardian
+        env.email_adapter.send.side_effect = RuntimeError("resend down")
+
+        await env.notifier.notify_late_claim_correction(institution_id, student.id, DELIVERY_DATE)
+
+        logged = env.notification_repo.create_log.call_args.kwargs
+        assert logged["status"] == NotificationStatus.FAILED
+        assert logged["error_message"] == "resend down"
+        assert logged["sent_at"] is None

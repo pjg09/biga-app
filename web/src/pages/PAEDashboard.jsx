@@ -44,6 +44,32 @@ function initials(first, last) {
   return `${first?.[0] ?? ''}${last?.[0] ?? ''}`.toUpperCase();
 }
 
+// Combina una hora "HH:MM:SS" del backend con la fecha de hoy del cliente.
+// La app es de una sola zona horaria (América/Bogotá, ver CLAUDE.md), así que
+// no hace falta reconciliar UTC/offset: server y cliente comparten reloj local.
+function parseTimeToday(hhmmss) {
+  if (!hhmmss) return null;
+  const [h, m, s] = hhmmss.split(':').map(Number);
+  const d = new Date();
+  d.setHours(h, m, s || 0, 0);
+  return d;
+}
+
+function fmtHM(hhmmss) {
+  if (!hhmmss) return '';
+  const [h, m] = hhmmss.split(':');
+  return `${h}:${m}`;
+}
+
+function fmtCountdown(ms) {
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  const pad = n => String(n).padStart(2, '0');
+  return h > 0 ? `${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+}
+
 export default function PAEDashboard() {
   const [activeNav, setActiveNav] = useState('pae-register');
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -174,6 +200,8 @@ function PAERegisterView() {
     return () => window.removeEventListener('keydown', onKey);
   }, [zoomed]);
   const [toast, setToast]           = useState(null);
+  const [deliveryEndTime, setDeliveryEndTime] = useState(null); // "HH:MM:SS" del backend
+  const [now, setNow]               = useState(() => new Date());
   const searchRef = useRef(null);
 
   const load = useCallback(async () => {
@@ -190,6 +218,26 @@ function PAERegisterView() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // No crítico para la función principal de la vista: si falla, la card de
+  // cierre simplemente no se muestra (closed queda en false).
+  useEffect(() => {
+    paeService.getDeliveryWindow()
+      .then(d => setDeliveryEndTime(d.delivery_end_time))
+      .catch(() => {});
+  }, []);
+
+  // Tick de la cuenta regresiva. El corte real lo aplica el backend
+  // (register_delivery devuelve 403 pasada la hora); esto es solo la
+  // representación visual de "cuánto falta" / "ya cerró".
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const cutoffDate  = deliveryEndTime ? parseTimeToday(deliveryEndTime) : null;
+  const closed      = cutoffDate ? now >= cutoffDate : false;
+  const remainingMs = cutoffDate ? cutoffDate - now : null;
 
   const showToast = useCallback((msg, type = 'success') => {
     setToast({ msg, type });
@@ -352,6 +400,14 @@ function PAERegisterView() {
         <StatCard icon={<ListCheckIcon />} value={enrolled}  label="Matriculados PAE"                                     pae />
         <StatCard icon={<CheckIcon />}     value={delivered} label="Reclamados hoy"   fill={pct}   delta={`${pct}%`}      pae />
         <StatCard icon={<AlertIcon />}     value={pending}   label="Sin reclamar"     fill={pctPending} delta={`${pctPending}%`} fillClass="red" pae />
+        {deliveryEndTime && (
+          <StatCard
+            icon={<ClockIcon />}
+            value={closed ? fmtHM(deliveryEndTime) : fmtCountdown(remainingMs)}
+            label={closed ? 'PAE cerrado' : `Cierra a las ${fmtHM(deliveryEndTime)}`}
+            pae
+          />
+        )}
       </div>
 
       {/* Search */}
@@ -376,7 +432,7 @@ function PAERegisterView() {
       </div>
 
       {/* Student list */}
-      <div className="dash__table-card">
+      <div className="dash__table-card dash__table-card--pae-today">
         <div className="dash__table-header">
           <span className="dash__table-title">
             Listado del día
@@ -399,14 +455,19 @@ function PAERegisterView() {
                 <th>Estudiante</th>
                 <th>Documento</th>
                 <th>Estado</th>
-                <th></th>
+                {!closed && <th className="pae-today__action-col"></th>}
               </tr>
             </thead>
             <tbody>
               {filtered.map((s, i) => {
                 const av = avatarFor(s.first_name, i);
+                const clickable = !s.delivered && !closed;
                 return (
-                  <tr key={s.student_id}>
+                  <tr
+                    key={s.student_id}
+                    className={clickable ? 'pae-today__row--clickable' : undefined}
+                    onClick={() => clickable && setSelected(s)}
+                  >
                     <td>
                       <div className="dash__table-student">
                         {s.photo_url ? (
@@ -423,19 +484,23 @@ function PAERegisterView() {
                     <td>
                       {s.delivered
                         ? <span className="dash__badge dash__badge--green">Reclamado</span>
-                        : <span className="dash__badge dash__badge--yellow">Pendiente</span>
+                        : closed
+                          ? <span className="dash__badge dash__badge--red">No reclamado</span>
+                          : <span className="dash__badge dash__badge--yellow">Pendiente</span>
                       }
                     </td>
-                    <td style={{ textAlign: 'right' }}>
-                      {!s.delivered && (
-                        <button
-                          className="dash__table-register-btn"
-                          onClick={() => setSelected(s)}
-                        >
-                          Registrar entrega
-                        </button>
-                      )}
-                    </td>
+                    {!closed && (
+                      <td className="pae-today__action-col" style={{ textAlign: 'right' }}>
+                        {!s.delivered && (
+                          <button
+                            className="dash__table-register-btn"
+                            onClick={(e) => { e.stopPropagation(); setSelected(s); }}
+                          >
+                            Registrar entrega
+                          </button>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 );
               })}
@@ -908,6 +973,7 @@ function AlertIcon({ color = 'currentColor' })    { return <svg width="18" heigh
 function SearchIcon()                 { return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>; }
 function CloseIcon({ size = 18 })     { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>; }
 function ZoomIcon({ size = 14 })      { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>; }
+function ClockIcon({ size = 18 })     { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>; }
 function Spinner({ color = '#059669', size = 20 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true" className="dash__spinner">

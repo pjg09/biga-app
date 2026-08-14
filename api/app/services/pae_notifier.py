@@ -25,6 +25,18 @@ def _build_html(student_name: str, delivery_date: date) -> str:
 </div>"""
 
 
+def _build_correction_html(student_name: str, delivery_date: date) -> str:
+    date_str = delivery_date.strftime("%d/%m/%Y")
+    return f"""\
+<div style="font-family: system-ui, sans-serif; max-width: 520px; margin: 0 auto; color: #1a1730;">
+  <h2 style="color: #4A0A9E;">Corrección: el/la estudiante sí reclamó el PAE</h2>
+  <p>Le informamos que el correo anterior sobre el/la estudiante <strong>{student_name}</strong>
+  del día <strong>{date_str}</strong> fue un error: el registro llegó a la institución después
+  de nuestro corte administrativo, pero <strong>sí reclamó su alimento</strong> ese día.</p>
+  <p style="font-size: 13px; color: #6b6880;">Lamentamos la confusión.</p>
+</div>"""
+
+
 class PAENotifier:
     """Lado de job: notifica a los acudientes de estudiantes inscritos en el PAE
     que no reclamaron su alimento en el día.
@@ -87,3 +99,45 @@ class PAENotifier:
                 error_message=error_message,
                 sent_at=sent_at,
             )
+
+    async def notify_late_claim_correction(
+        self, institution_id: UUID, student_id: UUID, delivery_date: date
+    ) -> None:
+        """Red de seguridad: se dispara solo si `register_delivery` encontró una
+        notificación PAE_NO_CLAIM ya enviada hoy para este estudiante (ej. un
+        ADMIN adelantó `pae_delivery_end_time` a mitad del día). Con el bloqueo
+        de entregas tardías en el service, este caso no debería ocurrir en
+        operación normal."""
+        student = await self.repo.get_active_student(student_id, institution_id)
+        guardian = await self.repo.get_primary_guardian(student_id)
+        if not student or not guardian:
+            return
+
+        student_name = f"{student.first_name} {student.last_name}"
+        subject = f"Corrección: {student_name} sí reclamó el PAE hoy"
+        html = _build_correction_html(student_name, delivery_date)
+
+        notif_status = NotificationStatus.SENT
+        error_message = None
+        sent_at = datetime.now()
+        try:
+            self.email.send(guardian.email, subject, html)
+        except Exception as exc:  # noqa: BLE001 — un fallo de correo no debe romper el job
+            notif_status = NotificationStatus.FAILED
+            error_message = str(exc)
+            sent_at = None
+            logger.exception(
+                "Fallo enviando corrección de reclamo tardío PAE para %s", student_id
+            )
+
+        await self.notif_repo.create_log(
+            institution_id=institution_id,
+            type=NotificationType.PAE_LATE_CLAIM_CORRECTION,
+            student_id=student.id,
+            guardian_id=guardian.id,
+            email_to=guardian.email,
+            subject=subject,
+            status=notif_status,
+            error_message=error_message,
+            sent_at=sent_at,
+        )
