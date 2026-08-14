@@ -1269,6 +1269,13 @@ body { background: var(--bg); }
 .dep-scale .att-selected__clear  { font-size: 1.17rem; }
 .dep-scale .att-selected .dash__student-group { font-size: 1rem; color: var(--t2); }
 .dep-scale .dash__student-row .dash__student-group { font-size: 1rem; color: var(--t2); }
+/* Convivencia — elementos propios del form, mismo escalado que salidas */
+.dep-scale .conv-article__code  { font-size: 1.01rem; }
+.dep-scale .conv-article__title { font-size: 1.04rem; }
+.dep-scale .conv-sev-chip       { font-size: 0.96rem; }
+.dep-scale .conv-clear          { font-size: 0.99rem; }
+.dep-scale .dash__badge         { font-size: 0.85rem; }
+.dep-scale .sched__free         { font-size: 1.01rem; }
 
 /* Salidas tempranas usa el mismo .dep-scale que Convivencia (arriba), pero
    solo su instancia (`.dep-scale--sm`, en DeparturesView) se reduce un 15%
@@ -1285,14 +1292,6 @@ body { background: var(--bg); }
 .dep-scale--sm .att-selected__clear  { font-size: 0.995rem; }
 .dep-scale--sm .att-selected .dash__student-group { font-size: 0.85rem; }
 .dep-scale--sm .dash__student-row .dash__student-group { font-size: 0.85rem; }
-
-/* Convivencia — elementos propios del form, mismo escalado que salidas */
-.dep-scale .conv-article__code  { font-size: 1.01rem; }
-.dep-scale .conv-article__title { font-size: 1.04rem; }
-.dep-scale .conv-sev-chip       { font-size: 0.96rem; }
-.dep-scale .conv-clear          { font-size: 0.99rem; }
-.dep-scale .dash__badge         { font-size: 0.85rem; }
-.dep-scale .sched__free         { font-size: 1.01rem; }
 
 /* ─── Horario ────────────────────────────────────────────────── */
 .sched {
@@ -1365,8 +1364,49 @@ body { background: var(--bg); }
 }
 .conv-article:hover { background: var(--bg); }
 .conv-article--on { border-color: #6d28d9; background: #f6f3fe; }
-.conv-article__code  { font-size: 0.78rem; font-weight: 700; color: var(--t1); white-space: nowrap; }
-.conv-article__title { font-size: 0.8rem; color: var(--t2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conv-article__code  { font-size: 0.78rem; font-weight: 700; color: var(--t1); white-space: nowrap; flex-shrink: 0; }
+.conv-article__title {
+  font-size: 0.8rem; color: var(--t2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  flex: 1 1 auto; min-width: 0; /* sin esto el ellipsis no se activa nunca: el span nowrap no se encoge por debajo de su propio ancho */
+}
+
+/* ─── Convivencia: bandeja de artículos agregados ────────────────
+   Segunda lista debajo del catálogo con los artículos ya elegidos; tocar
+   una fila la quita (misma acción que destildarla arriba). Reutiliza
+   `.conv-article__code`/`__title` para verse igual que el catálogo, con
+   el mismo tono morado de selección que `.conv-article--on`. */
+.conv-picked {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--border);
+}
+/* Tamaño/color vienen de `.dash__field-label` (segunda clase en el JSX) para
+   que quede igual que "Artículos del manual infringidos" -- incluida la
+   escala +30% de `.dep-scale` en este formulario. */
+.conv-picked__label {
+  margin-bottom: 8px;
+}
+.conv-picked-list { display: flex; flex-direction: column; gap: 6px; }
+.conv-picked-item {
+  display: flex; align-items: center; gap: 10px;
+  text-align: left; width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #6d28d9;
+  background: #f6f3fe;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.conv-picked-item:hover { background: #ece4fb; border-color: var(--purple-deep); }
+.conv-picked-item__remove {
+  flex-shrink: 0;
+  color: #6d28d9;
+  font-size: 0.85rem;
+  font-weight: 700;
+  line-height: 1;
+}
+.conv-picked-item:hover .conv-picked-item__remove { color: var(--purple-deep); }
 
 /* Búsqueda de estudiante: filtros grado/salón */
 .conv-search { display: flex; flex-direction: column; gap: 10px; }

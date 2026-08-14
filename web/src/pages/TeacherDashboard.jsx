@@ -1475,6 +1475,10 @@ export function ConvivenciaView() {
   const [obs, setObs]           = useState('');
   const [saving, setSaving]     = useState(false);
   const [toast, setToast]       = useState(null);
+  // Grado/Salón viven como estado interno de StudentSearch (no son props
+  // controladas); cambiar esta key fuerza un remount que los limpia junto
+  // con el resto del formulario tras un envío exitoso.
+  const [searchKey, setSearchKey] = useState(0);
   const canvasRef = useRef(null);
   const drawing   = useRef(false);
   const hasInk    = useRef(false);
@@ -1538,6 +1542,7 @@ export function ConvivenciaView() {
       showToast(`Registro creado para ${student.full_name}`);
       setStudent(null);
       setPicked([]); setSevFilter('ALL'); setArticleQuery(''); setObs(''); clearCanvas();
+      setSearchKey(k => k + 1);
     } catch (e) {
       showToast(e.message, 'error');
     } finally {
@@ -1560,6 +1565,7 @@ export function ConvivenciaView() {
         <p className="dash__list-title" style={{ marginBottom: 4 }}>Nuevo registro de convivencia</p>
 
         <StudentSearch
+          key={searchKey}
           selected={student}
           onSelect={r => setStudent(r)}
           onClear={() => setStudent(null)}
@@ -1608,6 +1614,31 @@ export function ConvivenciaView() {
                       <span className="conv-article__title">{a.title}</span>
                     </button>
                   ))}
+                </div>
+              )}
+
+              {/* Bandeja de agregados: los artículos elegidos arriba bajan
+                  aquí; tocarlos de nuevo los quita (misma toggleArticle). */}
+              {picked.length > 0 && (
+                <div className="conv-picked">
+                  <p className="conv-picked__label dash__field-label">
+                    Agregados <span className="conv-count">· {picked.length}</span>
+                  </p>
+                  <div className="conv-picked-list">
+                    {picked.map(id => {
+                      const a = articles.find(x => x.id === id);
+                      if (!a) return null;
+                      return (
+                        <button type="button" key={id} className="conv-picked-item"
+                          onClick={() => toggleArticle(id)} aria-label={`Quitar ${a.code}`}>
+                          <span className={`dash__badge dash__badge--${SEVERITY_CLASS[a.severity] || 'yellow'}`}>{a.severity}</span>
+                          <span className="conv-article__code">{a.code}</span>
+                          <span className="conv-article__title">{a.title}</span>
+                          <span className="conv-picked-item__remove">✕</span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </>
