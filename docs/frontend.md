@@ -153,6 +153,56 @@ Título de pestaña: cada dashboard setea `document.title` con un `useEffect` al
 
 ---
 
+## Responsive (2026-08)
+
+Los tres dashboards no tenían tratamiento móvil (sidebar fijo de 230px, sin breakpoints
+propios más allá de 2-3 grids sueltos). Se agregó en `dashboard.css`, sin tocar la
+arquitectura de "CSS plano compartido" descrita arriba:
+
+**Sidebar → cajón en tablet/móvil.** A partir de `900px` el `.dash__sidebar` deja el
+flujo flex y pasa a `position: fixed` con `transform: translateX(-100%)`, controlado
+por un `useState` local a cada dashboard (`sidebarOpen`) + un botón `.dash__burger`
+(3 `<span>`, sin SVG) + un `.dash__sidebar-overlay`. Se cierra solo al cambiar
+`activeNav` (`useEffect` sobre esa dependencia), sin tener que engancharlo a cada
+`NavItem`. A `640px` se suman: header apilado (burger+badge arriba, texto abajo, vía
+`display:contents` en `.dash__page-header-main` + `order`), grids a 1 columna, y
+`.dash__student-row` con `flex-wrap` (ver "Badges en fila" abajo).
+
+**Tamaño único por tipo de elemento (desktop y móvil).** Antes de esta ronda convivían
+~6 escalas de tamaño inconsistentes entre sí (`dep-scale` +30%, `hist-scale`/
+`msg-scale`/`rec-scale`/`att-today` +50%, y Admin/PAE sin ninguna escala) — cada vista
+se veía a una escala distinta sin relación con las demás. Se reemplazaron por **dos
+bloques únicos en `dashboard.css`** (buscar `Tamaño único de`), cada uno con `!important`
+porque es la única forma de pisar de una sola vez los selectores de 2 clases de las
+~6 escalas viejas sin enumerar cada combinación:
+- Uno sin `@media` (corre siempre → gobierna desktop).
+- Uno dentro de `@media (max-width: 640px)` (gana en móvil por *orden de aparición* en
+  el archivo, no por especificidad — están al mismo nivel que el de desktop).
+
+Ambos agrupan las clases por **rol** (título de card, nombre principal, texto
+meta/secundario, avatar de fila, texto final pequeño, label de campo, input, botón,
+badge, estado vacío...), no por vista. El de desktop toma como base los valores de
+Salidas tempranas (`.dep-scale--sm`) +10%; el de móvil, los mismos valores de Salidas
+tempranas sin el +10%. **Las reglas viejas de `dep-scale`/`hist-scale`/`msg-scale`/
+`rec-scale`/`att-today` siguen en el archivo pero ya no producen ningún efecto** — para
+cambiar el tamaño de un tipo de elemento hay que tocar los dos bloques nuevos, no esas
+reglas.
+
+Quedaron fuera a propósito (sin equivalente en Salidas tempranas y sin presión de
+espacio en desktop que justifique inventar un tamaño): el número grande de las stat
+cards, la foto de los modales de confirmación, la foto de encabezado de un registro de
+convivencia, y el chip de severidad de Convivencia.
+
+**Badges en fila.** Cuando una fila (`.dash__student-row`) tiene más de una badge al
+final (ej. "1ª hora" + "Tomada" en Clases de hoy), dejarlas como hijos flex sueltos
+hace que `flex-wrap` las separe de forma impredecible en móvil — cada una envuelve por
+su cuenta. Se agrupan en un div contenedor (`.att-class-row__badges` /
+`.att-roster-row__status`) que se vuelve columna en móvil, así envuelven como una sola
+unidad. Variante `--force-stack` cuando la badge debe ir siempre en su propia línea
+(nunca junto al texto, aunque quepa) — usado en el detalle de Inasistencias.
+
+---
+
 ## Secciones añadidas (2026-08)
 
 | Vista | Dónde vive | Notas |
