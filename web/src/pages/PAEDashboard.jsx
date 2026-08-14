@@ -641,7 +641,14 @@ function PAEEnrolledView() {
 }
 
 /* ── Estudiantes: registro + inscripción PAE ──────────────────────── */
-const EMPTY_FORM = { document_number: '', first_name: '', last_name: '', birth_date: '' };
+const EMPTY_GUARDIAN = { full_name: '', relationship: 'ACUDIENTE', email: '', phone: '', is_primary: true };
+const EMPTY_FORM = {
+  document_number: '', first_name: '', last_name: '', birth_date: '',
+  // Grado/salón de ESTE formulario — no confundir con el `gradeId`/`groupId` de
+  // nivel de componente, que es el filtro de la tabla de abajo.
+  gradeId: '', group_id: '',
+  guardians: [{ ...EMPTY_GUARDIAN }],
+};
 
 // Solo la usa AdminDashboard. Trae alta de estudiante e inscripción al PAE, dos
 // cosas que ni el docente ni el operador PAE pueden hacer; el dashboard del PAE
@@ -708,6 +715,52 @@ export function StudentsView() {
 
   const updateField = (field) => (e) => setForm(prev => ({ ...prev, [field]: e.target.value }));
 
+  // Salón del formulario, acotado al grado elegido EN EL FORMULARIO (no al
+  // filtro de la tabla). Mismo patrón que `groupsForGrade` de arriba.
+  const modalGroupsForGrade = groups.filter(g => !form.gradeId || g.grade_id === form.gradeId);
+
+  // Si el salón elegido en el form queda fuera del grado nuevo, se limpia.
+  useEffect(() => {
+    setForm(prev =>
+      prev.group_id && !groups.some(g => g.id === prev.group_id && (!prev.gradeId || g.grade_id === prev.gradeId))
+        ? { ...prev, group_id: '' }
+        : prev
+    );
+  }, [form.gradeId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const addGuardian = useCallback(() => {
+    setForm(prev => ({ ...prev, guardians: [...prev.guardians, { ...EMPTY_GUARDIAN, is_primary: false }] }));
+  }, []);
+
+  const removeGuardian = useCallback((idx) => {
+    setForm(prev => {
+      if (prev.guardians.length <= 1) return prev;
+      const removedWasPrimary = prev.guardians[idx].is_primary;
+      let next = prev.guardians.filter((_, i) => i !== idx);
+      // Nunca dejar el form en 0 primarios: el backend lo rechazaría igual,
+      // pero promover acá es más claro para quien está llenando el formulario.
+      if (removedWasPrimary && !next.some(g => g.is_primary)) {
+        next = next.map((g, i) => i === 0 ? { ...g, is_primary: true } : g);
+      }
+      return { ...prev, guardians: next };
+    });
+  }, []);
+
+  const setPrimaryGuardian = useCallback((idx) => {
+    setForm(prev => ({
+      ...prev,
+      guardians: prev.guardians.map((g, i) => ({ ...g, is_primary: i === idx })),
+    }));
+  }, []);
+
+  const updateGuardianField = (idx, field) => (e) => {
+    const value = e.target.value;
+    setForm(prev => ({
+      ...prev,
+      guardians: prev.guardians.map((g, i) => i === idx ? { ...g, [field]: value } : g),
+    }));
+  };
+
   const closeForm = useCallback(() => {
     if (saving) return;
     setShowForm(false);
@@ -721,8 +774,20 @@ export function StudentsView() {
     setSaving(true);
     setFormError(null);
     try {
-      let created = await studentService.create(form);
+      const payload = {
+        document_number: form.document_number,
+        first_name: form.first_name,
+        last_name: form.last_name,
+        birth_date: form.birth_date,
+        group_id: form.group_id || null,
+        guardians: form.guardians.map(({ full_name, relationship, email, phone, is_primary }) => ({
+          full_name, relationship, email, phone: phone || null, is_primary,
+        })),
+      };
+      let created = await adminService.createStudentFull(payload);
       // Si se eligió foto, se sube a MinIO y se usa el estudiante con la URL presignada.
+      // Sigue siendo un paso aparte no-fatal: el estudiante+matrícula+acudientes ya
+      // quedaron guardados atómicamente, la foto es lo único que puede fallar solo.
       if (photoFile) {
         try {
           created = await studentService.uploadPhoto(created.id, photoFile);
@@ -730,9 +795,9 @@ export function StudentsView() {
           showToast('Estudiante creado, pero la foto no se pudo subir.', 'error');
         }
       }
-      setStudents(prev => [...prev, created].sort((a, b) =>
-        `${a.last_name} ${a.first_name}`.localeCompare(`${b.last_name} ${b.first_name}`)
-      ));
+      // Recarga en vez de push optimista: la respuesta de creación no trae
+      // grade_name/group_name, y load() ya respeta el filtro grado/salón activo.
+      await load();
       showToast(`Estudiante ${created.first_name} ${created.last_name} registrado`);
       setShowForm(false);
       setForm(EMPTY_FORM);
@@ -744,7 +809,7 @@ export function StudentsView() {
     } finally {
       setSaving(false);
     }
-  }, [form, photoFile, showToast]);
+  }, [form, photoFile, showToast, load]);
 
   const handleEnroll = useCallback(async (student) => {
     setEnrollingId(student.id);
@@ -793,12 +858,13 @@ export function StudentsView() {
 
       {showForm && (
         <div className="dash__modal-overlay" onClick={closeForm}>
-          <form className="dash__modal dash__modal--form" onClick={e => e.stopPropagation()} onSubmit={handleCreate} role="dialog" aria-modal="true">
+          <form className="dash__modal dash__modal--form dash__modal--wide" onClick={e => e.stopPropagation()} onSubmit={handleCreate} role="dialog" aria-modal="true">
             <button type="button" className="dash__modal-close" onClick={closeForm} aria-label="Cerrar" disabled={saving}>
               <CloseIcon />
             </button>
             <p className="dash__modal-label">Registrar estudiante</p>
 
+            <p className="dash__form-section">Datos personales</p>
             <div className="dash__form-grid">
               <label className="dash__field">
                 <span className="dash__field-label">Documento</span>
@@ -827,6 +893,72 @@ export function StudentsView() {
                 {photoFile && <span className="dash__field-optional" style={{ marginTop: 4 }}>{photoFile.name}</span>}
               </label>
             </div>
+
+            <p className="dash__form-section">Matrícula <span className="dash__field-optional">(opcional)</span></p>
+            <div className="dash__form-grid">
+              <label className="dash__field">
+                <span className="dash__field-label">Grado</span>
+                <select className="dash__field-input" value={form.gradeId}
+                  onChange={e => setForm(prev => ({ ...prev, gradeId: e.target.value }))}>
+                  <option value="">Sin grado</option>
+                  {grades.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                </select>
+              </label>
+              <label className="dash__field">
+                <span className="dash__field-label">Salón{form.gradeId && ' *'}</span>
+                <select className="dash__field-input" value={form.group_id} required={!!form.gradeId}
+                  onChange={e => setForm(prev => ({ ...prev, group_id: e.target.value }))}>
+                  <option value="">Sin salón</option>
+                  {modalGroupsForGrade.map(g => <option key={g.id} value={g.id}>{g.grade_name} {g.name}</option>)}
+                </select>
+              </label>
+            </div>
+
+            <p className="dash__form-section">Acudientes</p>
+            {form.guardians.map((g, i) => (
+              <div className="dash__guardian-row" key={i}>
+                <div className="dash__form-grid">
+                  <label className="dash__field">
+                    <span className="dash__field-label">Nombre completo</span>
+                    <input className="dash__field-input" value={g.full_name} onChange={updateGuardianField(i, 'full_name')}
+                      required maxLength={255} autoComplete="off" />
+                  </label>
+                  <label className="dash__field">
+                    <span className="dash__field-label">Parentesco</span>
+                    <select className="dash__field-input" value={g.relationship} onChange={updateGuardianField(i, 'relationship')}>
+                      <option value="PADRE">Padre</option>
+                      <option value="MADRE">Madre</option>
+                      <option value="ACUDIENTE">Acudiente</option>
+                      <option value="OTRO">Otro</option>
+                    </select>
+                  </label>
+                  <label className="dash__field">
+                    <span className="dash__field-label">Correo</span>
+                    <input className="dash__field-input" type="email" value={g.email} onChange={updateGuardianField(i, 'email')}
+                      required maxLength={255} autoComplete="off" />
+                  </label>
+                  <label className="dash__field">
+                    <span className="dash__field-label">Teléfono <span className="dash__field-optional">(opcional)</span></span>
+                    <input className="dash__field-input" value={g.phone} onChange={updateGuardianField(i, 'phone')}
+                      maxLength={20} autoComplete="off" />
+                  </label>
+                </div>
+                {form.guardians.length > 1 && (
+                  <div className="dash__guardian-row-actions">
+                    <label className="dash__guardian-primary">
+                      <input type="radio" name="primary-guardian" checked={g.is_primary} onChange={() => setPrimaryGuardian(i)} />
+                      Primario
+                    </label>
+                    <button type="button" className="dash__guardian-remove" onClick={() => removeGuardian(i)}>
+                      Quitar
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+            <button type="button" className="btn--secondary dash__guardian-add" onClick={addGuardian}>
+              + Agregar acudiente
+            </button>
 
             {formError && <p className="dash__form-error" role="alert">{formError}</p>}
 

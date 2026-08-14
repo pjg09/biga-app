@@ -1,9 +1,10 @@
 from datetime import date as PyDate, datetime, time
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.models.enums import UserRole
+from app.schemas.guardian import GuardianCreate
 
 
 class AdminStats(BaseModel):
@@ -113,6 +114,37 @@ class StudentGroupResponse(BaseModel):
     is_active: bool
 
     model_config = {"from_attributes": True}
+
+
+# --- Alta completa de estudiante (estudiante + matrícula opcional + acudientes) ---
+
+class AdminStudentCreate(BaseModel):
+    document_number: str = Field(min_length=3, max_length=20)
+    first_name: str = Field(min_length=1, max_length=100)
+    last_name: str = Field(min_length=1, max_length=100)
+    birth_date: PyDate
+    # `student_groups` no tiene grade_id: el grado es un filtro de UI para acotar
+    # el <select> de salón, nunca llega hasta acá.
+    group_id: UUID | None = None
+    guardians: list[GuardianCreate] = Field(min_length=1)
+
+    @field_validator("document_number", "first_name", "last_name")
+    @classmethod
+    def strip_whitespace(cls, v: str) -> str:
+        return v.strip()
+
+    @field_validator("birth_date")
+    @classmethod
+    def birth_date_not_future(cls, v: PyDate) -> PyDate:
+        if v > PyDate.today():
+            raise ValueError("birth_date no puede estar en el futuro")
+        return v
+
+    @model_validator(mode="after")
+    def exactly_one_primary(self) -> "AdminStudentCreate":
+        if sum(1 for g in self.guardians if g.is_primary) != 1:
+            raise ValueError("Debe haber exactamente un acudiente marcado como primario")
+        return self
 
 
 # ── Gestión: Horarios ─────────────────────────────────────────────────

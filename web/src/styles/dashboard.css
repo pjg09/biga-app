@@ -997,6 +997,65 @@ body { background: var(--bg); }
 /* ─── Formulario de registro (modal) ─────────────────────────── */
 .dash__modal--form { max-width: 460px; }
 
+/* Modal ampliado para el alta completa (estudiante + matrícula + acudientes):
+   se aplica JUNTO a .dash__modal--form (className="dash__modal dash__modal--form
+   dash__modal--wide"), no la reemplaza — así el form-grid de base sigue aplicando
+   y esta regla solo pisa max-width/scroll. Tiene que declararse DESPUÉS de
+   .dash__modal--form en el archivo: misma especificidad (1 clase), gana orden
+   de cascada (mismo gotcha que ya mordió al botón de "Registrar estudiante",
+   ver comentario en .dash__search-wrap--btn más abajo). */
+.dash__modal--wide {
+  max-width: 620px;
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+}
+
+.dash__form-section {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--t2);
+  margin: 18px 0 10px;
+}
+.dash__form-section:first-of-type { margin-top: 0; }
+
+.dash__guardian-row {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 12px;
+  background: var(--bg);
+}
+
+.dash__guardian-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+}
+
+.dash__guardian-primary {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 0.78rem; color: var(--t2); cursor: pointer;
+}
+
+.dash__guardian-remove {
+  background: none; border: none; color: #b91c1c;
+  font-size: 0.78rem; font-weight: 600; cursor: pointer; padding: 0;
+}
+.dash__guardian-remove:hover { text-decoration: underline; }
+
+.dash__guardian-add {
+  width: auto;
+  padding: 8px 16px;
+  font-size: 0.78rem;
+  margin-bottom: 18px;
+}
+
+
 .dash__form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

@@ -1,3 +1,4 @@
+from datetime import date
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
@@ -6,11 +7,16 @@ from app.core.security import hash_password
 from app.models.class_period import ClassPeriod
 from app.models.grade import Grade
 from app.models.group import Group
+from app.models.guardian import Guardian
+from app.models.student import Student
 from app.models.student_group import StudentGroup
 from app.models.user import User
 from app.models.user_group import UserGroup
 from app.repositories.admin_management_repository import AdminManagementRepository
+from app.repositories.guardian_repository import GuardianRepository
+from app.repositories.student_repository import StudentRepository
 from app.schemas.admin import (
+    AdminStudentCreate,
     AdminUserCreate,
     AdminUserResponse,
     ClassPeriodCreate,
@@ -24,6 +30,7 @@ from app.schemas.admin import (
     UserGroupCreate,
     UserGroupResponse,
 )
+from app.schemas.students import StudentResponse
 
 
 def _not_found(detail: str) -> HTTPException:
@@ -35,8 +42,15 @@ def _conflict(detail: str) -> HTTPException:
 
 
 class AdminManagementService:
-    def __init__(self, repo: AdminManagementRepository):
+    def __init__(
+        self,
+        repo: AdminManagementRepository,
+        student_repo: StudentRepository,
+        guardian_repo: GuardianRepository,
+    ):
         self.repo = repo
+        self.student_repo = student_repo
+        self.guardian_repo = guardian_repo
 
     # --- Personal (usuarios) ---
 
@@ -120,6 +134,72 @@ class AdminManagementService:
             is_active=True,
         )
         return StudentGroupResponse.model_validate(await self.repo.create_student_group(sg))
+
+    # --- Alta completa de estudiante (estudiante + matrícula opcional + acudientes) ---
+
+    async def create_student_full(
+        self, data: AdminStudentCreate, institution_id: UUID
+    ) -> StudentResponse:
+        """Crea Student + matrícula opcional en `student_groups` + Guardians en una
+        sola transacción (todo o nada, vía el auto-commit/rollback de `get_db()`).
+
+        `grade_id` nunca llega hasta acá: `student_groups` no tiene esa columna, el
+        grado es puramente un filtro de UI para acotar el <select> de salón. La regla
+        "exactamente un acudiente primario" no se revalida acá — ya la aplicó el
+        `model_validator` de `AdminStudentCreate` antes de que la request llegara.
+        """
+        if await self.student_repo.get_by_document(institution_id, data.document_number):
+            raise _conflict("Ya existe un estudiante con este documento en la institución")
+
+        group = None
+        if data.group_id is not None:
+            group = await self.repo.get_group(data.group_id, institution_id)
+            if not group:
+                raise _not_found("Grupo no encontrado en esta institución")
+
+        student = Student(
+            id=uuid4(),
+            institution_id=institution_id,
+            document_number=data.document_number,
+            first_name=data.first_name,
+            last_name=data.last_name,
+            birth_date=data.birth_date,
+            photo_url=None,
+            is_active=True,
+        )
+        saved = await self.student_repo.create(student)
+
+        if group is not None:
+            await self.repo.create_student_group(
+                StudentGroup(
+                    id=uuid4(),
+                    student_id=saved.id,
+                    group_id=group.id,
+                    academic_year=date.today().year,
+                    is_active=True,
+                )
+            )
+
+        for g in data.guardians:
+            await self.guardian_repo.create(
+                Guardian(
+                    id=uuid4(),
+                    student_id=saved.id,
+                    full_name=g.full_name,
+                    relationship=g.relationship,
+                    email=str(g.email),  # EmailStr -> str, si no el flush falla
+                    phone=g.phone,
+                    is_primary=g.is_primary,
+                )
+            )
+
+        resp = StudentResponse.model_validate(saved)
+        # `grade_name`/`group_name` se dejan en None a propósito: el front vuelve a
+        # pedir el listado completo (con join) después de crear, así que no vale la
+        # pena un lookup extra acá solo para mostrarlo un instante.
+        resp.grade_name = None
+        resp.group_name = None
+        return resp
 
     # --- Horarios ---
 

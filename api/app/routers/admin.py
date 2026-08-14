@@ -9,9 +9,12 @@ from app.models.enums import NotificationStatus
 from app.models.user import User
 from app.repositories.admin_management_repository import AdminManagementRepository
 from app.repositories.admin_repository import AdminRepository
+from app.repositories.guardian_repository import GuardianRepository
 from app.repositories.lead_repository import LeadRepository
+from app.repositories.student_repository import StudentRepository
 from app.schemas.admin import (
     AdminStats,
+    AdminStudentCreate,
     AdminUserCreate,
     AdminUserResponse,
     ClassPeriodCreate,
@@ -25,6 +28,7 @@ from app.schemas.admin import (
     UserGroupCreate,
     UserGroupResponse,
 )
+from app.schemas.students import StudentResponse
 from app.schemas.leads import LeadsPage
 from app.services.admin_management_service import AdminManagementService
 from app.services.admin_service import AdminService
@@ -38,7 +42,9 @@ def get_admin_service(db: AsyncSession = Depends(get_db)) -> AdminService:
 
 
 def get_mgmt_service(db: AsyncSession = Depends(get_db)) -> AdminManagementService:
-    return AdminManagementService(AdminManagementRepository(db))
+    return AdminManagementService(
+        AdminManagementRepository(db), StudentRepository(db), GuardianRepository(db)
+    )
 
 
 def get_lead_service(db: AsyncSession = Depends(get_db)) -> LeadService:
@@ -121,6 +127,19 @@ async def enroll_student_in_group(
     service: AdminManagementService = Depends(get_mgmt_service),
 ):
     return await service.enroll_student_in_group(body, current_user.institution_id)
+
+
+# --- Alta completa de estudiante (estudiante + matrícula opcional + acudientes) ---
+
+@router.post("/students", response_model=StudentResponse, status_code=status.HTTP_201_CREATED)
+async def create_student_full(
+    body: AdminStudentCreate,
+    current_user: User = Depends(require_admin),
+    service: AdminManagementService = Depends(get_mgmt_service),
+):
+    """Distinto de `POST /students` (bare, sin restricción de rol): este crea
+    Student + matrícula opcional + Guardians en una sola transacción atómica."""
+    return await service.create_student_full(body, current_user.institution_id)
 
 
 # --- Horarios: bloques (class_periods) ---

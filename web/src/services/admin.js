@@ -14,6 +14,9 @@ export const adminService = {
   createGroup: (g) => api.post('/admin/groups', g),
   enrollStudentInGroup: (sg) => api.post('/admin/student-groups', sg),
 
+  // Alta completa: estudiante + matrícula opcional + acudientes, atómico.
+  createStudentFull: (data) => api.post('/admin/students', data),
+
   // Horarios
   listClassPeriods: (group_id) => api.get(`/admin/class-periods?group_id=${group_id}`),
   createClassPeriod: (cp) => api.post('/admin/class-periods', cp),

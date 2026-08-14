@@ -231,6 +231,12 @@ CREATE UNIQUE INDEX one_primary_per_student
   WHERE is_primary = TRUE;
 ```
 
+> La validación de forma (al menos 1 acudiente, exactamente 1 primario) vive en
+> el schema Pydantic de `POST /admin/students` (`AdminStudentCreate`, un
+> `model_validator`), no en este índice — el índice es el respaldo a nivel BD
+> para cualquier otro camino de escritura que se le ocurra a alguien más
+> adelante, no el mecanismo principal.
+
 ---
 
 ### `pae_enrollments`

@@ -20,3 +20,9 @@ class GuardianRepository:
             )
         )
         return result.scalar_one_or_none()
+
+    async def create(self, guardian: Guardian) -> Guardian:
+        self.session.add(guardian)
+        await self.session.flush()
+        await self.session.refresh(guardian)
+        return guardian
