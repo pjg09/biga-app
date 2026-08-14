@@ -1,0 +1,30 @@
+# Imagen de producción del frontend (Railway). El `Dockerfile` de al lado es el
+# de desarrollo: instala deps y docker-compose le pasa `npm run dev`.
+# Se selecciona con la variable de servicio RAILWAY_DOCKERFILE_PATH.
+FROM node:22-alpine AS build
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm ci
+
+# Vite congela las VITE_* dentro del bundle en tiempo de build, no las lee en
+# runtime. Railway pasa las variables del servicio como build args, así que
+# cambiar VITE_API_URL obliga a reconstruir, no basta con redesplegar.
+ARG VITE_API_URL
+ENV VITE_API_URL=$VITE_API_URL
+
+COPY . .
+RUN npm run build
+
+FROM node:22-alpine AS runtime
+
+WORKDIR /app
+
+RUN npm install -g serve@14
+
+COPY --from=build /app/dist ./dist
+
+# `-s` sirve index.html en cualquier ruta desconocida: sin eso, recargar en
+# /justificar/{token} o /dashboard devuelve 404 en vez de entrar a la SPA.
+CMD ["sh", "-c", "serve -s dist -l ${PORT:-3000}"]

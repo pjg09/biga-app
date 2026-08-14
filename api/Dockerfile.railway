@@ -1,0 +1,20 @@
+# Imagen de producción del backend (Railway). El `Dockerfile` de al lado es el
+# de desarrollo: monta el código por volumen y recibe el comando desde
+# docker-compose. Este se copia el código y arranca solo.
+# Se selecciona con la variable de servicio RAILWAY_DOCKERFILE_PATH.
+FROM python:3.12-slim
+
+WORKDIR /app
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    TZ=America/Bogota
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+RUN chmod +x entrypoint.railway.sh
+
+CMD ["./entrypoint.railway.sh"]

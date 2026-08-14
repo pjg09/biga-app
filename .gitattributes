@@ -1,0 +1,4 @@
+# Los entrypoints se ejecutan en contenedores Linux. Si git los entrega con
+# CRLF, el shebang se rompe con "bad interpreter: /bin/sh^M" y el contenedor
+# no arranca. Se fuerza LF sin importar el core.autocrlf de cada máquina.
+*.sh text eol=lf
