@@ -12,6 +12,8 @@ celery_app = Celery(
         "app.jobs.attendance_jobs",
         "app.jobs.departure_jobs",
         "app.jobs.agendatorio_jobs",
+        "app.jobs.lead_jobs",
+        "app.jobs.auth_jobs",
     ],
 )
 

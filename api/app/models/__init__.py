@@ -10,8 +10,16 @@ from app.models.student import Student  # noqa: F401
 from app.models.student_group import StudentGroup  # noqa: F401
 from app.models.guardian import Guardian  # noqa: F401
 from app.models.pae import PAEEnrollment, PAEDelivery  # noqa: F401
-from app.models.attendance import AttendanceRecord, AttendanceToken, AttendanceJustification  # noqa: F401
+from app.models.attendance import (  # noqa: F401
+    AttendanceAbsenceNote,
+    AttendanceRecord,
+    AttendanceToken,
+    AttendanceJustification,
+    AttendanceJustificationNote,
+)
 from app.models.agendatorio import ConvivenciaArticle, DisciplineRecord, DisciplineRecordArticle  # noqa: F401
 from app.models.departure import EarlyDeparture  # noqa: F401
 from app.models.notification import NotificationLog  # noqa: F401
 from app.models.import_job import ImportJob  # noqa: F401
+from app.models.lead import DemoLead  # noqa: F401
+from app.models.password_reset import PasswordResetOTP  # noqa: F401
