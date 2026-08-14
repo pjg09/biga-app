@@ -1055,6 +1055,26 @@ body { background: var(--bg); }
   margin-bottom: 18px;
 }
 
+.dash__field-photo-preview {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+.dash__field-photo-preview img {
+  width: 56px; height: 56px;
+  border-radius: 10px;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.dash__field-photo-preview .dash__field-optional {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .dash__form-grid {
   display: grid;

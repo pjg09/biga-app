@@ -667,6 +667,16 @@ export function StudentsView() {
   const [showForm, setShowForm]   = useState(false);
   const [form, setForm]           = useState(EMPTY_FORM);
   const [photoFile, setPhotoFile] = useState(null);
+  const [photoPreview, setPhotoPreview] = useState(null);
+
+  // Object URL del preview: se crea al elegir archivo y se revoca al cambiar/
+  // quitar la foto o desmontar, para no acumular URLs sin liberar.
+  useEffect(() => {
+    if (!photoFile) { setPhotoPreview(null); return; }
+    const url = URL.createObjectURL(photoFile);
+    setPhotoPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [photoFile]);
   const [saving, setSaving]       = useState(false);
   const [formError, setFormError] = useState(null);
   const [enrollingId, setEnrollingId] = useState(null);
@@ -890,7 +900,15 @@ export function StudentsView() {
                 <span className="dash__field-label">Foto del estudiante <span className="dash__field-optional">(opcional)</span></span>
                 <input className="dash__field-input" type="file" accept="image/jpeg,image/png,image/webp"
                   onChange={e => setPhotoFile(e.target.files?.[0] ?? null)} />
-                {photoFile && <span className="dash__field-optional" style={{ marginTop: 4 }}>{photoFile.name}</span>}
+                {photoPreview && (
+                  <div className="dash__field-photo-preview">
+                    <img src={photoPreview} alt="" />
+                    <span className="dash__field-optional">{photoFile.name}</span>
+                    <button type="button" className="dash__guardian-remove" onClick={() => setPhotoFile(null)}>
+                      Quitar
+                    </button>
+                  </div>
+                )}
               </label>
             </div>
 
