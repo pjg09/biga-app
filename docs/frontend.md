@@ -213,18 +213,8 @@ unidad. Variante `--force-stack` cuando la badge debe ir siempre en su propia l�
 | `LeadsView` | `AdminDashboard` | Comercial → Solicitudes (`GET /admin/leads`) |
 
 `StudentsView` (alta de estudiante + inscripción al PAE) la usa **solo** `AdminDashboard`, aunque por
-historia siga definida en `PAEDashboard.jsx`. El dashboard PAE monta `TeacherStudentsView`.
-
-El modal de alta (`.dash__modal--wide`, más ancho que el resto de modales de la app y con scroll
-interno) tiene 3 secciones: Datos personales, Matrícula (grado/salón, ambos opcionales — grado es
-puramente un filtro de UI para acotar el `<select>` de salón, `student_groups` no tiene columna
-`grade_id`) y Acudientes (lista repetible, al menos uno obligatorio, radio "Primario" mutuamente
-excluyente que solo se muestra con 2+ acudientes). El grado/salón del modal vive en `form.gradeId`/
-`form.group_id`, estado separado del `gradeId`/`groupId` de nivel de componente que filtra la tabla
-de abajo — ambos reusan el mismo fetch de `adminService.listGrades`/`listGroups`, sin duplicarlo.
-Postea a `POST /admin/students` vía `adminService.createStudentFull` (crea estudiante + matrícula +
-acudientes en una transacción atómica); tras crear, se recarga la tabla completa (`load()`) en vez
-de un push optimista, porque la respuesta de creación no trae `grade_name`/`group_name`.
+historia siga definida en `PAEDashboard.jsx`. El dashboard PAE monta `TeacherStudentsView`. Detalle
+completo del modal de alta (secciones, estado, endpoint atómico) en `docs/students.md`.
 
 En `services/api.js` hay cuatro entradas según autenticación y formato: `post` / `postForm` (con JWT)
 y `postPublic` / `postFormPublic` (sin `Authorization`, para la landing y el enlace de justificación).

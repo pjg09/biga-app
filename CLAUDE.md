@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Documentación
 
-`docs/README.md` es el índice de los 11 documentos del proyecto — consultarlo antes de tocar un módulo. Dos tienen valor de regla: **`docs/scope.md`** es la fuente de verdad de *qué* se construye, y **`docs/database-schema.md`** debe actualizarse **antes** de escribir cada migración.
+`docs/README.md` es el índice de los 13 documentos del proyecto — consultarlo antes de tocar un módulo. Dos tienen valor de regla: **`docs/scope.md`** es la fuente de verdad de *qué* se construye, y **`docs/database-schema.md`** debe actualizarse **antes** de escribir cada migración.
 
-Al cerrar un cambio de módulo, sincronizar también su doc temático (`attendance.md`, `pae.md`, `frontend.md`, `landing-page.md`…), no solo `database-schema.md`: es la deuda que más rápido se acumula.
+Al cerrar un cambio de módulo, sincronizar también su doc temático (`attendance.md`, `pae.md`, `students.md`, `admin.md`, `frontend.md`, `landing-page.md`…), no solo `database-schema.md`: es la deuda que más rápido se acumula.
 
 ## Arquitectura
 
@@ -111,21 +111,29 @@ Módulos implementados: `auth`, `agendatorio` (registro de convivencia + histori
 
 Se consultan desde la consola de admin (`GET /admin/leads`, sección "Comercial" del `AdminDashboard`). **Al no haber `institution_id` no hay filtro de tenant en el WHERE**: el aislamiento lo da `require_leads_reader` (`app/core/dependencies.py`), que exige ADMIN + estar en `LEADS_ADMIN_EMAILS`. Con esa lista vacía **cualquier ADMIN de cualquier institución ve todos los leads** — sostenible solo mientras haya una única institución en la BD. Llenarla antes de dar de alta a la segunda, o sustituirla por un rol de superusuario real.
 
-**`GET /students` (módulo "Estudiantes" de la sección Aula) está acotado por rol**: a `TEACHER` y `PAE_OPERATOR` les devuelve solo los estudiantes de los salones que tienen en `user_groups` (por asignación docente-grupo, **no** por horario: da igual la hora de la clase). Solo `ADMIN` recibe la institución entera. El operador PAE es un docente con funciones extra, así que su módulo de Aula se comporta como el de cualquier docente. El recorte vive en `StudentService.list_students`, no en el front: cualquiera puede llamar al endpoint a mano.
+**Referencia completa del ciclo de vida de estudiantes y acudientes (alta, matrícula,
+búsqueda, acudiente principal) en `docs/students.md`; consola de gestión del admin
+(usuarios, grados, salones, horarios, leads) en `docs/admin.md`.** Acá solo las reglas más
+fáciles de romper por accidente:
 
-`GET /students` acepta `grade_id`/`group_id` opcionales, pero **solo filtran el listado del ADMIN** (`StudentRepository.list_by_institution`, LEFT JOIN a `student_groups`/`groups`/`grades`): el de docente/operador PAE ya viene acotado a sus propios salones y los ignora. La respuesta incluye `grade_name`/`group_name` (`null` si el estudiante no tiene matrícula activa) para toda institución, no solo cuando se filtra.
-
-`POST /admin/students` (consola admin, **distinto** de `POST /students`) crea atómicamente un Student + matrícula opcional en `student_groups` + uno o más Guardians en una sola transacción — `AdminManagementService.create_student_full`, no encadena tres requests. `group_id` es opcional; si se pasa, debe existir en la institución (404 si no). `student_groups` no tiene `grade_id`: el Grado es un filtro de UI para acotar el `<select>` de Salón, nunca llega al payload — la matrícula se guarda con `academic_year` del año actual, calculado en el servidor, no elegible desde el form. Al menos un `guardian` es obligatorio y exactamente uno debe tener `is_primary=true` — validado en `AdminStudentCreate` (Pydantic `model_validator`, no en el service, porque es una regla de forma sin dependencia de BD), reforzado además por el índice parcial único `one_primary_per_student` en la tabla `guardians`. La foto sigue siendo un paso aparte y no-fatal vía `POST /students/{id}/photo`, fuera de esta transacción.
-
-Los **módulos del PAE no se ven afectados**: `/pae/students/today` y las matrículas consultan `pae_enrollments`/`pae_deliveries` filtrando solo por institución, así que el operador sigue viendo a todos los que reclaman o están matriculados, den o no clase con él.
-
-**El operador PAE NO matricula a nadie en el PAE.** `POST /pae/enrollments` exige `require_admin`. Regla de dominio: el operador *opera* el programa (toma el listado, ve métricas, consulta matriculados) pero admitir a un estudiante al PAE es una decisión administrativa. Sus módulos de Aula son **literalmente los del docente**: `PAEDashboard` monta `TeacherStudentsView` (exportada de `TeacherDashboard`), no `StudentsView`. Esta última —con alta de estudiante e inscripción al PAE— la usa **solo** `AdminDashboard`, aunque por historia siga definida en `PAEDashboard.jsx`.
-
-No confundir con `GET /students/search`, que **sigue alcanzando a toda la institución** a propósito: convivencia debe poder registrar a cualquier estudiante, sea o no de sus salones.
-
-Búsqueda de estudiantes (`GET /students/search`): `q` es **opcional** — con `grade_id`/`group_id` se navega por grado/salón sin escribir. Es **insensible a acentos** vía la extensión `unaccent` (`Lopez` encuentra `López`; migración `d4a2c7e91b05`). Los selectores de grado/salón se llenan con `GET /agendatorio/grades` y `GET /agendatorio/groups` (accesibles a **staff**, no solo admin). El front reutiliza el componente `StudentSearch` en Convivencia e Historial.
+- `GET /students` está **acotado por rol**: `TEACHER`/`PAE_OPERATOR` solo ven los salones
+  que tienen en `user_groups`; solo `ADMIN` recibe la institución entera y puede filtrar por
+  `grade_id`/`group_id`. El recorte vive en `StudentService.list_students`, no en el front.
+  No confundir con `GET /students/search`, que **sigue alcanzando a toda la institución** a
+  propósito (convivencia debe poder registrar a cualquiera, sea o no de sus salones).
+- `POST /admin/students` crea Student + matrícula opcional + Guardians **atómicamente**
+  (`AdminManagementService.create_student_full`). `student_groups` no tiene `grade_id` — el
+  Grado es solo un filtro de UI, nunca llega al payload. Exactamente un `guardian` debe ser
+  `is_primary=true` (validado en el schema, reforzado por el índice único
+  `one_primary_per_student` en BD).
+- Los **módulos del PAE no se ven afectados** por el scoping de `GET /students`:
+  `/pae/students/today` y las matrículas del PAE filtran solo por institución. Y el
+  operador PAE **no matricula a nadie en el PAE** — `POST /pae/enrollments` exige
+  `require_admin` (detalle en `docs/pae.md`).
 
 Foto del estudiante: se **sube a MinIO** vía `POST /students/{id}/photo` (multipart), igual que la firma del agendatorio. `students.photo_url` guarda la **key** (no la URL); todo servicio que la devuelve la presigna con `resolve_photo_url(storage, ...)` de `app/core/photos.py` (deja pasar URLs `http(s)://` externas por compat). Por eso `PAEService`/`AttendanceService`/`StudentService` reciben el `S3StorageAdapter` inyectado.
+
+Para exponer `photo_url` en un endpoint de **lista/detalle nuevo** (de cualquier módulo, no solo estudiantes): (1) agregar el campo al Row/dataclass del repo y al schema de respuesta, (2) `select(Student.photo_url)` en la query + mapearlo, (3) presignar con `resolve_photo_url(self.storage, key)` en el service (que debe recibir `S3StorageAdapter` vía `Depends(get_storage_adapter)`). Sin migración (solo lee `students.photo_url`). El front renderiza `<StudentPhoto src={x.photo_url}>` con fallback a avatar de iniciales.
 
 Para exponer `photo_url` en un endpoint de **lista/detalle nuevo**: (1) agregar el campo al Row/dataclass del repo y al schema de respuesta, (2) `select(Student.photo_url)` en la query + mapearlo, (3) presignar con `resolve_photo_url(self.storage, key)` en el service (que debe recibir `S3StorageAdapter` vía `Depends(get_storage_adapter)`). Sin migración (solo lee `students.photo_url`). El front renderiza `<StudentPhoto src={x.photo_url}>` con fallback a avatar de iniciales.
 
@@ -187,6 +195,8 @@ Funciones en `app/core/security.py`. `register_delivery` verifica la capa 1 ante
 
 ## Pitfalls conocidos
 
+- Cada commit de un PR contra `main` (no solo el título) se valida en CI con `commitlint` (`.github/workflows/commitlint.yml`, `@commitlint/config-conventional` → Conventional Commits: `feat:`, `fix:`, etc.). Un push a `main` dispara `semantic-release` (`.github/workflows/release.yml`) que corta un release según esos tipos (`feat`→minor, `fix`→patch, `BREAKING CHANGE`→major; `docs`/`chore`/etc. no liberan). Mensajes mal formateados no rompen el push, pero sí el check de CI del PR.
+- Para separar un working tree grande en commits por temática **sin `git add -p`** (no soportado, pide input interactivo): extraer los hunks de `git diff` con Python por índice de línea — nunca retecleándolos a mano en un editor, un espacio inicial perdido en una línea de contexto vacía corrompe el patch. Al combinar/dividir hunks, recalcular el header `@@ -a,b +c,d @@` con un script (a mano se desincroniza fácil). Validar con `git apply --check --cached` antes de `git apply --cached`, comitear, y **regenerar el diff con `git diff` recién ahí** antes de tocar el mismo archivo de nuevo — los offsets de los hunks restantes cambian con cada commit.
 - Al editar ficheros con scripts (`python3 - <<EOF` o `sed`), **poner `assert <ancla> in t` antes de cada `.replace()`**: una sustitución que no coincide no falla, deja el fichero intacto y el fallo aparece mucho después. Pasó con el `NAV_TITLES` de `PAEDashboard.jsx`, que difiere en alineación del de `TeacherDashboard.jsx`.
 - `psql -c "..."` **no interpola** variables `-v` (`:'x'`): hay que pasar el SQL por stdin (`psql -v h="$H" <<'SQL' ... SQL`). Y `psql -tAc "INSERT ... RETURNING x"` imprime el valor **y** la etiqueta `INSERT 0 1`: encadenar `| head -1`.
 - El build backend en cualquier `pyproject.toml` de este repo debe ser `setuptools.build_meta`. `setuptools.backends.legacy:build` no existe en `python:3.12-slim` y rompe el build de Docker.

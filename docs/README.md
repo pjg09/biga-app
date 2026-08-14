@@ -26,6 +26,8 @@ manual) ver `CLAUDE.md` en la raíz.
 | [attendance.md](attendance.md) | Asistencia clase a clase, tardanzas, justificación por link, salidas tempranas. |
 | [pae.md](pae.md) | Programa de Alimentación Escolar: inscripción, entrega, doble hash, reporte. |
 | [agendatorio.md](agendatorio.md) | Convivencia: registro con firma, notificación, historial (notas + ocultar). |
+| [students.md](students.md) | Estudiantes y acudientes: alta atómica, matrícula, búsqueda, foto, acudiente principal. |
+| [admin.md](admin.md) | Consola de gestión: estadísticas, usuarios, académico, horarios, leads. |
 
 ## Otros
 

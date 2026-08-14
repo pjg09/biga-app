@@ -26,11 +26,14 @@ Referencia extensa del front: `docs/frontend.md`.
 - Un overflow horizontal puede quedar **atrapado dentro de `.dash__content`** (su propio scroll interno, sin barra visible) en vez de llegar al `<body>`: `overflow-y:auto` hace que `overflow-x` compute a `auto` también (spec CSS). Al comprobar overflow en headless medir `content.scrollWidth` vs `content.clientWidth`, no solo `document.documentElement.scrollWidth` — mirar solo el documento da falso negativo.
 - Un `<input>`/`<select>` en un flex row no se encoge por debajo de su ancho de contenido por defecto (`min-width:auto` implícito): puede empujar a un vecino fuera del viewport, atrapado en el overflow de arriba. Fix: `min-width:0` en el flex item que debe poder encogerse.
 - El cascade de CSS resuelve **por propiedad, no por bloque de regla**: sobreescribir solo `order` en un media query, cuando el mismo selector ya traía `flex-basis` de otra regla de igual especificidad aplicada antes, deja ese `flex-basis` viejo vivo. Hay que repetir explícitamente cada propiedad que cambia, no solo la que se quiere tocar.
+- Un selector de N clases agregado para **pisar** otro selector de N clases (misma especificidad) puede seguir perdiendo si ese otro aparece **después** en el archivo: en un empate exacto gana la declaración que se lee más tarde, no el override "aparente". Verificar con `getComputedStyle` en el navegador real (CDP), no solo leyendo el CSS — pasó con `.btn--confirm.dash__search-btn` vs `.dash .btn--confirm`, resuelto subiendo a 3 clases.
 - `<select>`/`<input>` no heredan `font-family` de la app por defecto (hoja de estilos del navegador): se ven en la fuente del SO salvo que se fije `font-family: inherit` explícito.
 - `align-items:stretch` + `aspect-ratio` en un `<img>` sin `width`/`height` explícitos usa el tamaño intrínseco real del archivo (puede ser cientos de px), no el alto de un hermano flex — no sirve para "igualar la foto a la altura del texto de al lado". Medir en JS (`ResizeObserver` + estado) y aplicar `width`/`height` inline es lo que funcionó.
 - Varias badges/pills como hijos flex sueltos de una fila (`.dash__student-row`) se desordenan al hacer `flex-wrap` en móvil (cada una envuelve por separado). Agruparlas en un div contenedor (patrón `.att-class-row__badges`) para que envuelvan como unidad.
 
 ## Verificar un cambio de front
+
+`web/package.json` no tiene `test` ni `lint` (sin eslint/vitest/jest instalado) — la verificación es manual, no hay suite que correr.
 
 `curl -s -o /dev/null -w "%{http_code}" http://localhost:5173/src/pages/X.jsx` (200 = transforma; error de sintaxis da 500) y `docker compose logs web | grep -iE "error"`.
 

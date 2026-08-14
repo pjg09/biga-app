@@ -28,7 +28,7 @@ Para la primera versión de la aplicación se priorizan las siguientes notificac
 |---|---|
 | **Docente** (`TEACHER`) | Usuario operativo de aula. Registra asistencia, salidas tempranas y registros de convivencia desde su dispositivo móvil. |
 | **Operador PAE** (`PAE_OPERATOR`) | Es un docente con funciones extra del PAE: además de todo lo de aula, gestiona inscripciones y entregas del PAE. Comparte los endpoints de aula vía `require_staff`. |
-| **Administrador** (`ADMIN`) | Consulta estadísticas institucionales (`GET /admin/stats`): población, PAE, asistencia, salidas, convivencia y notificaciones. |
+| **Administrador** (`ADMIN`) | Consulta estadísticas institucionales (`GET /admin/stats`) y opera la consola de gestión: alta de estudiantes (con matrícula y acudientes), personal, académico (grados/salones), horarios y asignación docente-grupo. Único rol que matricula estudiantes al PAE y que lee las solicitudes de demo de la landing. |
 | **Acudiente** | Padre de familia o responsable del estudiante. Recibe notificaciones por correo e interactúa solo a través de enlaces únicos para justificar inasistencias. |
 | **Estudiante** | Referente pasivo dentro del sistema. Es identificado en los módulos de PAE y asistencia, y firma registros en el agendatorio. |
 
@@ -112,6 +112,40 @@ Para la primera versión de la aplicación se priorizan las siguientes notificac
 2. Busca al estudiante que se va a retirar anticipadamente.
 3. Registra la salida temprana del estudiante.
 4. El sistema ejecuta un job que envía una notificación por correo electrónico al acudiente informando que su hijo/a se retiró de la institución antes de la hora habitual de salida.
+
+---
+
+### 3.5 Módulo de Gestión Administrativa — Consola del Administrador
+
+**Objetivo:** Darle al Administrador las herramientas para construir y mantener la
+estructura de la institución (personal, grados, salones, horarios) y dar de alta
+estudiantes con su matrícula y acudientes, sin depender de una carga manual en la base de
+datos.
+
+**Flujo de alta de estudiante:**
+
+1. El Administrador abre "Estudiantes" en su consola y registra documento, nombres, fecha
+   de nacimiento y opcionalmente una foto.
+2. Opcionalmente lo matricula a un grado y salón existentes.
+3. Registra al menos un acudiente, marcando exactamente uno como principal — es quien
+   recibe las notificaciones automáticas de PAE, asistencia y convivencia de ese estudiante.
+4. El sistema guarda estudiante, matrícula y acudientes de forma atómica: si algo falla, no
+   queda un estudiante a medias.
+
+**Gestión de estructura institucional:**
+
+- Alta de personal (docentes, operadores PAE, administradores) con rol y credenciales.
+- Alta de grados y salones, y matrícula de estudiantes ya existentes a un salón.
+- Definición de horarios de clase (bloques por salón, día y hora) y asignación de
+  docentes a los salones que les corresponden — de esto depende qué estudiantes ve cada
+  docente en Asistencia y en "Mis estudiantes".
+- Es el único rol que matricula estudiantes al PAE (decisión administrativa, distinta de
+  *operar* el programa día a día, que hace el Operador PAE).
+- Consulta el panel de estadísticas institucionales y la bandeja de solicitudes de demo
+  recibidas desde la landing pública.
+
+> Referencia funcional completa (endpoints, reglas de validación, roles exactos) en
+> `docs/admin.md` y `docs/students.md`.
 
 ---
 
