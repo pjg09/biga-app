@@ -1726,7 +1726,20 @@ body { background: var(--bg); }
 
 /* ─── ≤900px: tablet — el sidebar deja el flujo y se vuelve cajón ─ */
 @media (max-width: 900px) {
-  .dash__burger { display: flex; }
+  /* `fixed` en vez de vivir en el flujo de `.dash__page-header`: en móvil el
+     scroll real es el del documento (`.dash` solo tiene min-height:100vh, no
+     confina la altura), así que un burger dentro del header se iba con el
+     resto del contenido al hacer scroll. Anclado al viewport queda visible
+     siempre, como un FAB. z-index por encima del overlay (1190) y del propio
+     sidebar (1200) para poder cerrarlo tocándolo con el menú abierto. */
+  .dash__burger {
+    display: flex;
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    z-index: 1210;
+    box-shadow: 0 4px 16px rgba(15,10,35,0.18);
+  }
 
   .dash__sidebar {
     position: fixed;
@@ -1793,7 +1806,9 @@ body { background: var(--bg); }
     padding: 16px 14px 0;
   }
   .dash__page-header-main { display: contents; }
-  .dash__burger      { order: 1; }
+  /* El burger es `fixed` (ver @media 900px): `order` no aplica, ya salió del
+     flujo. Solo reajusta su posición al padding más chico de este breakpoint. */
+  .dash__burger      { top: 16px; left: 14px; }
   .dash__page-badge  { order: 2; margin-left: auto; align-self: center; }
   .dash__page-header-text {
     order: 3;
