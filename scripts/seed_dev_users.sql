@@ -79,10 +79,24 @@ ON CONFLICT (id) DO NOTHING;
 -- (destino del correo de inasistencia / salida anticipada).
 -- ───────────────────────────────────────────────────────────────────────────
 
--- Grado "Once" (nivel 11)
-INSERT INTO grades (id, institution_id, name, level, created_at)
-VALUES ('d0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000001', 'Once', 11, NOW())
-ON CONFLICT (id) DO NOTHING;
+-- Catálogo de grados (los 11 niveles). No se dan de alta desde la app: ver
+-- api/app/core/grades.py y la migración a7c3e9f2b581.
+-- El nivel 11 lleva id fijo porque el grupo 11A de más abajo lo referencia.
+-- El conflicto se resuelve por (institution_id, level), no por id: en una BD
+-- donde la migración ya los sembró, los ids son distintos y por id chocaría.
+INSERT INTO grades (id, institution_id, name, level, created_at) VALUES
+  (gen_random_uuid(), 'a0000000-0000-0000-0000-000000000001', 'Primero', 1, NOW()),
+  (gen_random_uuid(), 'a0000000-0000-0000-0000-000000000001', 'Segundo', 2, NOW()),
+  (gen_random_uuid(), 'a0000000-0000-0000-0000-000000000001', 'Tercero', 3, NOW()),
+  (gen_random_uuid(), 'a0000000-0000-0000-0000-000000000001', 'Cuarto', 4, NOW()),
+  (gen_random_uuid(), 'a0000000-0000-0000-0000-000000000001', 'Quinto', 5, NOW()),
+  (gen_random_uuid(), 'a0000000-0000-0000-0000-000000000001', 'Sexto', 6, NOW()),
+  (gen_random_uuid(), 'a0000000-0000-0000-0000-000000000001', 'Séptimo', 7, NOW()),
+  (gen_random_uuid(), 'a0000000-0000-0000-0000-000000000001', 'Octavo', 8, NOW()),
+  (gen_random_uuid(), 'a0000000-0000-0000-0000-000000000001', 'Noveno', 9, NOW()),
+  (gen_random_uuid(), 'a0000000-0000-0000-0000-000000000001', 'Décimo', 10, NOW()),
+  ('d0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000001', 'Once', 11, NOW())
+ON CONFLICT (institution_id, level) DO NOTHING;
 
 -- Grupo 11A, año académico 2026
 INSERT INTO groups (id, institution_id, grade_id, name, academic_year, created_at)
@@ -138,7 +152,11 @@ INSERT INTO subjects (id, institution_id, name, created_at)
 VALUES
   ('d1000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000001', 'Matemáticas', NOW()),
   ('d1000000-0000-0000-0000-000000000002', 'a0000000-0000-0000-0000-000000000001', 'Ciencias Naturales', NOW())
-ON CONFLICT (id) DO NOTHING;
+-- Por (institution_id, name) y no por id: si esas materias ya se crearon desde
+-- la consola tienen otro id, y el conflicto que salta es el de
+-- `uq_subjects_institution_id_name`. Con `ON CONFLICT (id)` el seed abortaba
+-- ahí y todo lo de más abajo no llegaba a ejecutarse.
+ON CONFLICT (institution_id, name) DO NOTHING;
 
 -- El docente demo (teacher@iedemo.edu.co) dicta la primera hora de 11A.
 -- El operador PAE (pae@iedemo.edu.co) también está asignado a 11A: es un docente

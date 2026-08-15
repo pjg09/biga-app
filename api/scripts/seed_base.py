@@ -7,7 +7,9 @@ from uuid import uuid4
 
 from app.core.database import AsyncSessionLocal
 from app.core.security import hash_password
+from app.core.grades import STANDARD_GRADES
 from app.models.enums import UserRole
+from app.models.grade import Grade
 from app.models.institution import Institution
 from app.models.user import User
 
@@ -37,6 +39,12 @@ async def seed():
             is_active=True,
         )
         db.add(user)
+
+        # Los grados son catálogo, no alta manual: toda institución nueva nace
+        # con los 11 niveles. Ver app/core/grades.py.
+        for level, name in STANDARD_GRADES:
+            db.add(Grade(id=uuid4(), institution_id=inst.id, name=name, level=level))
+
         await db.commit()
 
         print(f"institution_id={inst.id}")

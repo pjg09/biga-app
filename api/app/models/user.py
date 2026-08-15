@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Optional
 from uuid import UUID, uuid4
 
 from sqlalchemy import Boolean, Enum as SAEnum, ForeignKey, String, UniqueConstraint, func
@@ -22,4 +23,6 @@ class User(Base):
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[UserRole] = mapped_column(SAEnum(UserRole, native_enum=True, name="user_role"), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Key en object storage, no URL: las presignadas caducan. Igual que students.photo_url.
+    photo_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())

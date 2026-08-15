@@ -4,15 +4,14 @@ from uuid import UUID, uuid4
 from fastapi import HTTPException, status
 
 from app.adapters.storage.s3 import S3StorageAdapter
-from app.core.photos import resolve_photo_url
+from app.core.config import settings
+from app.core.photos import ALLOWED_PHOTO_TYPES, resolve_photo_url
 from app.models.enums import UserRole
 from app.models.student import Student
 from app.repositories.guardian_repository import GuardianRepository
 from app.repositories.student_repository import StudentRepository
 from app.schemas.guardian import GuardianResponse
 from app.schemas.students import StudentCreate, StudentDetailResponse, StudentResponse
-
-_ALLOWED_PHOTO_TYPES = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}
 
 
 class StudentService:
@@ -70,6 +69,7 @@ class StudentService:
         role: UserRole,
         grade_id: UUID | None = None,
         group_id: UUID | None = None,
+        include_inactive: bool = False,
     ) -> list[StudentResponse]:
         """Listado de "Mis estudiantes" (módulo de Aula), acotado según el rol.
 
@@ -98,8 +98,11 @@ class StudentService:
             )
             return [self._to_response(s, grade_name, group_name, subject) for s, grade_name, group_name, subject in rows]
 
+        # `include_inactive` solo llega hasta aquí, la rama del ADMIN: docente y
+        # operador PAE nunca deben ver estudiantes dados de baja en su aula.
         rows = await self.repo.list_by_institution(
-            institution_id=institution_id, grade_id=grade_id, group_id=group_id
+            institution_id=institution_id, grade_id=grade_id, group_id=group_id,
+            include_inactive=include_inactive,
         )
         return [self._to_response(s, grade_name, group_name) for s, grade_name, group_name in rows]
 
@@ -143,11 +146,16 @@ class StudentService:
         data: bytes,
         content_type: str,
     ) -> StudentResponse:
-        ext = _ALLOWED_PHOTO_TYPES.get(content_type)
+        ext = ALLOWED_PHOTO_TYPES.get(content_type)
         if not ext:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Formato no soportado. Use JPG, PNG o WEBP.",
+            )
+        if len(data) > settings.photo_max_upload_mb * 1024 * 1024:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"La imagen supera {settings.photo_max_upload_mb} MB",
             )
         student = await self.repo.get_by_id(student_id, institution_id)
         if not student:

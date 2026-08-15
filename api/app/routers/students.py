@@ -50,6 +50,9 @@ async def create_student(
 async def list_students(
     grade_id: UUID | None = None,
     group_id: UUID | None = None,
+    include_inactive: bool = Query(
+        False, description="Solo ADMIN: incluir estudiantes dados de baja, para reactivarlos"
+    ),
     current_user: User = Depends(get_current_user),
     service: StudentService = Depends(get_student_service),
 ):
@@ -67,6 +70,7 @@ async def list_students(
         role=current_user.role,
         grade_id=grade_id,
         group_id=group_id,
+        include_inactive=include_inactive,
     )
 
 

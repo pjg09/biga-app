@@ -39,14 +39,18 @@ class StudentRepository:
         )
         return result.scalar_one_or_none()
 
-    async def get_by_id(self, student_id: UUID, institution_id: UUID) -> Student | None:
-        result = await self.session.execute(
-            select(Student).where(
-                Student.id == student_id,
-                Student.institution_id == institution_id,
-                Student.is_active == True,
-            )
+    async def get_by_id(
+        self, student_id: UUID, institution_id: UUID, include_inactive: bool = False
+    ) -> Student | None:
+        # `include_inactive` solo lo usa la reactivación desde la consola del
+        # admin: para volver a activar a alguien hay que poder leerlo primero.
+        stmt = select(Student).where(
+            Student.id == student_id,
+            Student.institution_id == institution_id,
         )
+        if not include_inactive:
+            stmt = stmt.where(Student.is_active == True)
+        result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
     async def list_by_institution(
@@ -54,6 +58,7 @@ class StudentRepository:
         institution_id: UUID,
         grade_id: UUID | None = None,
         group_id: UUID | None = None,
+        include_inactive: bool = False,
     ) -> list[tuple[Student, str | None, str | None]]:
         # LEFT JOIN (no INNER): un estudiante sin matrícula activa debe seguir
         # apareciendo en el listado del admin, solo que sin grado/salón. El
@@ -67,12 +72,11 @@ class StudentRepository:
             )
             .outerjoin(Group, Group.id == StudentGroup.group_id)
             .outerjoin(Grade, Grade.id == Group.grade_id)
-            .where(
-                Student.institution_id == institution_id,
-                Student.is_active == True,
-            )
+            .where(Student.institution_id == institution_id)
             .order_by(Student.last_name, Student.first_name)
         )
+        if not include_inactive:
+            stmt = stmt.where(Student.is_active == True)
         if grade_id:
             stmt = stmt.where(Group.grade_id == grade_id)
         if group_id:

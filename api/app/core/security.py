@@ -28,6 +28,20 @@ def generate_otp_code(digits: int = 6) -> str:
     return f"{secrets.randbelow(10 ** digits):0{digits}d}"
 
 
+def generate_temp_password(length: int = 12) -> str:
+    """Contraseña temporal para un usuario recién creado por el admin.
+
+    `token_urlsafe` y no un alfabeto propio: evita construir a mano una cadena
+    con "una mayúscula, un dígito y un símbolo", que es justo el patrón que
+    reduce la entropía real. 12 bytes ≈ 96 bits, muy por encima del mínimo de 8
+    caracteres que exige el resto del sistema.
+
+    Es de un solo uso en la práctica: viaja por correo y el usuario debería
+    cambiarla desde `/recuperar`. Nunca se persiste en claro — solo su bcrypt.
+    """
+    return secrets.token_urlsafe(length)
+
+
 def create_access_token(subject: str) -> str:
     expire = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
     return jwt.encode(

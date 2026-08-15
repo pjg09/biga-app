@@ -671,6 +671,15 @@ export function StudentsView() {
   const [form, setForm]           = useState(EMPTY_FORM);
   const [photoFile, setPhotoFile] = useState(null);
   const [photoPreview, setPhotoPreview] = useState(null);
+  const photoInputRef = useRef(null);
+
+  // Al quitar hay que vaciar también el input nativo: conserva el archivo
+  // internamente, y volver a elegir EL MISMO no dispara `change` (el value no
+  // cambia), así que la foto no reaparecería y "Quitar" parecería roto.
+  const clearPhoto = useCallback(() => {
+    setPhotoFile(null);
+    if (photoInputRef.current) photoInputRef.current.value = '';
+  }, []);
 
   // Object URL del preview: se crea al elegir archivo y se revoca al cambiar/
   // quitar la foto o desmontar, para no acumular URLs sin liberar.
@@ -710,17 +719,20 @@ export function StudentsView() {
     if (groupId && !groupsForGrade.some(g => g.id === groupId)) setGroupId('');
   }, [gradeId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const [includeInactive, setIncludeInactive] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      setStudents(await studentService.list({ gradeId, groupId }));
+      setStudents(await studentService.list({ gradeId, groupId, includeInactive }));
     } catch (e) {
       setError(e.message);
     } finally {
       setLoading(false);
     }
-  }, [gradeId, groupId]);
+  }, [gradeId, groupId, includeInactive]);
 
   // `load` cambia de identidad cuando cambia el filtro (useCallback la
   // recrea), así que este mismo efecto recarga tanto en el montaje inicial
@@ -747,6 +759,33 @@ export function StudentsView() {
     setDetailError(null);
     setZoomed(false);
   }, []);
+
+  // Baja lógica del estudiante: apaga `is_active`. No borra nada — el histórico
+  // (convivencia, asistencia, justificaciones, PAE) sigue apuntando a su id.
+  const doDeactivate = async () => {
+    setSaving(true);
+    try {
+      await adminService.deactivateStudent(editingId);
+      showToast(`${form.first_name} ${form.last_name} eliminado del panel`);
+      setConfirmDelete(false);
+      setShowForm(false);
+      setEditingId(null);
+      setForm(EMPTY_FORM);
+      setPhotoFile(null);
+      await load();
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally { setSaving(false); }
+  };
+
+  const doReactivate = async (d) => {
+    try {
+      await adminService.reactivateStudent(d.id);
+      showToast(`${d.first_name} ${d.last_name} reactivado`);
+      closeDetail();
+      await load();
+    } catch (err) { showToast(err.message, 'error'); }
+  };
 
   const updateField = (field) => (e) => setForm(prev => ({ ...prev, [field]: e.target.value }));
 
@@ -943,13 +982,24 @@ export function StudentsView() {
               </label>
               <label className="dash__field dash__field--full">
                 <span className="dash__field-label">Foto del estudiante <span className="dash__field-optional">(opcional)</span></span>
-                <input className="dash__field-input" type="file" accept="image/jpeg,image/png,image/webp"
-                  onChange={e => setPhotoFile(e.target.files?.[0] ?? null)} />
-                {photoPreview && (
+                <span className="dash__file-pick">
+                  <input ref={photoInputRef} type="file" accept="image/jpeg,image/png,image/webp"
+                    onChange={e => setPhotoFile(e.target.files?.[0] ?? null)} />
+                  <span className="dash__file-pick__btn">Examinar</span>
+                  {/* Con archivo elegido el nombre ya lo muestra la preview de abajo. */}
+                  {!photoFile && <span className="dash__file-pick__name">Ningún archivo seleccionado</span>}
+                </span>
+                {/* La guarda va sobre `photoFile`, no solo sobre `photoPreview`:
+                    el preview se calcula en un useEffect, que corre DESPUÉS del
+                    render. Al pulsar "Quitar", `photoFile` ya es null en ese
+                    render mientras `photoPreview` aún tiene la URL vieja, así que
+                    mirar solo el preview entraba aquí y reventaba en
+                    `photoFile.name` (pantalla en blanco). */}
+                {photoFile && photoPreview && (
                   <div className="dash__field-photo-preview">
                     <img src={photoPreview} alt="" />
                     <span className="dash__field-optional">{photoFile.name}</span>
-                    <button type="button" className="dash__guardian-remove" onClick={() => setPhotoFile(null)}>
+                    <button type="button" className="dash__guardian-remove" onClick={clearPhoto}>
                       Quitar
                     </button>
                   </div>
@@ -1036,12 +1086,40 @@ export function StudentsView() {
             {formError && <p className="dash__form-error" role="alert">{formError}</p>}
 
             <div className="dash__modal-actions">
+              {editingId && (
+                <button type="button" className="btn--danger" onClick={() => setConfirmDelete(true)} disabled={saving}>
+                  Eliminar
+                </button>
+              )}
               <button type="button" className="btn--secondary" onClick={closeForm} disabled={saving}>Cancelar</button>
               <button type="submit" className="btn--confirm" disabled={saving} aria-busy={saving}>
                 {saving ? <><Spinner color="white" size={16} /> Guardando…</> : editingId ? 'Guardar cambios' : 'Registrar'}
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {confirmDelete && (
+        <div className="dash__modal-overlay" onClick={() => setConfirmDelete(false)}>
+          <div className="dash__modal dash__modal--sm" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true">
+            <p className="dash__modal-label">Eliminar del panel</p>
+            <p className="dash__modal-warning">
+              <strong>{form.first_name} {form.last_name}</strong> dejará de aparecer en listados,
+              búsquedas y en las listas de asistencia y del PAE.
+              <br /><br />
+              No se borra nada: sus registros de convivencia, asistencia, justificaciones y entregas
+              del PAE se conservan intactos. Puedes revertirlo marcando «Ver inactivos» en la lista.
+            </p>
+            <div className="dash__modal-actions">
+              <button type="button" className="btn--secondary" onClick={() => setConfirmDelete(false)} disabled={saving}>
+                Cancelar
+              </button>
+              <button type="button" className="btn--danger" onClick={doDeactivate} disabled={saving} aria-busy={saving}>
+                {saving ? <><Spinner color="white" size={16} /> Eliminando…</> : 'Sí, eliminar'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1067,6 +1145,11 @@ export function StudentsView() {
             </button>
           )}
         </div>
+        <label className="dash__inactive-toggle">
+          <input type="checkbox" checked={includeInactive}
+            onChange={e => setIncludeInactive(e.target.checked)} />
+          Ver inactivos
+        </label>
         <button className="btn--confirm dash__search-btn" onClick={openCreate}>
           + Registrar estudiante
         </button>
@@ -1095,7 +1178,7 @@ export function StudentsView() {
               {filtered.map((s, i) => {
                 const av = avatarFor(s.first_name, i);
                 return (
-                  <tr key={s.id} className="stu-table__row" onClick={() => openDetail(s.id)}>
+                  <tr key={s.id} className={`stu-table__row${s.is_active === false ? ' stu-row--inactive' : ''}`} onClick={() => openDetail(s.id)}>
                     <td className="stu-table__icon-col">
                       <span className="stu-row__detail-icon" aria-hidden="true"><EyeIcon /></span>
                     </td>
@@ -1109,6 +1192,7 @@ export function StudentsView() {
                           </div>
                         )}
                         <span className="dash__table-student-name">{s.first_name} {s.last_name}</span>
+                        {s.is_active === false && <span className="dash__badge dash__badge--red">Inactivo</span>}
                       </div>
                     </td>
                     <td style={{ fontVariantNumeric: 'tabular-nums', color: 'var(--t2)' }}>{s.document_number}</td>
@@ -1199,7 +1283,9 @@ export function StudentsView() {
 
                   <div className="dash__modal-actions">
                     <button type="button" className="btn--secondary" onClick={closeDetail}>Cerrar</button>
-                    <button type="button" className="btn--confirm" onClick={() => openEdit(detail)}>Editar</button>
+                    {detail.is_active
+                      ? <button type="button" className="btn--confirm" onClick={() => openEdit(detail)}>Editar</button>
+                      : <button type="button" className="btn--confirm" onClick={() => doReactivate(detail)}>Reactivar</button>}
                   </div>
                 </>
               )}

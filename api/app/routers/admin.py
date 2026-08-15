@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.storage.s3 import S3StorageAdapter
@@ -20,15 +20,20 @@ from app.schemas.admin import (
     AdminUserCreate,
     AdminUserResponse,
     AdminUserUpdate,
+    ClassPeriodBulkCreate,
+    ClassPeriodBulkResult,
     ClassPeriodCreate,
+    ClassPeriodUpdate,
     ClassPeriodResponse,
-    GradeCreate,
     GradeResponse,
     GroupCreate,
+    GroupStudentAdd,
+    GroupUpdate,
     GroupResponse,
     StudentGroupCreate,
     StudentGroupResponse,
     SubjectCreate,
+    SubjectUpdate,
     SubjectResponse,
     UserGroupCreate,
     UserGroupResponse,
@@ -77,10 +82,13 @@ async def create_user(
 
 @router.get("/users", response_model=list[AdminUserResponse])
 async def list_users(
+    include_inactive: bool = Query(
+        False, description="Incluir usuarios desactivados (para poder reactivarlos)"
+    ),
     current_user: User = Depends(require_admin),
     service: AdminManagementService = Depends(get_mgmt_service),
 ):
-    return await service.list_users(current_user.institution_id)
+    return await service.list_users(current_user.institution_id, include_inactive=include_inactive)
 
 
 @router.get("/users/{user_id}", response_model=AdminUserResponse)
@@ -102,20 +110,69 @@ async def update_user(
     service: AdminManagementService = Depends(get_mgmt_service),
 ):
     """Contraparte de `POST /users` para editar un miembro del personal ya
-    existente. `password` es opcional: vacío/omitido no cambia la actual."""
-    return await service.update_user(user_id, body, current_user.institution_id)
+    existente. No incluye contraseña: el admin no puede fijar la de otra
+    persona (ver `AdminUserCreate`/`AdminUserUpdate` en `schemas/admin.py`).
+
+    `409` si un admin intenta quitarse a sí mismo el rol de administrador: es el
+    mismo autobloqueo que cubre `DELETE /users/{id}`, por otra vía."""
+    return await service.update_user(
+        user_id, body, current_user.institution_id, current_user_id=current_user.id
+    )
 
 
-# --- Académico: grados ---
-
-@router.post("/grades", response_model=GradeResponse, status_code=status.HTTP_201_CREATED)
-async def create_grade(
-    body: GradeCreate,
+@router.delete("/users/{user_id}", response_model=AdminUserResponse)
+async def deactivate_user(
+    user_id: UUID,
     current_user: User = Depends(require_admin),
     service: AdminManagementService = Depends(get_mgmt_service),
 ):
-    return await service.create_grade(body, current_user.institution_id)
+    """Baja lógica: apaga `is_active`. **No borra la fila** — el histórico que
+    ese usuario firmó debe seguir siendo trazable. Revoca el acceso de inmediato
+    porque `get_current_user` valida `is_active` en cada request.
 
+    `409` si el admin intenta desactivarse a sí mismo o dejar la institución sin
+    ningún administrador activo."""
+    return await service.set_user_active(
+        user_id, current_user.institution_id, active=False, current_user_id=current_user.id
+    )
+
+
+@router.post("/users/{user_id}/reactivate", response_model=AdminUserResponse)
+async def reactivate_user(
+    user_id: UUID,
+    current_user: User = Depends(require_admin),
+    service: AdminManagementService = Depends(get_mgmt_service),
+):
+    return await service.set_user_active(
+        user_id, current_user.institution_id, active=True, current_user_id=current_user.id
+    )
+
+
+@router.post("/users/{user_id}/photo", response_model=AdminUserResponse)
+async def upload_user_photo(
+    user_id: UUID,
+    photo: UploadFile = File(..., description="Foto del miembro del personal (JPG, PNG o WEBP)"),
+    current_user: User = Depends(require_admin),
+    service: AdminManagementService = Depends(get_mgmt_service),
+):
+    """Sube la foto de un miembro del personal a object storage.
+
+    Multipart, igual que `POST /students/{id}/photo`. Va después de
+    `PUT /users/{user_id}` en el archivo, pero no compite con él: distinto
+    método y un segmento extra."""
+    data = await photo.read()
+    return await service.set_user_photo(
+        user_id=user_id,
+        institution_id=current_user.institution_id,
+        data=data,
+        content_type=photo.content_type or "",
+    )
+
+
+# --- Académico: grados (solo lectura) ---
+#
+# No hay `POST /grades`: los grados son un catálogo fijo de 11 niveles sembrado
+# en la BD por la migración `a7c3e9f2b581`. Ver `app/core/grades.py`.
 
 @router.get("/grades", response_model=list[GradeResponse])
 async def list_grades(
@@ -134,6 +191,19 @@ async def create_subject(
     service: AdminManagementService = Depends(get_mgmt_service),
 ):
     return await service.create_subject(body, current_user.institution_id)
+
+
+@router.put("/subjects/{subject_id}", response_model=SubjectResponse)
+async def rename_subject(
+    subject_id: UUID,
+    body: SubjectUpdate,
+    current_user: User = Depends(require_admin),
+    service: AdminManagementService = Depends(get_mgmt_service),
+):
+    """Renombra la materia. Solo la etiqueta: `subject_id` no cambia, así que
+    las asignaciones docente-salón la siguen referenciando. `409` si ya existe
+    otra materia con ese nombre en la institución."""
+    return await service.rename_subject(subject_id, body.name, current_user.institution_id)
 
 
 @router.get("/subjects", response_model=list[SubjectResponse])
@@ -164,6 +234,46 @@ async def list_groups(
 
 
 # --- Académico: matrícula estudiante-grupo ---
+
+@router.put("/groups/{group_id}", response_model=GroupResponse)
+async def rename_group(
+    group_id: UUID,
+    body: GroupUpdate,
+    current_user: User = Depends(require_admin),
+    service: AdminManagementService = Depends(get_mgmt_service),
+):
+    """Renombra el salón. Solo el nombre: cambiar de grado movería a todos sus
+    matriculados de grado, que es otra operación. `409` si ya hay un salón con
+    ese nombre en el mismo grado y año."""
+    return await service.rename_group(group_id, body.name, current_user.institution_id)
+
+
+@router.post("/groups/{group_id}/students", response_model=StudentGroupResponse,
+             status_code=status.HTTP_201_CREATED)
+async def add_student_to_group(
+    group_id: UUID,
+    body: GroupStudentAdd,
+    current_user: User = Depends(require_admin),
+    service: AdminManagementService = Depends(get_mgmt_service),
+):
+    """Mete a un estudiante en el salón, **moviéndolo** si ya estaba en otro.
+
+    `student_groups` es único por (estudiante, año), así que agregar y mover son
+    la misma operación. `409` solo si ya estaba en este mismo salón."""
+    return await service.add_student_to_group(group_id, body.student_id, current_user.institution_id)
+
+
+@router.delete("/groups/{group_id}/students/{student_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_student_from_group(
+    group_id: UUID,
+    student_id: UUID,
+    current_user: User = Depends(require_admin),
+    service: AdminManagementService = Depends(get_mgmt_service),
+):
+    """Saca al estudiante del salón (`is_active = False`). No borra la matrícula:
+    es el histórico de en qué salón estuvo ese año."""
+    await service.remove_student_from_group(group_id, student_id, current_user.institution_id)
+
 
 @router.post("/student-groups", response_model=StudentGroupResponse, status_code=status.HTTP_201_CREATED)
 async def enroll_student_in_group(
@@ -214,6 +324,28 @@ async def update_student_full(
     return await service.update_student_full(student_id, body, current_user.institution_id)
 
 
+@router.delete("/students/{student_id}", response_model=StudentResponse)
+async def deactivate_student(
+    student_id: UUID,
+    current_user: User = Depends(require_admin),
+    service: AdminManagementService = Depends(get_mgmt_service),
+):
+    """Baja lógica: apaga `is_active`. **No borra la fila** — agendatorio,
+    asistencia, justificaciones y entregas del PAE siguen apuntando a este
+    `student_id` y el histórico queda intacto. Deja de aparecer en listados,
+    búsqueda y rosters porque todas esas consultas ya filtran `is_active`."""
+    return await service.set_student_active(student_id, current_user.institution_id, active=False)
+
+
+@router.post("/students/{student_id}/reactivate", response_model=StudentResponse)
+async def reactivate_student(
+    student_id: UUID,
+    current_user: User = Depends(require_admin),
+    service: AdminManagementService = Depends(get_mgmt_service),
+):
+    return await service.set_student_active(student_id, current_user.institution_id, active=True)
+
+
 # --- Horarios: bloques (class_periods) ---
 
 @router.post("/class-periods", response_model=ClassPeriodResponse, status_code=status.HTTP_201_CREATED)
@@ -223,6 +355,43 @@ async def create_class_period(
     service: AdminManagementService = Depends(get_mgmt_service),
 ):
     return await service.create_class_period(body, current_user.institution_id)
+
+
+@router.post("/class-periods/bulk", response_model=ClassPeriodBulkResult,
+             status_code=status.HTTP_201_CREATED)
+async def bulk_create_class_periods(
+    body: ClassPeriodBulkCreate,
+    current_user: User = Depends(require_admin),
+    service: AdminManagementService = Depends(get_mgmt_service),
+):
+    """Crea la jornada completa de un salón (periodos × días) de una vez.
+
+    Declarado **antes** que `/class-periods/{cp_id}` a propósito: Starlette
+    resuelve por orden de registro, y si no, "bulk" entraría como `{cp_id}`
+    y daría 422 al no castear a UUID."""
+    return await service.bulk_create_class_periods(body, current_user.institution_id)
+
+
+@router.put("/class-periods/{cp_id}", response_model=ClassPeriodResponse)
+async def update_class_period(
+    cp_id: UUID,
+    body: ClassPeriodUpdate,
+    current_user: User = Depends(require_admin),
+    service: AdminManagementService = Depends(get_mgmt_service),
+):
+    """Edita un bloque. No cambia de salón ni de día: eso es recolocarlo."""
+    return await service.update_class_period(cp_id, body, current_user.institution_id)
+
+
+@router.delete("/class-periods/{cp_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_class_period(
+    cp_id: UUID,
+    current_user: User = Depends(require_admin),
+    service: AdminManagementService = Depends(get_mgmt_service),
+):
+    """Borra el bloque. `409` si ya tiene asistencia tomada — esos registros son
+    histórico y su FK apunta aquí."""
+    await service.delete_class_period(cp_id, current_user.institution_id)
 
 
 @router.get("/class-periods", response_model=list[ClassPeriodResponse])

@@ -757,6 +757,13 @@ body { background: var(--bg); }
 
 .dash__search {
   flex: 1;
+  /* Sin esto el <input> conserva su `min-width:auto` implícito (el ancho
+     intrínseco de ~20 caracteres del `size` por defecto) y se desborda de la
+     caja redondeada de `.dash__search-inner` en móvil: el placeholder largo
+     se ve literalmente fuera del input. El `min-width:0` del wrapper (ver
+     @media 640px) arregla el nivel de arriba, no este. */
+  min-width: 0;
+  text-overflow: ellipsis;
   border: none;
   background: transparent;
   outline: none;
@@ -943,6 +950,11 @@ body { background: var(--bg); }
 }
 .pae-lightbox__close:hover { background: rgba(255,255,255,0.26); }
 
+/* Cuando el avatar es una <img> (foto real) y no el div de iniciales, hay que
+   recortar en vez de deformar: sin esto una foto no cuadrada se estira. */
+img.dash__student-avatar,
+img.dash__modal-avatar { object-fit: cover; }
+
 .dash__modal-avatar {
   width: 72px; height: 72px;
   border-radius: 12px;
@@ -1024,6 +1036,44 @@ body { background: var(--bg); }
   display: flex; align-items: center; justify-content: center; gap: 8px;
   letter-spacing: 0.02em;
 }
+/* Acción destructiva (baja lógica). Rojo para que no se confunda con Guardar,
+   y `margin-right:auto` para separarlo del par Cancelar/Confirmar: en una fila
+   de acciones, lo peligroso no debe quedar pegado a lo que se pulsa por inercia. */
+.dash .btn--danger {
+  flex: 0 0 auto;
+  margin-right: auto;
+  background: transparent;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+  padding: 11px 18px;
+  border-radius: 10px;
+  font-size: 0.84rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.13s, border-color 0.13s;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+.dash .btn--danger:hover:not(:disabled) { background: #fef2f2; border-color: #ef4444; }
+.dash .btn--danger:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* Modal de confirmación: más estrecho que la ficha, es solo una pregunta. */
+.dash__modal--sm { max-width: 420px; }
+
+/* Filtro "Ver inactivos" en la fila de búsqueda. */
+.dash__inactive-toggle {
+  display: flex; align-items: center; gap: 7px;
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--t2);
+  cursor: pointer;
+}
+.dash__inactive-toggle input { width: 15px; height: 15px; cursor: pointer; }
+
+/* Fila de alguien dado de baja: atenuada, pero legible. */
+.stu-row--inactive { opacity: 0.55; }
+
 .dash .btn--confirm:hover:not(:disabled)  { background: #047857; transform: translateY(-1px); }
 .dash .btn--confirm:active:not(:disabled) { transform: translateY(0); }
 .dash .btn--confirm:disabled { opacity: 0.7; cursor: not-allowed; }
@@ -1180,25 +1230,78 @@ body { background: var(--bg); }
   box-shadow: 0 0 0 3px var(--green-soft);
 }
 
-.dash__field-input[type="file"] { cursor: pointer; }
+/* Selector de archivo. El control nativo rotula su botón en el idioma del
+   *navegador* ("Browse…" en Firefox inglés, "Choose file" en Chrome), nunca en
+   el de la app, y ese texto no se puede cambiar por HTML/CSS: `::file-selector-
+   button` se estiliza pero no acepta `content`. Por eso se oculta el input y se
+   rotula uno propio en español. Mismo patrón que `.justify__file-pick`.
+   El input va oculto por tamaño/opacidad y NO con `display:none` a propósito:
+   eso lo sacaría del orden de tabulación y el <label> que lo envuelve no es
+   focusable, así que el campo quedaría inalcanzable por teclado. */
+/* Reproduce la caja de `.dash__field-input` (borde + radio + fondo, ancho
+   completo): es lo que da a entender que toda la franja es la zona de carga,
+   no solo el botón. */
+.dash__file-pick {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color 0.13s, box-shadow 0.13s;
+}
 
-.dash__field-input[type="file"]::file-selector-button,
-.dash__field-input[type="file"]::-webkit-file-upload-button {
+.dash__file-pick:hover { border-color: var(--green-acc); }
+
+/* El foco del input oculto tiene que verse en la caja, que es lo que se ve. */
+.dash__file-pick:focus-within {
+  border-color: var(--green-acc);
+  box-shadow: 0 0 0 3px var(--green-soft);
+}
+
+.dash__file-pick input[type="file"] {
+  position: absolute;
+  width: 1px; height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.dash__file-pick__btn {
+  flex: 0 0 auto;
   padding: 7px 14px;
-  margin-right: 12px;
-  border: none;
   border-radius: 8px;
   background: var(--green-acc);
   color: #fff;
   font-size: 0.8rem;
   font-weight: 600;
-  cursor: pointer;
   transition: background 0.13s;
 }
 
-.dash__field-input[type="file"]:hover::file-selector-button,
-.dash__field-input[type="file"]:hover::-webkit-file-upload-button {
-  background: #047857;
+.dash__file-pick:hover .dash__file-pick__btn { background: #047857; }
+
+/* El nombre del archivo no debe empujar nada fuera de la tarjeta. */
+.dash__file-pick__name {
+  font-size: 0.8rem;
+  color: var(--t3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Aviso informativo dentro de un formulario (no es un error). Mismo hueco que
+   `.dash__form-error`, en gris y sin barra roja. */
+.dash__form-hint {
+  font-size: 0.78rem;
+  color: var(--t3);
+  background: var(--bg);
+  border-radius: 8px;
+  padding: 9px 12px;
+  margin-bottom: 16px;
 }
 
 .dash__form-error {
@@ -1796,6 +1899,13 @@ body { background: var(--bg); }
 }
 @media (max-width: 860px) { .adm-cols { grid-template-columns: 1fr; } }
 
+/* El grid (align-items: stretch por defecto) iguala la altura de las 3 cards
+   de esta fila a la más alta ("Crear grupo", 3 campos); dentro de cada card
+   (.att-form es flex-column) el .btn--confirm hereda flex:2 "de fábrica"
+   (pensado para pares de botones de modal, ver línea ~786) y absorbe todo
+   el espacio vertical sobrante, quedando gigante en las cards más cortas. */
+.adm-cols .btn--confirm { flex: 0 0 auto; }
+
 .adm-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .adm-chip {
   font-size: 0.74rem; font-weight: 600;
@@ -2116,4 +2226,430 @@ body { background: var(--bg); }
 
 @media (max-width: 640px) {
   .dash__table-card--pae-today .pae-today__action-col { display: none; }
+}
+
+/* ─── Académico › Salones ────────────────────────────────────── */
+
+/* Sub-pestañas de Académico. Píldoras, no subrayado: se leen mejor sobre el
+   fondo gris del contenido y no compiten con el nav lateral. */
+.adm-tabs {
+  display: flex;
+  gap: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 4px;
+  margin-bottom: 16px;
+  width: fit-content;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.adm-tab {
+  border: none;
+  background: transparent;
+  color: var(--t2);
+  font-size: 0.84rem;
+  font-weight: 600;
+  padding: 8px 18px;
+  border-radius: 9px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.13s, color 0.13s;
+}
+.adm-tab:hover { color: var(--t1); }
+.adm-tab--active {
+  background: var(--green-acc);
+  color: #fff;
+}
+
+.sal-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 0.84rem;
+  color: var(--t2);
+  margin-bottom: 14px;
+}
+.sal-summary strong { color: var(--t1); }
+.sal-summary__dot { color: var(--t3); }
+/* Empuja el año al extremo: es contexto, no un dato más de la frase. */
+.sal-summary__year {
+  margin-left: auto;
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--t3);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+
+.sal-grades { display: flex; flex-direction: column; gap: 10px; }
+
+.sal-grade { padding: 14px 16px; }
+.sal-grade__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.sal-grade__name { font-size: 0.95rem; font-weight: 700; color: var(--t1); }
+.sal-grade__meta { font-size: 0.78rem; color: var(--t3); margin-top: 2px; }
+
+.sal-grade__add {
+  flex: 0 0 auto;
+  background: var(--bg);
+  border: 1px dashed var(--border);
+  color: var(--t2);
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 7px 14px;
+  border-radius: 9px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.13s, color 0.13s, background 0.13s;
+}
+.sal-grade__add:hover {
+  border-color: var(--green-acc);
+  color: var(--green-acc);
+  background: var(--green-soft);
+}
+
+.sal-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+.sal-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  cursor: pointer;
+  transition: border-color 0.13s, transform 0.1s, box-shadow 0.13s;
+}
+.sal-card:hover {
+  border-color: var(--green-acc);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(15,10,35,0.07);
+}
+.sal-card__name  { font-size: 0.92rem; font-weight: 700; color: var(--t1); }
+.sal-card__count { font-size: 0.78rem; color: var(--green-acc); font-weight: 600; }
+.sal-card__year  { font-size: 0.72rem; color: var(--t3); }
+
+/* Panel del salón. Más alto que un modal normal: la lista puede ser larga y
+   debe hacer scroll dentro, sin empujar los botones fuera de la pantalla. */
+.sal-roster { max-width: 560px; }
+.sal-roster__meta { font-size: 0.8rem; color: var(--t3); margin-bottom: 14px; }
+.sal-roster__search { margin-bottom: 14px; }
+
+.sal-roster__list {
+  display: flex;
+  flex-direction: column;
+  max-height: 46vh;
+  overflow-y: auto;
+  margin-bottom: 20px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.sal-roster__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.sal-roster__row:last-child { border-bottom: none; }
+
+.sal-roster__remove {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid #fecaca;
+  color: #b91c1c;
+  font-size: 0.76rem;
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.13s, border-color 0.13s;
+}
+.sal-roster__remove:hover:not(:disabled) { background: #fef2f2; border-color: #ef4444; }
+.sal-roster__remove:disabled { opacity: 0.5; cursor: not-allowed; }
+
+@media (max-width: 640px) {
+  .sal-cards { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+  .sal-grade__head { flex-wrap: wrap; }
+  .sal-summary__year { margin-left: 0; }
+}
+
+/* Grado sin salones: misma información, menos peso visual. Con 11 grados y
+   pocos salones creados, sin esto la pantalla es una columna de tarjetas
+   idénticas y vacías que entierran las que sí tienen contenido. */
+.sal-grade--empty {
+  padding: 9px 16px;
+  background: transparent;
+  border-style: dashed;
+  box-shadow: none;
+}
+.sal-grade--empty .sal-grade__name { font-size: 0.86rem; font-weight: 600; color: var(--t2); }
+.sal-grade--empty .sal-grade__meta { font-size: 0.74rem; }
+.sal-grade--empty .sal-grade__add  { padding: 5px 12px; font-size: 0.74rem; }
+
+/* Confirmación de traslado: va por encima del panel del salón, que ya está
+   en z-index 1000. Son overlays hermanos, así que basta con subirlo. */
+.sal-confirm { z-index: 1100; }
+
+/* ─── Académico › Materias ───────────────────────────────────── */
+
+/* Alta en una fila. El input se encoge (min-width:0) y el botón no, para que
+   en móvil el botón no salga empujado fuera de la tarjeta. */
+.mat-add {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  margin-bottom: 20px;
+}
+.mat-add__input { flex: 1; min-width: 0; }
+.dash .btn--confirm.mat-add__btn { flex: 0 0 auto; white-space: nowrap; }
+
+.mat-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.mat-head__title { font-size: 0.84rem; font-weight: 700; color: var(--t1); }
+.mat-head__count {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--t2);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 9px;
+}
+
+.mat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 10px;
+}
+
+.mat-card {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 12px 14px;
+  min-width: 0;
+}
+.mat-card__badge {
+  flex: 0 0 auto;
+  width: 34px; height: 34px;
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+/* Un nombre largo no debe romper la rejilla: se recorta con puntos. */
+.mat-card__name {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--t1);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mat-empty { padding: 28px; text-align: center; }
+.mat-empty__title { font-size: 0.92rem; font-weight: 700; color: var(--t1); }
+.mat-empty__text  { font-size: 0.82rem; color: var(--t3); margin-top: 5px; }
+
+@media (max-width: 640px) {
+  .mat-add { flex-wrap: wrap; }
+  .dash .btn--confirm.mat-add__btn { flex: 1 1 100%; }
+  /* Una sola columna: a dos, los nombres se recortaban a "Ciencias Nat…"
+     y la rejilla dejaba de aportar nada. */
+  .mat-grid { grid-template-columns: 1fr; }
+}
+
+/* La tarjeta de materia es un botón que abre el renombrado. El lápiz solo
+   aparece en hover/foco: con 15 materias, 15 lápices permanentes serían ruido,
+   pero sin ninguna señal nadie descubriría que se puede renombrar. */
+.mat-card {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  transition: border-color 0.13s, transform 0.1s, box-shadow 0.13s;
+}
+.mat-card:hover, .mat-card:focus-visible {
+  border-color: var(--green-acc);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(15,10,35,0.07);
+}
+.mat-card__edit {
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: flex;
+  color: var(--t3);
+  opacity: 0;
+  transition: opacity 0.13s;
+}
+.mat-card:hover .mat-card__edit,
+.mat-card:focus-visible .mat-card__edit { opacity: 1; }
+/* Sin hover (táctil) el lápiz no se revelaría nunca: ahí se deja fijo. */
+@media (hover: none) {
+  .mat-card__edit { opacity: 1; }
+}
+
+/* ─── Horarios › Rejilla semanal ─────────────────────────────── */
+
+.hor-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.hor-bar__select { flex: 0 1 320px; min-width: 0; }
+.hor-bar__count {
+  font-size: 0.78rem; font-weight: 600; color: var(--t2);
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 999px; padding: 5px 12px; white-space: nowrap;
+}
+.dash .btn--confirm.hor-bar__btn { flex: 0 0 auto; margin-left: auto; white-space: nowrap; }
+
+/* La rejilla scrollea dentro de su caja, nunca empuja el body (ver el gotcha
+   de overflow atrapado en .dash__content, en web/CLAUDE.md). */
+.hor-scroll {
+  overflow-x: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-sm);
+}
+.hor-grid {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 620px;
+}
+.hor-grid th {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--t2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 12px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.hor-grid__corner { width: 86px; text-align: left; padding-left: 14px !important; }
+.hor-grid__rowhead {
+  width: 86px;
+  text-align: left;
+  padding-left: 14px !important;
+  border-right: 1px solid var(--border);
+  vertical-align: middle;
+}
+.hor-grid__order { display: block; font-size: 0.86rem; color: var(--t1); text-transform: none; }
+.hor-grid__time  { display: block; font-size: 0.68rem; color: var(--t3); font-weight: 500;
+                   text-transform: none; letter-spacing: 0; margin-top: 1px; white-space: nowrap; }
+.hor-grid td { padding: 5px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.hor-grid tbody tr:last-child td,
+.hor-grid tbody tr:last-child th { border-bottom: none; }
+
+.hor-cell {
+  width: 100%;
+  min-height: 54px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  text-align: left;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  cursor: pointer;
+  transition: box-shadow 0.13s, transform 0.1s;
+}
+.hor-cell:hover { transform: translateY(-1px); box-shadow: 0 5px 14px rgba(15,10,35,0.09); }
+.hor-cell__subject {
+  font-size: 0.8rem; font-weight: 700; color: var(--t1);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.hor-cell__teacher {
+  font-size: 0.7rem; color: var(--t2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* Hueco: se ve que falta y se puede llenar de un clic, sin gritar. */
+.hor-cell--empty {
+  align-items: center;
+  color: var(--t3);
+  font-size: 1.1rem;
+  font-weight: 700;
+  background: transparent;
+  border-style: dashed;
+}
+.hor-cell--empty:hover { color: var(--green-acc); border-color: var(--green-acc); }
+
+/* --- Modal de jornada --- */
+.hor-bulk { max-width: 660px; }
+.hor-days { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 18px; }
+.hor-day {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 0.8rem; font-weight: 600; color: var(--t2);
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 9px; padding: 7px 12px; cursor: pointer;
+  transition: border-color 0.13s, color 0.13s, background 0.13s;
+}
+.hor-day--on { border-color: var(--green-acc); color: var(--green-acc); background: var(--green-soft); }
+.hor-day input { width: 14px; height: 14px; cursor: pointer; }
+
+.hor-rows { display: flex; flex-direction: column; gap: 7px; margin: 6px 0 10px; }
+.hor-row { display: flex; align-items: center; gap: 7px; }
+.hor-row__n { flex: 0 0 26px; font-size: 0.78rem; font-weight: 700; color: var(--t2); }
+.hor-row__time { flex: 0 0 118px; }
+.hor-row .dash__field-input { min-width: 0; }
+.hor-row__del {
+  flex: 0 0 auto;
+  background: none; border: none; cursor: pointer;
+  color: var(--t3); font-size: 0.95rem; padding: 6px 8px; border-radius: 7px;
+}
+.hor-row__del:hover { color: var(--red); background: #fef2f2; }
+
+/* --- Asignación docente-salón --- */
+.hor-assign {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 12px 14px; margin-bottom: 20px;
+}
+.hor-assign .dash__field-input { flex: 1 1 180px; min-width: 0; }
+.dash .btn--confirm.hor-assign__btn { flex: 0 0 auto; }
+
+@media (max-width: 640px) {
+  .hor-bar { flex-wrap: wrap; }
+  .hor-bar__select { flex: 1 1 100%; }
+  .dash .btn--confirm.hor-bar__btn { flex: 1 1 100%; margin-left: 0; }
+  .hor-row { flex-wrap: wrap; }
+  .hor-row .dash__field-input:not(.hor-row__time) { flex: 1 1 100%; }
+  .dash .btn--confirm.hor-assign__btn { flex: 1 1 100%; }
+}
+
+/* Clase que ocupa varios periodos: la celda se estira con rowSpan, así que su
+   botón debe llenar el alto para que se lea como un solo bloque continuo. */
+.hor-td--span { height: 1px; }          /* fuerza a que el hijo pueda usar height:100% */
+.hor-td--span .hor-cell { height: 100%; }
+.hor-cell__span {
+  font-size: 0.66rem;
+  font-weight: 600;
+  color: var(--t3);
+  margin-top: 2px;
 }

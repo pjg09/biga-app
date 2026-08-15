@@ -21,7 +21,6 @@ from app.models.group import Group
 from app.models.student import Student
 from app.models.student_group import StudentGroup
 from app.models.user import User
-from app.models.user_group import UserGroup
 
 
 @dataclass
@@ -119,12 +118,14 @@ class AttendanceRepository:
         """Todas las clases (cualquier period_order) del docente para el día dado."""
         result = await self.session.execute(
             select(ClassPeriod, Group.id, Group.name, Grade.name)
-            .join(UserGroup, UserGroup.group_id == ClassPeriod.group_id)
             .join(Group, Group.id == ClassPeriod.group_id)
             .join(Grade, Grade.id == Group.grade_id)
             .where(
-                UserGroup.user_id == user_id,
-                UserGroup.academic_year == academic_year,
+                # El docente del BLOQUE, no del salón: ver migración d6c1f8a390b4.
+                ClassPeriod.user_id == user_id,
+                # `class_periods` no tiene año; lo aporta su salón. Sin esto, un
+                # bloque de un salón de 2025 seguiría apareciendo en 2026.
+                Group.academic_year == academic_year,
                 ClassPeriod.institution_id == institution_id,
                 ClassPeriod.day_of_week == day_of_week,
             )
@@ -145,14 +146,16 @@ class AttendanceRepository:
         """Una clase específica que el docente dicta, con nombres de grupo/grado."""
         result = await self.session.execute(
             select(ClassPeriod, Group.id, Group.name, Grade.name)
-            .join(UserGroup, UserGroup.group_id == ClassPeriod.group_id)
             .join(Group, Group.id == ClassPeriod.group_id)
             .join(Grade, Grade.id == Group.grade_id)
             .where(
                 ClassPeriod.id == class_period_id,
                 ClassPeriod.institution_id == institution_id,
-                UserGroup.user_id == user_id,
-                UserGroup.academic_year == academic_year,
+                # El docente del BLOQUE, no del salón: ver migración d6c1f8a390b4.
+                ClassPeriod.user_id == user_id,
+                # `class_periods` no tiene año; lo aporta su salón. Sin esto, un
+                # bloque de un salón de 2025 seguiría apareciendo en 2026.
+                Group.academic_year == academic_year,
             )
             .limit(1)
         )
@@ -190,12 +193,15 @@ class AttendanceRepository:
     ) -> ClassPeriod | None:
         result = await self.session.execute(
             select(ClassPeriod)
-            .join(UserGroup, UserGroup.group_id == ClassPeriod.group_id)
+            .join(Group, Group.id == ClassPeriod.group_id)
             .where(
                 ClassPeriod.id == class_period_id,
                 ClassPeriod.institution_id == institution_id,
-                UserGroup.user_id == user_id,
-                UserGroup.academic_year == academic_year,
+                # El docente del BLOQUE, no del salón: ver migración d6c1f8a390b4.
+                ClassPeriod.user_id == user_id,
+                # `class_periods` no tiene año; lo aporta su salón. Sin esto, un
+                # bloque de un salón de 2025 seguiría apareciendo en 2026.
+                Group.academic_year == academic_year,
             )
         )
         return result.scalar_one_or_none()
@@ -347,12 +353,14 @@ class AttendanceRepository:
     ) -> list[ScheduleRow]:
         result = await self.session.execute(
             select(ClassPeriod, Group.name, Grade.name)
-            .join(UserGroup, UserGroup.group_id == ClassPeriod.group_id)
             .join(Group, Group.id == ClassPeriod.group_id)
             .join(Grade, Grade.id == Group.grade_id)
             .where(
-                UserGroup.user_id == user_id,
-                UserGroup.academic_year == academic_year,
+                # El docente del BLOQUE, no del salón: ver migración d6c1f8a390b4.
+                ClassPeriod.user_id == user_id,
+                # `class_periods` no tiene año; lo aporta su salón. Sin esto, un
+                # bloque de un salón de 2025 seguiría apareciendo en 2026.
+                Group.academic_year == academic_year,
                 ClassPeriod.institution_id == institution_id,
             )
             .order_by(ClassPeriod.day_of_week, ClassPeriod.start_time)

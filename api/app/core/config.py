@@ -93,6 +93,11 @@ class Settings(BaseSettings):
     # arbitrariamente grande al bucket.
     justification_max_upload_mb: int = 5
 
+    # Tamaño máximo de una foto de perfil (estudiante o personal). Estos
+    # endpoints sí exigen JWT, así que el riesgo es menor que en la
+    # justificación pública, pero sin tope un solo POST puede llenar el bucket.
+    photo_max_upload_mb: int = 5
+
     # ── Recuperación de contraseña ──────────────────────────────────
     # Ventana de vida del código OTP enviado por correo.
     password_reset_otp_ttl_minutes: int = 10

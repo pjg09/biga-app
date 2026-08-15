@@ -1,10 +1,11 @@
 import { api } from './api';
 
 export const studentService = {
-  list: ({ gradeId, groupId } = {}) => {
+  list: ({ gradeId, groupId, includeInactive } = {}) => {
     const params = new URLSearchParams();
     if (gradeId) params.set('grade_id', gradeId);
     if (groupId) params.set('group_id', groupId);
+    if (includeInactive) params.set('include_inactive', 'true');
     const qs = params.toString();
     return api.get(`/students${qs ? `?${qs}` : ''}`);
   },
