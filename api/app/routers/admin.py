@@ -1,22 +1,25 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.adapters.storage.s3 import S3StorageAdapter
 from app.core.database import get_db
-from app.core.dependencies import require_admin, require_leads_reader
-from app.models.enums import NotificationStatus
+from app.core.dependencies import get_storage_adapter, require_admin
 from app.models.user import User
 from app.repositories.admin_management_repository import AdminManagementRepository
 from app.repositories.admin_repository import AdminRepository
 from app.repositories.guardian_repository import GuardianRepository
-from app.repositories.lead_repository import LeadRepository
+from app.repositories.pae_repository import PAERepository
 from app.repositories.student_repository import StudentRepository
 from app.schemas.admin import (
     AdminStats,
     AdminStudentCreate,
+    AdminStudentDetailResponse,
+    AdminStudentUpdate,
     AdminUserCreate,
     AdminUserResponse,
+    AdminUserUpdate,
     ClassPeriodCreate,
     ClassPeriodResponse,
     GradeCreate,
@@ -25,14 +28,14 @@ from app.schemas.admin import (
     GroupResponse,
     StudentGroupCreate,
     StudentGroupResponse,
+    SubjectCreate,
+    SubjectResponse,
     UserGroupCreate,
     UserGroupResponse,
 )
 from app.schemas.students import StudentResponse
-from app.schemas.leads import LeadsPage
 from app.services.admin_management_service import AdminManagementService
 from app.services.admin_service import AdminService
-from app.services.lead_service import LeadService
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -41,14 +44,14 @@ def get_admin_service(db: AsyncSession = Depends(get_db)) -> AdminService:
     return AdminService(AdminRepository(db))
 
 
-def get_mgmt_service(db: AsyncSession = Depends(get_db)) -> AdminManagementService:
+def get_mgmt_service(
+    db: AsyncSession = Depends(get_db),
+    storage: S3StorageAdapter = Depends(get_storage_adapter),
+) -> AdminManagementService:
     return AdminManagementService(
-        AdminManagementRepository(db), StudentRepository(db), GuardianRepository(db)
+        AdminManagementRepository(db), StudentRepository(db), GuardianRepository(db),
+        PAERepository(db), storage,
     )
-
-
-def get_lead_service(db: AsyncSession = Depends(get_db)) -> LeadService:
-    return LeadService(LeadRepository(db))
 
 
 # --- Estadísticas ---
@@ -80,6 +83,29 @@ async def list_users(
     return await service.list_users(current_user.institution_id)
 
 
+@router.get("/users/{user_id}", response_model=AdminUserResponse)
+async def get_user_detail(
+    user_id: UUID,
+    current_user: User = Depends(require_admin),
+    service: AdminManagementService = Depends(get_mgmt_service),
+):
+    """Ficha de detalle para la consola de admin. No colisiona con ninguna ruta
+    estática bajo /admin/users (no existe un /admin/users/search)."""
+    return await service.get_user_detail(user_id, current_user.institution_id)
+
+
+@router.put("/users/{user_id}", response_model=AdminUserResponse)
+async def update_user(
+    user_id: UUID,
+    body: AdminUserUpdate,
+    current_user: User = Depends(require_admin),
+    service: AdminManagementService = Depends(get_mgmt_service),
+):
+    """Contraparte de `POST /users` para editar un miembro del personal ya
+    existente. `password` es opcional: vacío/omitido no cambia la actual."""
+    return await service.update_user(user_id, body, current_user.institution_id)
+
+
 # --- Académico: grados ---
 
 @router.post("/grades", response_model=GradeResponse, status_code=status.HTTP_201_CREATED)
@@ -97,6 +123,25 @@ async def list_grades(
     service: AdminManagementService = Depends(get_mgmt_service),
 ):
     return await service.list_grades(current_user.institution_id)
+
+
+# --- Académico: materias (catálogo) ---
+
+@router.post("/subjects", response_model=SubjectResponse, status_code=status.HTTP_201_CREATED)
+async def create_subject(
+    body: SubjectCreate,
+    current_user: User = Depends(require_admin),
+    service: AdminManagementService = Depends(get_mgmt_service),
+):
+    return await service.create_subject(body, current_user.institution_id)
+
+
+@router.get("/subjects", response_model=list[SubjectResponse])
+async def list_subjects(
+    current_user: User = Depends(require_admin),
+    service: AdminManagementService = Depends(get_mgmt_service),
+):
+    return await service.list_subjects(current_user.institution_id)
 
 
 # --- Académico: grupos ---
@@ -142,6 +187,33 @@ async def create_student_full(
     return await service.create_student_full(body, current_user.institution_id)
 
 
+@router.get("/students/{student_id}", response_model=AdminStudentDetailResponse)
+async def get_student_detail(
+    student_id: UUID,
+    current_user: User = Depends(require_admin),
+    service: AdminManagementService = Depends(get_mgmt_service),
+):
+    """Ficha de detalle + datos para precargar el formulario de edición
+    (`group_id`/`guardians[].id` en crudo, no solo nombres). Declarado después
+    de `POST /students` en el archivo; no colisiona con ninguna ruta estática
+    bajo `/students` (a diferencia de `GET /students/{id}` en `routers/students.py`,
+    acá no existe un `/admin/students/search` con el que pisarse)."""
+    return await service.get_student_detail(student_id, current_user.institution_id)
+
+
+@router.put("/students/{student_id}", response_model=AdminStudentDetailResponse)
+async def update_student_full(
+    student_id: UUID,
+    body: AdminStudentUpdate,
+    current_user: User = Depends(require_admin),
+    service: AdminManagementService = Depends(get_mgmt_service),
+):
+    """Edita Student + matrícula del año vigente + Guardians + inscripción PAE
+    en una sola transacción atómica — la contraparte de `POST /students` para
+    modificar un estudiante ya existente."""
+    return await service.update_student_full(student_id, body, current_user.institution_id)
+
+
 # --- Horarios: bloques (class_periods) ---
 
 @router.post("/class-periods", response_model=ClassPeriodResponse, status_code=status.HTTP_201_CREATED)
@@ -179,21 +251,3 @@ async def list_teacher_assignments(
     service: AdminManagementService = Depends(get_mgmt_service),
 ):
     return await service.list_teacher_assignments(current_user.institution_id)
-
-
-# --- Leads de la landing ---
-
-@router.get("/leads", response_model=LeadsPage)
-async def list_leads(
-    status_filter: NotificationStatus | None = Query(default=None, alias="status"),
-    limit: int = Query(default=50, ge=1, le=200),
-    offset: int = Query(default=0, ge=0),
-    current_user: User = Depends(require_leads_reader),
-    service: LeadService = Depends(get_lead_service),
-):
-    """Solicitudes de demo de la landing.
-
-    No recibe `institution_id`: `demo_leads` es pre-tenant. El aislamiento lo da
-    `require_leads_reader`, no un filtro en el WHERE.
-    """
-    return await service.list_leads(status=status_filter, limit=limit, offset=offset)

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { attendanceService } from '../services/attendance';
@@ -9,6 +9,8 @@ import '../styles/dashboard.css';
 
 const STATUS_LABEL = { PRESENT: 'Presente', ABSENT: 'Ausente', LATE: 'Tardanza', JUSTIFIED: 'Justificada' };
 const STATUS_CLASS  = { PRESENT: 'green',   ABSENT: 'red',     LATE: 'yellow',   JUSTIFIED: 'blue' };
+const RELATIONSHIP_LABEL = { PADRE: 'Padre', MADRE: 'Madre', ACUDIENTE: 'Acudiente', OTRO: 'Otro' };
+const uniqueSorted = (values) => [...new Set(values)].sort((a, b) => a.localeCompare(b, 'es'));
 
 const AVATARS = [
   { bg: '#ede9fe', color: '#6d28d9' },
@@ -661,6 +663,15 @@ export function TeacherStudentsView() {
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState(null);
   const [query, setQuery]       = useState('');
+  const [subjectFilter, setSubjectFilter] = useState('');
+  const [gradeFilter, setGradeFilter]     = useState('');
+  const [groupFilter, setGroupFilter]     = useState('');
+
+  const [selectedId, setSelectedId]   = useState(null);
+  const [detail, setDetail]           = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState(null);
+  const [zoomed, setZoomed]           = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -676,6 +687,41 @@ export function TeacherStudentsView() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Grado/salón dependen de los resultados reales del docente: no tiene
+  // sentido ofrecer un grado sin estudiantes suyos ahí.
+  const availableSubjects = useMemo(() => uniqueSorted(students.map(s => s.subject).filter(Boolean)), [students]);
+  const availableGrades   = useMemo(() => uniqueSorted(students.map(s => s.grade_name).filter(Boolean)), [students]);
+  const availableGroups   = useMemo(() => {
+    const pool = gradeFilter ? students.filter(s => s.grade_name === gradeFilter) : students;
+    return uniqueSorted(pool.map(s => s.group_name).filter(Boolean));
+  }, [students, gradeFilter]);
+
+  // Si el salón elegido deja de existir para el nuevo grado, se limpia.
+  useEffect(() => {
+    if (groupFilter && !availableGroups.includes(groupFilter)) setGroupFilter('');
+  }, [gradeFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const openDetail = useCallback(async (id) => {
+    setSelectedId(id);
+    setDetail(null);
+    setDetailError(null);
+    setDetailLoading(true);
+    try {
+      setDetail(await studentService.getDetail(id));
+    } catch (e) {
+      setDetailError(e.message);
+    } finally {
+      setDetailLoading(false);
+    }
+  }, []);
+
+  const closeDetail = useCallback(() => {
+    setSelectedId(null);
+    setDetail(null);
+    setDetailError(null);
+    setZoomed(false);
+  }, []);
+
   if (loading) return <div className="dash__empty"><Spinner /><span>Cargando estudiantes…</span></div>;
   if (error) {
     return (
@@ -687,12 +733,20 @@ export function TeacherStudentsView() {
   }
 
   const filtered = students.filter(s => {
-    if (!query.trim()) return true;
-    const q = query.toLowerCase();
-    return s.first_name.toLowerCase().includes(q)
-      || s.last_name.toLowerCase().includes(q)
-      || s.document_number.includes(q);
+    if (query.trim()) {
+      const q = query.toLowerCase();
+      const matches = s.first_name.toLowerCase().includes(q)
+        || s.last_name.toLowerCase().includes(q)
+        || s.document_number.includes(q);
+      if (!matches) return false;
+    }
+    if (subjectFilter && s.subject !== subjectFilter) return false;
+    if (gradeFilter && s.grade_name !== gradeFilter) return false;
+    if (groupFilter && s.group_name !== groupFilter) return false;
+    return true;
   });
+
+  const hasFilters = Boolean(query.trim() || subjectFilter || gradeFilter || groupFilter);
 
   return (
     <div className="card dash__list-card att-today">
@@ -703,7 +757,7 @@ export function TeacherStudentsView() {
         <span className="dash__list-title">{filtered.length}</span>
       </div>
 
-      <div style={{ padding: '16px 18px 14px' }}>
+      <div className="stu-filters">
         <input
           className="dash__field-input"
           type="search"
@@ -712,6 +766,31 @@ export function TeacherStudentsView() {
           onChange={e => setQuery(e.target.value)}
           autoComplete="off"
         />
+        <div className="stu-filters__row">
+          <label className="dash__field">
+            <span className="dash__field-label">Materia</span>
+            <select className="dash__field-input" value={subjectFilter} onChange={e => setSubjectFilter(e.target.value)}
+              disabled={availableSubjects.length === 0}>
+              <option value="">Todas</option>
+              {availableSubjects.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </label>
+          <label className="dash__field">
+            <span className="dash__field-label">Grado</span>
+            <select className="dash__field-input" value={gradeFilter} onChange={e => setGradeFilter(e.target.value)}>
+              <option value="">Todos</option>
+              {availableGrades.map(g => <option key={g} value={g}>{g}</option>)}
+            </select>
+          </label>
+          <label className="dash__field">
+            <span className="dash__field-label">Salón</span>
+            <select className="dash__field-input" value={groupFilter} onChange={e => setGroupFilter(e.target.value)}
+              disabled={!gradeFilter}>
+              <option value="">Todos</option>
+              {availableGroups.map(g => <option key={g} value={g}>{g}</option>)}
+            </select>
+          </label>
+        </div>
       </div>
 
       {filtered.length === 0 ? (
@@ -722,13 +801,14 @@ export function TeacherStudentsView() {
               // Lista vacía ≠ institución vacía: lo normal es que el docente
               // no tenga salones asignados todavía.
               ? 'No tienes estudiantes asignados. Verifica con administración que tus salones estén registrados.'
-              : `Sin resultados para "${query}"`}
+              : hasFilters ? 'Sin resultados para ese criterio.' : 'Sin estudiantes.'}
           </span>
         </div>
       ) : filtered.map((s, i) => {
         const av = AVATARS[i % AVATARS.length];
         return (
-          <div className="dash__student-row stu-row" key={s.id}>
+          <button type="button" className="dash__student-row att-class-row stu-row" key={s.id} onClick={() => openDetail(s.id)}>
+            <span className="stu-row__detail-icon" aria-hidden="true"><EyeIcon /></span>
             {s.photo_url
               ? <StudentPhoto src={s.photo_url} alt="" caption={`${s.first_name} ${s.last_name}`} />
               : <div className="dash__student-avatar" style={{ background: av.bg, color: av.color }}>{initials(s.first_name, s.last_name)}</div>}
@@ -739,9 +819,91 @@ export function TeacherStudentsView() {
             <span className={`dash__badge dash__badge--${s.is_active ? 'green' : 'red'}`}>
               {s.is_active ? 'Activo' : 'Inactivo'}
             </span>
-          </div>
+          </button>
         );
       })}
+
+      {selectedId && (
+        <div className="dash__modal-overlay" onClick={closeDetail}>
+          <div className="dash__modal" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true">
+            <button className="dash__modal-close" onClick={closeDetail} aria-label="Cerrar"><CloseIcon /></button>
+            <p className="dash__modal-label">Ficha del estudiante</p>
+
+            {detailLoading ? (
+              <div className="dash__empty" style={{ padding: '24px 0' }}><Spinner /><span>Cargando…</span></div>
+            ) : detailError ? (
+              <div className="dash__empty" style={{ padding: '24px 0' }}><AlertIcon color="#ef4444" /><span>{detailError}</span></div>
+            ) : detail && (
+              <>
+                <div className="dash__modal-student">
+                  {detail.photo_url ? (
+                    <button
+                      type="button"
+                      className="dash__modal-photo-btn"
+                      onClick={() => setZoomed(true)}
+                      title="Ver foto ampliada"
+                      aria-label="Ver foto ampliada"
+                    >
+                      <img className="dash__modal-photo" src={detail.photo_url} alt={`${detail.first_name} ${detail.last_name}`} />
+                      <span className="dash__modal-photo-zoom"><ZoomIcon /></span>
+                    </button>
+                  ) : (
+                    <div className="dash__modal-avatar">{initials(detail.first_name, detail.last_name)}</div>
+                  )}
+                  <div className="dash__modal-info">
+                    <p className="dash__modal-name">{detail.first_name} {detail.last_name}</p>
+                    <p className="dash__modal-doc">Doc. {detail.document_number}</p>
+                  </div>
+                  <span className={`dash__badge dash__badge--${detail.is_active ? 'green' : 'red'}`}>
+                    {detail.is_active ? 'Activo' : 'Inactivo'}
+                  </span>
+                </div>
+
+                <div className="stu-detail__grid">
+                  <div className="stu-detail__item">
+                    <span className="dash__field-label">Grado</span>
+                    <span className="dash__student-group">{detail.grade_name || '—'}</span>
+                  </div>
+                  <div className="stu-detail__item">
+                    <span className="dash__field-label">Salón</span>
+                    <span className="dash__student-group">{detail.group_name || '—'}</span>
+                  </div>
+                  <div className="stu-detail__item stu-detail__item--full">
+                    <span className="dash__field-label">Materia</span>
+                    <span className="dash__student-group">{detail.subject || 'Sin materia asignada'}</span>
+                  </div>
+                </div>
+
+                <p className="dash__field-label stu-detail__guardians-label">Acudientes</p>
+                {detail.guardians.length === 0 ? (
+                  <p className="dash__student-group stu-detail__guardians-empty">Sin acudientes registrados.</p>
+                ) : (
+                  <div className="stu-detail__guardians">
+                    {detail.guardians.map(g => (
+                      <div className="stu-detail__guardian" key={g.id}>
+                        <p className="dash__student-name">
+                          {g.full_name}
+                          {g.is_primary && <span className="dash__badge dash__badge--green stu-detail__primary">Principal</span>}
+                        </p>
+                        <p className="dash__student-group">
+                          {RELATIONSHIP_LABEL[g.relationship] || g.relationship} · {g.email}{g.phone ? ` · ${g.phone}` : ''}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {zoomed && detail?.photo_url && (
+        <div className="pae-lightbox" onClick={() => setZoomed(false)}>
+          <img className="pae-lightbox__img" src={detail.photo_url} alt="" />
+          <button className="pae-lightbox__close" onClick={() => setZoomed(false)} aria-label="Cerrar"><CloseIcon /></button>
+        </div>
+      )}
     </div>
   );
 }
@@ -2001,3 +2163,6 @@ function LogoutIcon()    { return <svg width="16" height="16" viewBox="0 0 24 24
 function CheckIcon({ color = 'currentColor' })     { return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>; }
 function AlertIcon({ color = 'currentColor' })     { return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>; }
 function ClockIcon({ color = 'currentColor' })     { return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>; }
+function EyeIcon({ color = 'currentColor' })       { return <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>; }
+function CloseIcon({ size = 18 })     { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>; }
+function ZoomIcon({ size = 14 })      { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>; }

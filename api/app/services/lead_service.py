@@ -6,7 +6,7 @@ from app.jobs.lead_jobs import notify_demo_lead
 from app.models.enums import NotificationStatus
 from app.models.lead import DemoLead
 from app.repositories.lead_repository import LeadRepository
-from app.schemas.leads import LeadCreate, LeadItem, LeadResponse, LeadsPage
+from app.schemas.leads import LeadCreate, LeadResponse
 
 logger = logging.getLogger(__name__)
 
@@ -53,21 +53,3 @@ class LeadService:
         # Siempre `received: true`: el visitante no debe distinguir un lead nuevo
         # de uno duplicado, ni enterarse de si el aviso interno salió.
         return LeadResponse()
-
-    async def list_leads(
-        self,
-        status: NotificationStatus | None = None,
-        limit: int = 50,
-        offset: int = 0,
-    ) -> LeadsPage:
-        leads = await self.repo.list_leads(status=status, limit=limit, offset=offset)
-        total = await self.repo.count_leads(status=status)
-        # Los conteos van sin filtrar a propósito: son la barra de resumen del
-        # panel y deben seguir mostrando cuántos FAILED hay aunque estés viendo
-        # la pestaña de SENT.
-        counts = await self.repo.count_by_status()
-        return LeadsPage(
-            items=[LeadItem.model_validate(lead) for lead in leads],
-            total=total,
-            counts=counts,
-        )

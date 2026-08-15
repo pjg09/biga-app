@@ -240,7 +240,7 @@ function CodeStep({ email, onBack, onVerified }) {
         <button
           type="submit"
           className="btn btn--primary btn--lg login__submit"
-          disabled={status === 'loading' || code.length !== CODE_LENGTH}
+          disabled={status === 'loading'}
           aria-busy={status === 'loading'}
         >
           {status === 'loading' ? <><Spinner />Verificando…</> : <>Verificar código<ArrowIcon /></>}

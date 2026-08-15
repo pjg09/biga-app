@@ -22,9 +22,20 @@ El rol que opera el módulo es `PAE_OPERATOR`. Todos los endpoints lo exigen
 
 ## Integridad: doble hash encadenado
 
-Inscripciones y entregas son un **libro contable**: una vez creadas no se editan
-ni se borran por API (no hay `PUT`/`PATCH`/`DELETE`). Cada registro se firma con
-HMAC-SHA256 usando `PAE_SIGNING_SECRET`, que **nunca vive en la base de datos**.
+Inscripciones y entregas son un **libro contable**: una vez creadas, los campos que
+entran en el hash no se editan ni se borran por API (`pae_enrollments` no tiene
+`PUT`/`PATCH`/`DELETE` propio). Cada registro se firma con HMAC-SHA256 usando
+`PAE_SIGNING_SECRET`, que **nunca vive en la base de datos**.
+
+Excepción explícita: `pae_enrollments.is_active` (booleano de estado, **no** entra en el
+hash) se puede alternar desde `PUT /admin/students/{id}` — el switch "Inscrito en el PAE"
+del formulario de edición del admin (`docs/students.md`). No es un endpoint de
+`/pae/enrollments`; vive en el flujo de edición del estudiante y reutiliza
+`compute_enrollment_hash` sin recalcularlo. Desactivar/reactivar nunca toca `student_id`,
+`institution_id`, `academic_year`, `enrolled_at` ni `enrollment_hash` — por eso no rompe la
+regla de arriba, y `GET /pae/audit` (que recalcula ambas capas desde esos campos) sigue
+dando `hash_valid=true` sobre las entregas de un estudiante cuya inscripción se desactivó y
+reactivó después.
 
 | Capa | Campo | Qué firma |
 |------|-------|-----------|

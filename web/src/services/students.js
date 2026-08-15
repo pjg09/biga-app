@@ -9,6 +9,10 @@ export const studentService = {
     return api.get(`/students${qs ? `?${qs}` : ''}`);
   },
 
+  // Ficha de detalle del módulo de Aula (docente/operador PAE). 404 si el
+  // estudiante no está en un salón asignado a este usuario.
+  getDetail: (id) => api.get(`/students/${id}`),
+
   // Búsqueda con filtros opcionales. `q` puede ir vacío si se filtra por grado/salón.
   search: (q, { gradeId, groupId } = {}) => {
     const params = new URLSearchParams();

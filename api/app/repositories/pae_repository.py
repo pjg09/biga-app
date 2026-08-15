@@ -103,6 +103,15 @@ class PAERepository:
         await self.session.refresh(enrollment)
         return enrollment
 
+    async def save_enrollment(self, enrollment: PAEEnrollment) -> PAEEnrollment:
+        # Solo para alternar `is_active` desde la edición de estudiante del admin
+        # (ver AdminManagementService.update_student_full). NO toca
+        # student_id/institution_id/academic_year/enrolled_at/enrollment_hash —
+        # esos son de solo lectura tras crearse, `is_active` es la única columna
+        # de estado, por eso puede mutar sin romper la regla de "no se modifica".
+        await self.session.flush()
+        return enrollment
+
     async def get_delivery_today(
         self,
         student_id: UUID,

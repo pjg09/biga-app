@@ -8,6 +8,7 @@ from app.models.grade import Grade
 from app.models.group import Group
 from app.models.student import Student
 from app.models.student_group import StudentGroup
+from app.models.subject import Subject
 from app.models.user import User
 from app.models.user_group import UserGroup
 
@@ -28,6 +29,15 @@ class AdminManagementRepository:
         result = await self.session.execute(select(User).where(User.email == email))
         return result.scalar_one_or_none()
 
+    async def get_user_by_document(self, institution_id: UUID, document_number: str) -> User | None:
+        result = await self.session.execute(
+            select(User).where(
+                User.institution_id == institution_id,
+                User.document_number == document_number,
+            )
+        )
+        return result.scalar_one_or_none()
+
     async def get_user(self, user_id: UUID, institution_id: UUID) -> User | None:
         result = await self.session.execute(
             select(User).where(User.id == user_id, User.institution_id == institution_id)
@@ -36,6 +46,10 @@ class AdminManagementRepository:
 
     async def create_user(self, user: User) -> User:
         return await self._add(user)
+
+    async def save_user(self, user: User) -> User:
+        await self.session.flush()
+        return user
 
     async def list_users(self, institution_id: UUID) -> list[User]:
         result = await self.session.execute(
@@ -65,6 +79,29 @@ class AdminManagementRepository:
     async def list_grades(self, institution_id: UUID) -> list[Grade]:
         result = await self.session.execute(
             select(Grade).where(Grade.institution_id == institution_id).order_by(Grade.level)
+        )
+        return list(result.scalars().all())
+
+    # --- Materias (catálogo) ---
+
+    async def get_subject(self, subject_id: UUID, institution_id: UUID) -> Subject | None:
+        result = await self.session.execute(
+            select(Subject).where(Subject.id == subject_id, Subject.institution_id == institution_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def get_subject_by_name(self, institution_id: UUID, name: str) -> Subject | None:
+        result = await self.session.execute(
+            select(Subject).where(Subject.institution_id == institution_id, Subject.name == name)
+        )
+        return result.scalar_one_or_none()
+
+    async def create_subject(self, subject: Subject) -> Subject:
+        return await self._add(subject)
+
+    async def list_subjects(self, institution_id: UUID) -> list[Subject]:
+        result = await self.session.execute(
+            select(Subject).where(Subject.institution_id == institution_id).order_by(Subject.name)
         )
         return list(result.scalars().all())
 
@@ -122,6 +159,10 @@ class AdminManagementRepository:
     async def create_student_group(self, sg: StudentGroup) -> StudentGroup:
         return await self._add(sg)
 
+    async def save_student_group(self, sg: StudentGroup) -> StudentGroup:
+        await self.session.flush()
+        return sg
+
     # --- Horarios (class_periods) ---
 
     async def get_class_period_by_unique(
@@ -165,12 +206,13 @@ class AdminManagementRepository:
     async def create_user_group(self, ug: UserGroup) -> UserGroup:
         return await self._add(ug)
 
-    async def list_user_groups(self, institution_id: UUID) -> list[tuple[UserGroup, str]]:
+    async def list_user_groups(self, institution_id: UUID) -> list[tuple[UserGroup, str, str | None]]:
         result = await self.session.execute(
-            select(UserGroup, func.concat(User.first_name, " ", User.last_name))
+            select(UserGroup, func.concat(User.first_name, " ", User.last_name), Subject.name)
             .join(User, User.id == UserGroup.user_id)
             .join(Group, Group.id == UserGroup.group_id)
+            .outerjoin(Subject, Subject.id == UserGroup.subject_id)
             .where(Group.institution_id == institution_id)
             .order_by(UserGroup.academic_year.desc())
         )
-        return [(row[0], row[1]) for row in result.all()]
+        return [(row[0], row[1], row[2]) for row in result.all()]

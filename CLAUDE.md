@@ -42,6 +42,7 @@ Las convenciones de CSS/JSX y los gotchas del navegador viven en **`web/CLAUDE.m
 
 - Todos los IDs son `UUID` generados en la aplicación. Nunca usar `SERIAL` o `BIGSERIAL`.
 - Todo cambio al esquema debe reflejarse en `docs/database-schema.md` antes de escribir la migración.
+- Para un campo "único por institución" (no global): `UniqueConstraint("institution_id", campo)` + índice a nivel BD, más un chequeo previo en el service (`get_by_X(institution_id, valor)` → `409` si existe) para dar un mensaje claro en vez de que lo reviente la constraint. Patrón ya usado en `students.document_number`, `subjects.name` y `users.document_number` — replicarlo tal cual, no reinventarlo.
 
 ## Aislamiento multi-tenant — regla crítica
 
@@ -105,15 +106,15 @@ Verificar que un cambio de front compila: `curl -s -o /dev/null -w "%{http_code}
 
 ## Módulos del dominio
 
-Módulos implementados: `auth`, `agendatorio` (registro de convivencia + historial del docente: notas de seguimiento append-only y ocultar del panel vía `archived_at`, sin borrar), `students` (registro append-only + búsqueda), `pae` (inscripción, entrega, reporte semanal, auditoría, notificación de no reclamo), `attendance` (clase a clase; notificación solo primera hora + justificación por link), `departures` (salidas anticipadas), `admin` (estadísticas `GET /admin/stats` + consola de gestión: usuarios, grados, grupos, matrículas, horarios `class_periods` y asignación docente-grupo), `leads` (`POST /leads` **público** desde el formulario de la landing: guarda en `demo_leads` y encola un aviso interno a `LEADS_NOTIFY_EMAIL`). Pendientes: `imports`.
+Módulos implementados: `auth`, `agendatorio` (registro de convivencia + historial del docente: notas de seguimiento append-only y ocultar del panel vía `archived_at`, sin borrar), `students` (registro append-only + búsqueda), `pae` (inscripción, entrega, reporte semanal, auditoría, notificación de no reclamo), `attendance` (clase a clase; notificación solo primera hora + justificación por link), `departures` (salidas anticipadas), `admin` (estadísticas `GET /admin/stats` + consola de gestión: usuarios, grados, grupos, materias, matrículas, horarios `class_periods` y asignación docente-grupo), `leads` (`POST /leads` **público** desde el formulario de la landing: guarda en `demo_leads` y encola un aviso interno a `LEADS_NOTIFY_EMAIL`). Pendientes: `imports`.
 
 `demo_leads` es la **única tabla sin `institution_id`**, por decisión explícita: un visitante que pide una demo no pertenece a ninguna institución. Su estado de envío vive en columnas `notification_*` propias, no en `notifications_log` (esa tabla exige `institution_id`/`student_id`/`guardian_id` NOT NULL). El endpoint público lleva rate limit por IP en Redis (`app/core/rate_limit.py`); si Redis cae, deja pasar la petición en vez de perder el lead.
 
-Se consultan desde la consola de admin (`GET /admin/leads`, sección "Comercial" del `AdminDashboard`). **Al no haber `institution_id` no hay filtro de tenant en el WHERE**: el aislamiento lo da `require_leads_reader` (`app/core/dependencies.py`), que exige ADMIN + estar en `LEADS_ADMIN_EMAILS`. Con esa lista vacía **cualquier ADMIN de cualquier institución ve todos los leads** — sostenible solo mientras haya una única institución en la BD. Llenarla antes de dar de alta a la segunda, o sustituirla por un rol de superusuario real.
+Sin visor en el `AdminDashboard` (deliberado — ver `docs/admin.md`): esa consola es del colegio, y los leads son datos comerciales de BIGA, no de la institución. El equipo de BIGA gestiona la repartición de demos por fuera de la app; el único aviso es el correo a `LEADS_NOTIFY_EMAIL`.
 
 **Referencia completa del ciclo de vida de estudiantes y acudientes (alta, matrícula,
 búsqueda, acudiente principal) en `docs/students.md`; consola de gestión del admin
-(usuarios, grados, salones, horarios, leads) en `docs/admin.md`.** Acá solo las reglas más
+(usuarios, grados, salones, horarios) en `docs/admin.md`.** Acá solo las reglas más
 fáciles de romper por accidente:
 
 - `GET /students` está **acotado por rol**: `TEACHER`/`PAE_OPERATOR` solo ven los salones
@@ -130,12 +131,14 @@ fáciles de romper por accidente:
   `/pae/students/today` y las matrículas del PAE filtran solo por institución. Y el
   operador PAE **no matricula a nadie en el PAE** — `POST /pae/enrollments` exige
   `require_admin` (detalle en `docs/pae.md`).
+- Patrón "ficha + edición" del admin (`GET`/`PUT /admin/students/{id}`, `GET`/`PUT /admin/users/{id}`):
+  el `GET` trae la ficha de solo lectura; el `PUT` reusa el mismo formulario del alta, precargado,
+  para editar. Mismo componente de front para crear y editar (`editingId` decide el modo). Detalle en
+  `docs/students.md` y `docs/admin.md`.
 
 Foto del estudiante: se **sube a MinIO** vía `POST /students/{id}/photo` (multipart), igual que la firma del agendatorio. `students.photo_url` guarda la **key** (no la URL); todo servicio que la devuelve la presigna con `resolve_photo_url(storage, ...)` de `app/core/photos.py` (deja pasar URLs `http(s)://` externas por compat). Por eso `PAEService`/`AttendanceService`/`StudentService` reciben el `S3StorageAdapter` inyectado.
 
 Para exponer `photo_url` en un endpoint de **lista/detalle nuevo** (de cualquier módulo, no solo estudiantes): (1) agregar el campo al Row/dataclass del repo y al schema de respuesta, (2) `select(Student.photo_url)` en la query + mapearlo, (3) presignar con `resolve_photo_url(self.storage, key)` en el service (que debe recibir `S3StorageAdapter` vía `Depends(get_storage_adapter)`). Sin migración (solo lee `students.photo_url`). El front renderiza `<StudentPhoto src={x.photo_url}>` con fallback a avatar de iniciales.
-
-Para exponer `photo_url` en un endpoint de **lista/detalle nuevo**: (1) agregar el campo al Row/dataclass del repo y al schema de respuesta, (2) `select(Student.photo_url)` en la query + mapearlo, (3) presignar con `resolve_photo_url(self.storage, key)` en el service (que debe recibir `S3StorageAdapter` vía `Depends(get_storage_adapter)`). Sin migración (solo lee `students.photo_url`). El front renderiza `<StudentPhoto src={x.photo_url}>` con fallback a avatar de iniciales.
 
 ## Recuperación de contraseña
 
@@ -184,12 +187,14 @@ Para proteger un endpoint con autenticación: `current_user: User = Depends(get_
 
 ## Integridad PAE — doble hash encadenado (regla crítica)
 
-Inscripciones (`pae_enrollments`) y entregas (`pae_deliveries`) son registros tipo libro contable: **no se modifican ni se borran vía API** (no hay `PUT`/`PATCH`/`DELETE`). Cada uno se firma con HMAC-SHA256 y la entrega encadena el hash de la inscripción:
+Inscripciones (`pae_enrollments`) y entregas (`pae_deliveries`) son registros tipo libro contable: **los campos que entran en el hash no se modifican ni se borran vía API** (no hay `PUT`/`PATCH`/`DELETE` sobre `pae_enrollments`/`pae_deliveries` en sí). Cada uno se firma con HMAC-SHA256 y la entrega encadena el hash de la inscripción:
 
 - `enrollment_hash` (capa 1) = `HMAC(student_id : institution_id : academic_year : enrolled_at)`
 - `delivery_hash` (capa 2) = `HMAC(student_id : delivery_date : delivered_by_user_id : created_at : enrollment_hash)`
 
 Funciones en `app/core/security.py`. `register_delivery` verifica la capa 1 antes de entregar y rechaza inscripciones comprometidas. `GET /pae/audit` recomputa ambas capas. La clave (`PAE_SIGNING_SECRET`) nunca vive en la BD. Detalle completo en `docs/architecture.md`.
+
+**Única excepción:** `pae_enrollments.is_active` (no entra en el hash) se puede alternar desde `PUT /admin/students/{id}` — el switch "Inscrito en el PAE" del formulario de edición del admin, ver `docs/students.md` y `docs/pae.md`. Nunca toca los campos que sí entran en el hash.
 
 - Los `created_at`/`enrolled_at` de estos dos modelos se fijan en la app (no `server_default`) porque entran en el hash. No cambiar a `server_default` sin ajustar el cálculo del hash.
 
@@ -221,3 +226,4 @@ Funciones en `app/core/security.py`. `register_delivery` verifica la capa 1 ante
 - Los tests de repository (queries SQL reales, joins, M2M) no se pueden mockear con sentido. No existe infraestructura de fixtures contra Postgres real (`tests/integration/` vacío) — definir esa infraestructura antes de escribir `test_*_repository.py` en cualquier módulo.
 - Probar correos sin dominio verificado en Resend: `EMAIL_FROM=onboarding@resend.dev` y el destinatario **debe** ser el correo dueño de la cuenta Resend — cualquier otro destinatario da 403 y el notifier lo registra como `FAILED`. Verificar `biga.app` (SPF/DKIM) es requisito para enviar a acudientes reales.
 - `scripts/seed_dev_users.sql` usa `ON CONFLICT (id) DO NOTHING`: re-correrlo **no** actualiza filas existentes. Para cambiar datos ya seedeados (ej. el correo de los acudientes) usar `UPDATE` directo: `UPDATE guardians SET email='...' WHERE is_primary = true;`
+- FastAPI/Starlette resuelve rutas por **orden de registro, no por especificidad**: un `GET /{id}` declarado antes que un `GET /search` hace que "search" matchee como `{id}` (422 si el tipo no castea) y el segundo endpoint nunca se alcanza. Al agregar un endpoint `/{id}` a un router que ya tiene una ruta estática de un solo segmento (`/search`, `/me`, etc.), declararlo **después** en el archivo.

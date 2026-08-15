@@ -1,3 +1,4 @@
+from typing import Optional
 from uuid import UUID, uuid4
 
 from sqlalchemy import ForeignKey, SmallInteger, UniqueConstraint
@@ -15,3 +16,4 @@ class UserGroup(Base):
     user_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     group_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), ForeignKey("groups.id"), nullable=False)
     academic_year: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    subject_id: Mapped[Optional[UUID]] = mapped_column(PgUUID(as_uuid=True), ForeignKey("subjects.id"), nullable=True)

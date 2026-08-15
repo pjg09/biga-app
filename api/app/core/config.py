@@ -75,12 +75,4 @@ class Settings(BaseSettings):
     # Frena el barrido de códigos usando muchas cuentas distintas.
     password_reset_verify_rate_limit_max: int = 20
 
-    # Correos que pueden leer `GET /admin/leads` (JSON array). Los leads no
-    # pertenecen a ninguna institución, así que sin esta lista **cualquier ADMIN
-    # de cualquier institución cliente vería el pipeline comercial completo**.
-    # Vacío = cualquier ADMIN puede verlos; aceptable solo mientras haya una
-    # única institución en la BD. Llenar antes de dar de alta a la segunda.
-    leads_admin_emails: list[str] = []
-
-
 settings = Settings()

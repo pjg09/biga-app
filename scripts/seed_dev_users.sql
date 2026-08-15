@@ -133,13 +133,20 @@ VALUES
   ('f1000000-0000-0000-0000-000000000506', 'a0000000-0000-0000-0000-000000000001', 'e0000000-0000-0000-0000-000000000001', 'Inglés',             6, '11:40:00', '12:30:00', 5, NOW())
 ON CONFLICT (id) DO NOTHING;
 
+-- Catálogo de materias (subjects)
+INSERT INTO subjects (id, institution_id, name, created_at)
+VALUES
+  ('d1000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000001', 'Matemáticas', NOW()),
+  ('d1000000-0000-0000-0000-000000000002', 'a0000000-0000-0000-0000-000000000001', 'Ciencias Naturales', NOW())
+ON CONFLICT (id) DO NOTHING;
+
 -- El docente demo (teacher@iedemo.edu.co) dicta la primera hora de 11A.
 -- El operador PAE (pae@iedemo.edu.co) también está asignado a 11A: es un docente
 -- con funciones extra del PAE, así que tiene horario, asistencia y convivencia.
-INSERT INTO user_groups (id, user_id, group_id, academic_year)
+INSERT INTO user_groups (id, user_id, group_id, academic_year, subject_id)
 VALUES
-  ('a1000000-0000-0000-0000-000000000001', 'b0000000-0000-0000-0000-000000000001', 'e0000000-0000-0000-0000-000000000001', 2026),
-  ('a1000000-0000-0000-0000-000000000002', 'b0000000-0000-0000-0000-000000000002', 'e0000000-0000-0000-0000-000000000001', 2026)
+  ('a1000000-0000-0000-0000-000000000001', 'b0000000-0000-0000-0000-000000000001', 'e0000000-0000-0000-0000-000000000001', 2026, 'd1000000-0000-0000-0000-000000000001'),
+  ('a1000000-0000-0000-0000-000000000002', 'b0000000-0000-0000-0000-000000000002', 'e0000000-0000-0000-0000-000000000001', 2026, 'd1000000-0000-0000-0000-000000000002')
 ON CONFLICT (id) DO NOTHING;
 
 -- Los 4 estudiantes pertenecen a 11A en 2026

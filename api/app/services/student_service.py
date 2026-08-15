@@ -7,27 +7,32 @@ from app.adapters.storage.s3 import S3StorageAdapter
 from app.core.photos import resolve_photo_url
 from app.models.enums import UserRole
 from app.models.student import Student
+from app.repositories.guardian_repository import GuardianRepository
 from app.repositories.student_repository import StudentRepository
-from app.schemas.students import StudentCreate, StudentResponse
+from app.schemas.guardian import GuardianResponse
+from app.schemas.students import StudentCreate, StudentDetailResponse, StudentResponse
 
 _ALLOWED_PHOTO_TYPES = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}
 
 
 class StudentService:
-    def __init__(self, repo: StudentRepository, storage: S3StorageAdapter):
+    def __init__(self, repo: StudentRepository, storage: S3StorageAdapter, guardian_repo: GuardianRepository):
         self.repo = repo
         self.storage = storage
+        self.guardian_repo = guardian_repo
 
     def _to_response(
         self,
         student: Student,
         grade_name: str | None = None,
         group_name: str | None = None,
+        subject: str | None = None,
     ) -> StudentResponse:
         resp = StudentResponse.model_validate(student)
         resp.photo_url = resolve_photo_url(self.storage, student.photo_url)
         resp.grade_name = grade_name
         resp.group_name = group_name
+        resp.subject = subject
         return resp
 
     async def create_student(
@@ -86,17 +91,50 @@ class StudentService:
         normalmente es un conjunto chico y no necesita este filtro.
         """
         if role in (UserRole.TEACHER, UserRole.PAE_OPERATOR):
-            students = await self.repo.list_for_teacher(
+            rows = await self.repo.list_for_teacher(
                 institution_id=institution_id,
                 user_id=user_id,
                 academic_year=date.today().year,
             )
-            return [self._to_response(s) for s in students]
+            return [self._to_response(s, grade_name, group_name, subject) for s, grade_name, group_name, subject in rows]
 
         rows = await self.repo.list_by_institution(
             institution_id=institution_id, grade_id=grade_id, group_id=group_id
         )
         return [self._to_response(s, grade_name, group_name) for s, grade_name, group_name in rows]
+
+    async def get_student_detail(
+        self,
+        student_id: UUID,
+        institution_id: UUID,
+        user_id: UUID,
+        role: UserRole,
+    ) -> StudentDetailResponse:
+        """Ficha de detalle del módulo de Aula (docente/operador PAE).
+
+        Mismo recorte que `list_students`: solo se puede ver el detalle de un
+        estudiante que está en uno de los salones asignados a este usuario.
+        No es un endpoint de administración — no expone la institución entera.
+        """
+        if role not in (UserRole.TEACHER, UserRole.PAE_OPERATOR):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado")
+
+        row = await self.repo.get_for_teacher(
+            student_id=student_id,
+            institution_id=institution_id,
+            user_id=user_id,
+            academic_year=date.today().year,
+        )
+        if not row:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Estudiante no encontrado")
+        student, grade_name, group_name, subject = row
+
+        guardians = await self.guardian_repo.list_by_student(student.id)
+        base = self._to_response(student, grade_name, group_name, subject)
+        return StudentDetailResponse(
+            **base.model_dump(),
+            guardians=[GuardianResponse.model_validate(g) for g in guardians],
+        )
 
     async def set_photo(
         self,

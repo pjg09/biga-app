@@ -73,6 +73,57 @@ La foto **no** entra en esta transacción: sigue siendo un paso aparte y no-fata
 crear, vía `POST /students/{id}/photo`. Si falla, el estudiante ya quedó creado — el front
 solo muestra un toast de error.
 
+`AdminStudentCreate` también acepta `is_pae_enrolled: bool = false` — si viene en `true`, la
+misma transacción inscribe al estudiante en el PAE del año vigente (calcula
+`enrollment_hash` igual que `PAEService.enroll_student`, ver `docs/pae.md`). Es la única
+forma de inscribir al PAE desde el alta; el flujo viejo de una columna "PAE" separada en la
+tabla con botón "Inscribir" se retiró — ahora es un switch dentro de este mismo formulario
+(y del de edición, abajo).
+
+### `GET /admin/students/{id}` / `PUT /admin/students/{id}` — detalle y edición, solo ADMIN
+
+`GET` devuelve la ficha completa para la consola de admin: los mismos campos que la lista
+más `grade_id`/`group_id` **en crudo** (no solo los nombres) y `guardians[].id` — el
+formulario de edición los necesita para preseleccionar `<select>` y para que `PUT` sepa qué
+acudiente es cuál. También trae `is_pae_enrolled` (`true` si existe una fila en
+`pae_enrollments` para el año vigente con `is_active=true`).
+
+```json
+{ "id": "…", "document_number": "…", "first_name": "…", "last_name": "…", "birth_date": "…",
+  "photo_url": "https://…", "is_active": true,
+  "grade_id": "…", "grade_name": "Once", "group_id": "…", "group_name": "A",
+  "is_pae_enrolled": true,
+  "guardians": [{ "id": "…", "full_name": "…", "relationship": "MADRE", "email": "…",
+                  "phone": null, "is_primary": true }] }
+```
+
+`PUT` (`AdminStudentUpdate`) es la contraparte de `POST /admin/students`, misma transacción
+atómica (`AdminManagementService.update_student_full`), mismas reglas de validación
+(documento único, exactamente un acudiente primario, `group_id` debe existir). Diferencias
+por ser una edición y no un alta:
+
+- **Matrícula**: si ya existe una fila en `student_groups` para el año vigente, se actualiza
+  su `group_id` in-place; si no existe y se manda `group_id`, se crea. Si se manda
+  `group_id: null` y había una matrícula activa, se pone `is_active=false` (no se borra la
+  fila — mismo patrón de "ocultar sin borrar" del resto del sistema).
+- **Acudientes, reconciliados por `id`**: cada item de `guardians[]` con `id` existente se
+  actualiza in-place; sin `id`, se crea. Un acudiente que existía pero no viene en el payload
+  se intenta borrar — **excepto si tiene notificaciones históricas** (`notifications_log.
+  guardian_id` es FK `NOT NULL` sin `ON DELETE`): en ese caso el endpoint responde `409` con
+  el nombre del acudiente, y el borrado nunca se intenta (la verificación es previa —
+  `GuardianRepository.has_notifications` — porque un `DELETE` que falla a mitad de la
+  transacción deja la sesión async inutilizable para el resto del request).
+- **`is_pae_enrolled`**: alterna la inscripción PAE del año vigente.
+  - `true` sin inscripción previa → crea una (igual que en el alta).
+  - `true` con una inscripción existente pero `is_active=false` → la reactiva (pone
+    `is_active=true` en la misma fila; **no** crea una nueva — `UNIQUE(student_id,
+    academic_year)` lo impediría).
+  - `false` con inscripción activa → la desactiva (`is_active=false`).
+  - En ningún caso se tocan `student_id`/`institution_id`/`academic_year`/`enrolled_at`/
+    `enrollment_hash` — esos son de solo lectura tras crearse, es la regla crítica del PAE
+    (`docs/pae.md`). `is_active` es la única columna de estado, existía en el schema desde
+    el principio pero no tenía ningún endpoint que la escribiera hasta ahora.
+
 ---
 
 ## Endpoints
@@ -89,10 +140,11 @@ El recorte vive en `StudentService.list_students`, no en el front — cualquiera
 al endpoint a mano.
 
 `grade_id`/`group_id` (opcionales) **solo filtran el listado del ADMIN** — el de
-docente/operador PAE ya viene acotado a sus propios salones y los ignora. Implementado con
-`LEFT JOIN` a `student_groups`/`groups`/`grades` en `StudentRepository.list_by_institution`
-(no `INNER JOIN`: un estudiante sin matrícula activa debe seguir apareciendo, solo que sin
-`grade_name`/`group_name`).
+docente/operador PAE ya viene acotado a sus propios salones y los ignora (el filtro de
+grado/salón/materia de "Mis estudiantes" se resuelve en el front sobre la lista ya
+acotada, ver más abajo). Implementado con `LEFT JOIN` a `student_groups`/`groups`/`grades`
+en `StudentRepository.list_by_institution` (no `INNER JOIN`: un estudiante sin matrícula
+activa debe seguir apareciendo, solo que sin `grade_name`/`group_name`).
 
 ```json
 [{ "id": "…", "document_number": "1010100001", "first_name": "Mariana", "last_name": "Gómez",
@@ -100,9 +152,38 @@ docente/operador PAE ya viene acotado a sus propios salones y los ignora. Implem
    "grade_name": "Once", "group_name": "A" }]
 ```
 
+El listado de docente/operador PAE (`StudentRepository.list_for_teacher`) también trae
+`grade_name`/`group_name`, más `subject`: el nombre de la materia (catálogo `subjects`, vía
+`user_groups.subject_id` — ver `docs/database-schema.md` y `docs/admin.md`) que **ese**
+docente dicta en **ese** salón. `outerjoin` a `subjects`: `subject_id` es nullable (una
+asignación docente-salón puede no tener materia cargada), y el estudiante debe seguir
+apareciendo en el listado aunque `subject` salga `null`. A diferencia del admin, el join
+a `grades`/`groups` acá es `INNER` (no `LEFT`): el listado ya viene acotado a salones con
+asignación docente-grupo, así que grado/salón siempre existen.
+
 No confundir con `GET /students/search` (abajo), que **sigue alcanzando a toda la
 institución** a propósito: convivencia debe poder registrar a cualquier estudiante, sea o
 no de sus salones.
+
+### `GET /students/{id}` — ficha de detalle (solo `TEACHER`/`PAE_OPERATOR`)
+Ficha completa de un estudiante del módulo de Aula: los mismos campos de `GET /students`
+más `guardians` (todos los acudientes del estudiante, principal primero — `is_primary`
+marca cuál). Mismo recorte que el listado: 404 si el estudiante no está en un salón
+asignado a este usuario (`StudentRepository.get_for_teacher`), 403 si el rol es `ADMIN` —
+no es un endpoint de gestión, no expone la institución entera.
+
+Declarado **después** de `GET /students/search` en `routers/students.py` a propósito:
+Starlette resuelve rutas por orden de registro, no por especificidad — si `/{student_id}`
+fuera el primer `GET` de un solo segmento, `/students/search` haría match ahí tratando
+"search" como un UUID inválido (422) y nunca llegaría a `search_students`.
+
+```json
+{ "id": "…", "document_number": "1010100001", "first_name": "Mariana", "last_name": "Gómez",
+  "birth_date": "2014-03-12", "photo_url": "https://…", "is_active": true, "created_at": "…",
+  "grade_name": "Once", "group_name": "A", "subject": "Matemáticas",
+  "guardians": [{ "id": "…", "full_name": "…", "relationship": "MADRE", "email": "…",
+                  "phone": "…", "is_primary": true }] }
+```
 
 ### `GET /students/search`
 Búsqueda cross-módulo, usada por el componente `StudentSearch` (Convivencia, Historial) y
@@ -164,23 +245,40 @@ Notifiers de todo el sistema para saber a quién avisar.
 para el operador PAE: el operador PAE es un docente con funciones extra, así que su módulo
 de Aula es literalmente el del docente, sin alta de estudiante ni matrícula.
 
-El modal de alta (`.dash__modal--wide`, más ancho que el resto de modales de la app, con
-scroll interno) tiene 3 secciones:
+El modal de alta/edición (`.dash__modal--wide`, más ancho que el resto de modales de la app,
+con scroll interno) tiene 4 secciones — el mismo formulario sirve para las dos cosas,
+`editingId` (`null` = alta) decide el título, el texto del botón y si se llama
+`createStudentFull`/`updateStudentFull`:
 
 1. **Datos personales** — documento, nombres, apellidos, fecha de nacimiento, foto (con
    preview de miniatura vía `URL.createObjectURL`, revocado al cambiar/quitar/cerrar).
 2. **Matrícula** (opcional) — Grado y Salón. Grado es puramente un filtro de UI (no viaja al
    backend); Salón es obligatorio si se elige Grado.
-3. **Acudientes** — lista repetible (agregar/quitar, mínimo 1), radio "Primario" mutuamente
+3. **PAE** — switch "Inscrito en el PAE del año vigente" (`.dash__switch`, componente CSS
+   reusable en `dashboard.css`). Reemplaza al viejo botón "Inscribir en PAE" de la tabla: ya
+   no hay columna "PAE" en el listado, la inscripción se marca desde acá tanto al crear como
+   al editar.
+4. **Acudientes** — lista repetible (agregar/quitar, mínimo 1), radio "Primario" mutuamente
    excluyente (solo visible con 2+ acudientes; con 1 solo, es primario por default sin
-   selector visible).
+   selector visible). Al editar, cada fila carga con su `id` (oculto, viaja en el estado del
+   form); al crear, `id` es siempre `null`.
 
 El grado/salón del modal (`form.gradeId`/`form.group_id`) es estado **separado** del filtro
 de la tabla de abajo (`gradeId`/`groupId`, nivel de componente) — ambos reusan el mismo
 fetch de `adminService.listGrades`/`listGroups`, sin duplicarlo.
 
-Tras crear con éxito, se recarga la tabla completa (`load()`) en vez de un push optimista:
-la respuesta de `POST /admin/students` no trae `grade_name`/`group_name`.
+Tras crear/editar con éxito, se recarga la tabla completa (`load()`) en vez de un push
+optimista: la respuesta no trae `grade_name`/`group_name`.
+
+### Ficha de detalle
+
+Cada fila de la tabla es clicable (ícono "ver ficha" en la primera columna, oculto en
+móvil — mismo patrón que la ficha de "Mis estudiantes" del docente/PAE, ver
+`TeacherStudentsView` en `web/src/pages/TeacherDashboard.jsx` y reusa sus clases CSS
+`.stu-detail__*`). Al hacer click se pide `GET /admin/students/{id}` y se muestra foto
+(con zoom), nombre, documento, estado, grado, salón, badge de estado PAE y la lista de
+acudientes. Un botón "Editar" abre el modal de arriba precargado con `AdminGuardianUpdate[]`
+(guardando los `id` para el reconcile) y `is_pae_enrolled` en el estado actual.
 
 Servicios: `web/src/services/students.js`, `web/src/services/admin.js`.
 

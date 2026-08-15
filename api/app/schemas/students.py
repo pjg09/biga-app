@@ -3,6 +3,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.guardian import GuardianResponse
+
 
 class StudentSearchResult(BaseModel):
     id: UUID
@@ -44,5 +46,12 @@ class StudentResponse(BaseModel):
     created_at: datetime
     grade_name: str | None = None
     group_name: str | None = None
+    # Solo poblado en el listado de docente/operador PAE ("Mis estudiantes"):
+    # la materia que ESE usuario dicta en el salón del estudiante.
+    subject: str | None = None
 
     model_config = {"from_attributes": True}
+
+
+class StudentDetailResponse(StudentResponse):
+    guardians: list[GuardianResponse] = []

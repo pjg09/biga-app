@@ -4,6 +4,7 @@ from app.models.institution import Institution  # noqa: F401
 from app.models.grade import Grade  # noqa: F401
 from app.models.group import Group  # noqa: F401
 from app.models.class_period import ClassPeriod  # noqa: F401
+from app.models.subject import Subject  # noqa: F401
 from app.models.user import User  # noqa: F401
 from app.models.user_group import UserGroup  # noqa: F401
 from app.models.student import Student  # noqa: F401

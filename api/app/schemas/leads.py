@@ -1,6 +1,3 @@
-from datetime import datetime
-from uuid import UUID
-
 from pydantic import BaseModel, EmailStr, Field
 
 
@@ -18,23 +15,3 @@ class LeadResponse(BaseModel):
     """
 
     received: bool = True
-
-
-class LeadItem(BaseModel):
-    """Un lead visto desde la consola de administración."""
-
-    id: UUID
-    email: str
-    source: str
-    notification_status: str
-    notification_error: str | None
-    notified_at: datetime | None
-    created_at: datetime
-
-    model_config = {"from_attributes": True}
-
-
-class LeadsPage(BaseModel):
-    items: list[LeadItem]
-    total: int  # total de leads que cumplen el filtro, no solo los de esta página
-    counts: dict[str, int]  # conteo por estado sobre TODOS los leads, sin filtrar

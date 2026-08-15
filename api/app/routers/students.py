@@ -11,7 +11,7 @@ from app.models.user import User
 from app.repositories.agendatorio_repository import AgendatorioRepository
 from app.repositories.guardian_repository import GuardianRepository
 from app.repositories.student_repository import StudentRepository
-from app.schemas.students import StudentCreate, StudentResponse, StudentSearchResult
+from app.schemas.students import StudentCreate, StudentDetailResponse, StudentResponse, StudentSearchResult
 from app.services.agendatorio_service import AgendatorioService
 from app.services.student_service import StudentService
 
@@ -34,7 +34,7 @@ def get_student_service(
     db: AsyncSession = Depends(get_db),
     storage: S3StorageAdapter = Depends(get_storage_adapter),
 ) -> StudentService:
-    return StudentService(StudentRepository(db), storage)
+    return StudentService(StudentRepository(db), storage, GuardianRepository(db))
 
 
 @router.post("", response_model=StudentResponse, status_code=status.HTTP_201_CREATED)
@@ -114,3 +114,24 @@ async def search_students(
         )
         for row in rows
     ]
+
+
+@router.get("/{student_id}", response_model=StudentDetailResponse)
+async def get_student_detail(
+    student_id: UUID,
+    current_user: User = Depends(get_current_user),
+    service: StudentService = Depends(get_student_service),
+):
+    """Ficha de detalle del módulo de Aula (docente/operador PAE).
+
+    Declarado DESPUÉS de `/search` a propósito: si fuera el primer `GET
+    /{student_id}` del router, "search" haría match acá como si fuera un
+    student_id y nunca llegaría a `search_students` (Starlette resuelve por
+    orden de registro, no por especificidad de patrón).
+    """
+    return await service.get_student_detail(
+        student_id=student_id,
+        institution_id=current_user.institution_id,
+        user_id=current_user.id,
+        role=current_user.role,
+    )

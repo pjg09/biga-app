@@ -1,8 +1,12 @@
 # Módulo Admin — Referencia funcional
 
-Consola de gestión institucional: estadísticas, personal, académico (grados/salones),
-horarios y solicitudes comerciales de la landing. Todo bajo el prefijo `/admin`, todo
-gateado con `require_admin` salvo donde se indique lo contrario. El alta de estudiante con
+Consola de gestión institucional: estadísticas, personal, académico (grados/salones) y
+horarios. Todo bajo el prefijo `/admin`, todo gateado con `require_admin` salvo donde se
+indique lo contrario. Es la consola que usa el colegio — no expone datos comerciales de
+BIGA. Las solicitudes de demo de la landing (`POST /leads`, tabla `demo_leads`) se siguen
+capturando y notificando por correo (`LEADS_NOTIFY_EMAIL`, ver `docs/database-schema.md`),
+pero el equipo de BIGA las gestiona por fuera de este dashboard, no hay visor acá. El alta
+de estudiante con
 matrícula y acudientes vive documentada en `docs/students.md` (aunque su endpoint,
 `POST /admin/students`, cuelga de este mismo router) — acá solo la matrícula standalone y
 el resto de "Académico".
@@ -48,11 +52,25 @@ para esta métrica, aunque dispare la notificación de inasistencia si no se mar
 
 ### `POST /admin/users`
 Crea un usuario (`TEACHER`/`PAE_OPERATOR`/`ADMIN`) con contraseña ya hasheada (`hash_password`,
-bcrypt directo — ver pitfall de `passlib` en `CLAUDE.md`). Sin chequeo de unicidad de
-`document_number`, solo de `email` (`409` si ya existe).
+bcrypt directo — ver pitfall de `passlib` en `CLAUDE.md`). `document_number` es obligatorio y
+único por institución (`UNIQUE(institution_id, document_number)`, migración `e2f9c6a1d4b7`,
+mismo patrón que `students.document_number`) — `409` si ya existe, igual que `email` (única
+globalmente, no por institución, porque es el login).
 
 ### `GET /admin/users`
 Lista completa de la institución, ordenada por rol y nombre.
+
+### `GET /admin/users/{id}` / `PUT /admin/users/{id}`
+Ficha de detalle y edición — mismo patrón que `GET`/`PUT /admin/students/{id}` (`docs/students.md`):
+la consola de Personal tiene un botón "+ Agregar miembro del personal" que abre el alta en un
+modal aparte, y cada fila abre una ficha de solo lectura con un botón "Editar" que reabre el
+mismo modal precargado.
+
+`AdminUserUpdate` tiene los mismos campos que `AdminUserCreate` **excepto** que `password` es
+opcional: vacío u omitido no toca la contraseña actual; si viene, reemplaza el hash (mismo
+mínimo de 8 caracteres). El formulario del front lo refleja con el placeholder "dejar en blanco
+para no cambiarla" y sin `required` en modo edición. Duplicado de `email` o `document_number` →
+`409` (excluyendo al propio usuario en ambos casos, para poder editar sin cambiarlos).
 
 ---
 
@@ -61,6 +79,12 @@ Lista completa de la institución, ordenada por rol y nombre.
 ### `POST /admin/grades` / `GET /admin/grades`
 `GradeCreate(name, level)`, `level` entre 1 y 11. Un grado duplicado por `level` en la
 misma institución → `409`.
+
+### `POST /admin/subjects` / `GET /admin/subjects` — catálogo de materias
+`SubjectCreate(name)`. Materia duplicada por nombre en la misma institución → `409`. Sin
+`PUT`/`DELETE`, igual que grados/grupos: alta simple, no editable desde la API. Alimenta el
+selector de materia de "Asignar docente a grupo" (abajo) y el filtro "materia" del módulo de
+Aula del docente (`docs/students.md`).
 
 ### `POST /admin/groups` / `GET /admin/groups`
 `GroupCreate(grade_id, name, academic_year)`. El grado debe existir en la institución (`404`
@@ -85,38 +109,23 @@ ya existía antes de que el alta atómica incluyera este paso, o para cambiarlo 
 no exista ya un bloque con el mismo `(group_id, period_order, day_of_week)` (`409`).
 
 ### `POST /admin/teacher-assignments` / `GET /admin/teacher-assignments`
-`UserGroupCreate(user_id, group_id, academic_year)` — asigna un docente a un salón para un
-año. Esta tabla (`user_groups`) es la que usa `StudentService.list_students` para acotar
-"Mis estudiantes" de `TEACHER`/`PAE_OPERATOR` (ver `docs/students.md`), y la que determina
-qué salones ve un docente en Horario/Asistencia — **no** el horario de clases en sí
+`UserGroupCreate(user_id, group_id, academic_year, subject_id=None)` — asigna un docente a un
+salón para un año, opcionalmente con la materia que dicta ahí (`subject_id`, FK al catálogo
+`subjects` de arriba, `NULL` si se omite; `404` si el `subject_id` no existe en la
+institución). Esta tabla (`user_groups`) es la que usa `StudentService.list_students` para
+acotar "Mis estudiantes" de `TEACHER`/`PAE_OPERATOR` (ver `docs/students.md`), y la que
+determina qué salones ve un docente en Horario/Asistencia — **no** el horario de clases en sí
 (`class_periods`), que es una tabla distinta.
 
----
+`subject_id` alimenta el filtro "materia" del módulo de Aula del docente: sin valor, ese
+docente simplemente no tiene materia asociada a ese salón y el filtro de materia lo ignora
+(no rompe nada, solo queda sin dato). La respuesta (`UserGroupResponse`) trae también
+`subject_name` resuelto (join a `subjects`) para no forzar un segundo fetch en el front.
 
-## Solicitudes comerciales (`demo_leads`)
-
-### `GET /admin/leads`
-```
-GET /admin/leads?status=PENDING&limit=50&offset=0
-```
-
-Lee las solicitudes de demo que llegan del formulario público de la landing (`POST /leads`,
-sin autenticación). **Caso especial de aislamiento**: `demo_leads` es la única tabla del
-sistema sin `institution_id` — un visitante que pide una demo no pertenece a ninguna
-institución todavía, así que no hay tenant que filtrar en el `WHERE`.
-
-El aislamiento lo da `require_leads_reader` (no un filtro de query): exige `ADMIN` **y**
-estar en la lista blanca `LEADS_ADMIN_EMAILS` (env var). Con esa lista vacía, **cualquier
-ADMIN de cualquier institución ve todos los leads de todos los demás** — solo sostenible
-mientras haya una única institución real en la BD. Hay que llenar `LEADS_ADMIN_EMAILS` antes
-de dar de alta a una segunda institución, o reemplazar el mecanismo por un rol de
-superusuario real.
-
-El estado de envío del aviso interno (a `LEADS_NOTIFY_EMAIL`) vive en columnas
-`notification_*` propias de `demo_leads`, no en `notifications_log` (esa tabla exige
-`institution_id`/`student_id`/`guardian_id` `NOT NULL`, y un lead no tiene ninguno de los
-tres). El endpoint público de creación (`POST /leads`) tiene rate limit por IP en Redis; si
-Redis cae, deja pasar la petición en vez de perder el lead.
+Antes de la migración `d7e1a4c8f5b3` la materia era texto libre directo en `user_groups`
+(sin catálogo) — se migró justamente porque dos docentes del mismo salón podían dictar la
+misma materia escrita distinto ("Matemáticas" vs "Mate") y el filtro los trataba como
+valores diferentes.
 
 ---
 
@@ -125,19 +134,18 @@ Redis cae, deja pasar la petición en vez de perder el lead.
 | Acción | Endpoint | Quién |
 |---|---|---|
 | Estadísticas | `GET /admin/stats` | `ADMIN` |
-| Usuarios (crear/listar) | `POST`/`GET /admin/users` | `ADMIN` |
-| Grados, salones (crear/listar) | `POST`/`GET /admin/grades`, `/admin/groups` | `ADMIN` |
+| Usuarios (alta/listar/detalle/edición) | `POST`/`GET`/`PUT /admin/users[/{id}]` | `ADMIN` |
+| Grados, salones, materias (crear/listar) | `POST`/`GET /admin/grades`, `/admin/groups`, `/admin/subjects` | `ADMIN` |
 | Matrícula standalone | `POST /admin/student-groups` | `ADMIN` |
-| Alta completa de estudiante | `POST /admin/students` | `ADMIN` (ver `docs/students.md`) |
+| Alta/detalle/edición de estudiante | `POST`/`GET`/`PUT /admin/students[/{id}]` | `ADMIN` (ver `docs/students.md`) |
 | Horarios (crear/listar) | `POST`/`GET /admin/class-periods` | `ADMIN` |
 | Asignación docente-grupo | `POST`/`GET /admin/teacher-assignments` | `ADMIN` |
-| Solicitudes de demo | `GET /admin/leads` | `ADMIN` + `LEADS_ADMIN_EMAILS` |
 
 ---
 
 ## Frontend
 
-`AdminDashboard.jsx` — nav lateral con 6 secciones:
+`AdminDashboard.jsx` — nav lateral con 5 secciones:
 
 | Nav | Vista | Contenido |
 |---|---|---|
@@ -146,7 +154,6 @@ Redis cae, deja pasar la petición en vez de perder el lead.
 | Personal | `StaffView` | Alta y listado de usuarios |
 | Académico | `AcademicView` | Crear grado, crear grupo, matricular estudiante en grupo (standalone) |
 | Horarios | `ScheduleView` | Bloques de horario (`class_periods`) + asignar docente a grupo |
-| Solicitudes | `LeadsView` | Bandeja de leads de la landing, filtrable por `status` |
 
 Servicio: `web/src/services/admin.js` (`adminService`).
 

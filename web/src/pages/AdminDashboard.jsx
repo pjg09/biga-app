@@ -16,24 +16,7 @@ const NAV_TITLES = {
   staff:     'Personal',
   academic:  'Académico',
   schedule:  'Horarios',
-  leads:     'Solicitudes de demo',
 };
-
-// Estados de envío del aviso interno de un lead. SUPPRESSED = duplicado dentro
-// de la ventana de 24h, no se intentó enviar a propósito.
-const LEAD_STATUS = {
-  SENT:       { label: 'Avisado',    cls: 'green' },
-  FAILED:     { label: 'Falló',      cls: 'red' },
-  PENDING:    { label: 'En cola',    cls: 'yellow' },
-  SUPPRESSED: { label: 'Duplicado',  cls: 'gray' },
-};
-const LEAD_FILTERS = [
-  { id: '',           label: 'Todos' },
-  { id: 'FAILED',     label: 'Fallidos' },
-  { id: 'SENT',       label: 'Avisados' },
-  { id: 'PENDING',    label: 'En cola' },
-  { id: 'SUPPRESSED', label: 'Duplicados' },
-];
 
 function greeting() {
   const h = new Date().getHours();
@@ -100,10 +83,6 @@ export default function AdminDashboard() {
             <NavItem id="academic" active={activeNav} icon={<ListIcon />}     label="Académico"   onClick={setActiveNav} />
             <NavItem id="schedule" active={activeNav} icon={<CalendarIcon />} label="Horarios"    onClick={setActiveNav} />
           </div>
-          <div className="dash__nav-section">
-            <p className="dash__nav-label">Comercial</p>
-            <NavItem id="leads" active={activeNav} icon={<InboxIcon />} label="Solicitudes" onClick={setActiveNav} />
-          </div>
         </nav>
 
         <div className="dash__sidebar-footer">
@@ -144,7 +123,6 @@ export default function AdminDashboard() {
           {activeNav === 'staff'    && <StaffView />}
           {activeNav === 'academic' && <AcademicView />}
           {activeNav === 'schedule' && <ScheduleView />}
-          {activeNav === 'leads'    && <LeadsView />}
         </main>
       </div>
     </div>
@@ -208,13 +186,25 @@ function OverviewView() {
 }
 
 /* ── Personal (usuarios) ─────────────────────────────────────── */
+const EMPTY_STAFF_FORM = { first_name: '', last_name: '', document_number: '', email: '', password: '', role: 'TEACHER' };
+
 function StaffView() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [form, setForm] = useState({ first_name: '', last_name: '', document_number: '', email: '', password: '', role: 'TEACHER' });
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState(EMPTY_STAFF_FORM);
   const [saving, setSaving] = useState(false);
   const { toast, showToast } = useToast();
+
+  const [query, setQuery] = useState('');
+  const [roleFilter, setRoleFilter] = useState('');
+
+  const [selectedId, setSelectedId] = useState(null);
+  const [detail, setDetail] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -226,57 +216,236 @@ function StaffView() {
 
   const upd = (f) => (e) => setForm(p => ({ ...p, [f]: e.target.value }));
 
+  const openCreate = useCallback(() => {
+    setEditingId(null);
+    setForm(EMPTY_STAFF_FORM);
+    setShowForm(true);
+  }, []);
+
+  const openEdit = useCallback((u) => {
+    setEditingId(u.id);
+    setForm({
+      first_name: u.first_name, last_name: u.last_name, document_number: u.document_number,
+      email: u.email, password: '', role: u.role,
+    });
+    setSelectedId(null);
+    setDetail(null);
+    setShowForm(true);
+  }, []);
+
+  const closeForm = useCallback(() => {
+    if (saving) return;
+    setShowForm(false);
+    setEditingId(null);
+    setForm(EMPTY_STAFF_FORM);
+  }, [saving]);
+
+  const openDetail = useCallback(async (id) => {
+    setSelectedId(id);
+    setDetail(null);
+    setDetailError(null);
+    setDetailLoading(true);
+    try {
+      setDetail(await adminService.getUserDetail(id));
+    } catch (e) {
+      setDetailError(e.message);
+    } finally {
+      setDetailLoading(false);
+    }
+  }, []);
+
+  const closeDetail = useCallback(() => {
+    setSelectedId(null);
+    setDetail(null);
+    setDetailError(null);
+  }, []);
+
   const submit = useCallback(async (e) => {
     e.preventDefault();
     setSaving(true);
+    const isEditing = Boolean(editingId);
     try {
-      await adminService.createUser(form);
-      showToast(`${form.first_name} ${form.last_name} creado`);
-      setForm({ first_name: '', last_name: '', document_number: '', email: '', password: '', role: 'TEACHER' });
+      const payload = {
+        first_name: form.first_name, last_name: form.last_name,
+        document_number: form.document_number, email: form.email, role: form.role,
+        ...(isEditing ? { password: form.password || undefined } : { password: form.password }),
+      };
+      const saved = isEditing
+        ? await adminService.updateUser(editingId, payload)
+        : await adminService.createUser(payload);
+      showToast(`${saved.first_name} ${saved.last_name} ${isEditing ? 'actualizado' : 'creado'}`);
+      setShowForm(false);
+      setEditingId(null);
+      setForm(EMPTY_STAFF_FORM);
       await load();
     } catch (err) {
-      showToast(err.status === 409 ? 'Ya existe un usuario con ese correo' : err.message, 'error');
+      showToast(err.message, 'error');
     } finally { setSaving(false); }
-  }, [form, showToast, load]);
+  }, [form, editingId, showToast, load]);
 
   if (loading) return <div className="dash__empty"><Spinner /><span>Cargando personal…</span></div>;
   if (error) return <div className="dash__empty"><AlertIcon color="#ef4444" /><span>{error}</span></div>;
 
+  const filtered = users.filter(u => {
+    if (query.trim()) {
+      const q = query.toLowerCase();
+      const matches = u.first_name.toLowerCase().includes(q)
+        || u.last_name.toLowerCase().includes(q)
+        || u.document_number.includes(q)
+        || u.email.toLowerCase().includes(q);
+      if (!matches) return false;
+    }
+    if (roleFilter && u.role !== roleFilter) return false;
+    return true;
+  });
+  const hasFilters = Boolean(query.trim() || roleFilter);
+
   return (
     <>
       <Toast toast={toast} />
-      <form className="card att-form" onSubmit={submit}>
-        <p className="dash__list-title">Agregar miembro del personal</p>
-        <div className="adm-grid">
-          <Field label="Nombres"><input className="dash__field-input" value={form.first_name} onChange={upd('first_name')} required maxLength={100} /></Field>
-          <Field label="Apellidos"><input className="dash__field-input" value={form.last_name} onChange={upd('last_name')} required maxLength={100} /></Field>
-          <Field label="Documento"><input className="dash__field-input" value={form.document_number} onChange={upd('document_number')} required minLength={3} maxLength={20} /></Field>
-          <Field label="Correo"><input className="dash__field-input" type="email" value={form.email} onChange={upd('email')} required /></Field>
-          <Field label="Contraseña"><input className="dash__field-input" type="password" value={form.password} onChange={upd('password')} required minLength={8} placeholder="mín. 8 caracteres" /></Field>
-          <Field label="Rol">
-            <select className="dash__field-input" value={form.role} onChange={upd('role')}>
-              <option value="TEACHER">Docente</option>
-              <option value="PAE_OPERATOR">Operador PAE</option>
-              <option value="ADMIN">Administrador</option>
-            </select>
-          </Field>
+
+      <div className="dash__search-wrap dash__search-wrap--btn">
+        <div className="dash__search-inner" style={{ flex: 1 }}>
+          <SearchIcon />
+          <input className="dash__search" type="search" placeholder="Buscar por nombre, documento o correo…"
+            value={query} onChange={e => setQuery(e.target.value)} autoComplete="off" />
+          {query && (
+            <button className="dash__search-clear" onClick={() => setQuery('')} aria-label="Limpiar búsqueda">
+              <CloseIcon size={14} />
+            </button>
+          )}
         </div>
-        <button className="btn--confirm" type="submit" disabled={saving}>{saving ? 'Creando…' : 'Crear usuario'}</button>
-      </form>
+        <select className="dash__field-input" style={{ width: 'auto', flex: '0 0 170px' }}
+          value={roleFilter} onChange={e => setRoleFilter(e.target.value)}>
+          <option value="">Todos los roles</option>
+          <option value="TEACHER">Docente</option>
+          <option value="PAE_OPERATOR">Operador PAE</option>
+          <option value="ADMIN">Administrador</option>
+        </select>
+        <button className="btn--confirm dash__search-btn" onClick={openCreate}>
+          + Agregar miembro del personal
+        </button>
+      </div>
 
       <div className="card dash__list-card">
-        <div className="dash__list-header"><span className="dash__list-title">Personal de la institución</span><span className="dash__student-group">{users.length}</span></div>
-        {users.map((u, i) => (
-          <div className="dash__student-row" key={u.id}>
+        <div className="dash__list-header"><span className="dash__list-title">Personal de la institución</span><span className="dash__student-group">{filtered.length}</span></div>
+        {filtered.length === 0 ? (
+          <div className="dash__empty" style={{ padding: '32px 20px' }}>
+            <UsersIcon />
+            <span>{users.length === 0 ? 'Aún no hay personal registrado.' : hasFilters ? 'Sin resultados para ese criterio.' : 'Sin personal.'}</span>
+          </div>
+        ) : filtered.map((u, i) => (
+          <button type="button" className="dash__student-row att-class-row stu-row" key={u.id} onClick={() => openDetail(u.id)}>
+            <span className="stu-row__detail-icon" aria-hidden="true"><EyeIcon /></span>
             <div className="dash__student-avatar" style={{ background: '#e0e7ff', color: '#4f46e5' }}>{initials(u.first_name, u.last_name)}</div>
             <div className="dash__student-info">
               <p className="dash__student-name">{u.first_name} {u.last_name}</p>
               <p className="dash__student-group">{u.email}</p>
             </div>
             <span className={`dash__badge dash__badge--${ROLE_CLASS[u.role]}`}>{ROLE_LABEL[u.role]}</span>
-          </div>
+          </button>
         ))}
       </div>
+
+      {showForm && (
+        <div className="dash__modal-overlay" onClick={closeForm}>
+          <form className="dash__modal dash__modal--form" onClick={e => e.stopPropagation()} onSubmit={submit} role="dialog" aria-modal="true">
+            <button type="button" className="dash__modal-close" onClick={closeForm} aria-label="Cerrar" disabled={saving}>
+              <CloseIcon />
+            </button>
+            <p className="dash__modal-label">{editingId ? 'Editar miembro del personal' : 'Agregar miembro del personal'}</p>
+
+            <div className="dash__form-grid">
+              <label className="dash__field">
+                <span className="dash__field-label">Nombres</span>
+                <input className="dash__field-input" value={form.first_name} onChange={upd('first_name')} required maxLength={100} autoComplete="off" />
+              </label>
+              <label className="dash__field">
+                <span className="dash__field-label">Apellidos</span>
+                <input className="dash__field-input" value={form.last_name} onChange={upd('last_name')} required maxLength={100} autoComplete="off" />
+              </label>
+              <label className="dash__field">
+                <span className="dash__field-label">Documento</span>
+                <input className="dash__field-input" value={form.document_number} onChange={upd('document_number')} required minLength={3} maxLength={20} autoComplete="off" />
+              </label>
+              <label className="dash__field">
+                <span className="dash__field-label">Correo</span>
+                <input className="dash__field-input" type="email" value={form.email} onChange={upd('email')} required autoComplete="off" />
+              </label>
+              <label className="dash__field">
+                <span className="dash__field-label">
+                  Contraseña {editingId && <span className="dash__field-optional">(dejar en blanco para no cambiarla)</span>}
+                </span>
+                <input className="dash__field-input" type="password" value={form.password} onChange={upd('password')}
+                  required={!editingId} minLength={8} placeholder="mín. 8 caracteres" autoComplete="new-password" />
+              </label>
+              <label className="dash__field">
+                <span className="dash__field-label">Rol</span>
+                <select className="dash__field-input" value={form.role} onChange={upd('role')}>
+                  <option value="TEACHER">Docente</option>
+                  <option value="PAE_OPERATOR">Operador PAE</option>
+                  <option value="ADMIN">Administrador</option>
+                </select>
+              </label>
+            </div>
+
+            <div className="dash__modal-actions">
+              <button type="button" className="btn--secondary" onClick={closeForm} disabled={saving}>Cancelar</button>
+              <button type="submit" className="btn--confirm" disabled={saving} aria-busy={saving}>
+                {saving ? <><Spinner color="white" size={16} /> Guardando…</> : editingId ? 'Guardar cambios' : 'Crear usuario'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {selectedId && (
+        <div className="dash__modal-overlay" onClick={closeDetail}>
+          <div className="dash__modal" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true">
+            <button className="dash__modal-close" onClick={closeDetail} aria-label="Cerrar"><CloseIcon /></button>
+            <p className="dash__modal-label">Ficha del personal</p>
+
+            {detailLoading ? (
+              <div className="dash__empty" style={{ padding: '24px 0' }}><Spinner /><span>Cargando…</span></div>
+            ) : detailError ? (
+              <div className="dash__empty" style={{ padding: '24px 0' }}><AlertIcon color="#ef4444" /><span>{detailError}</span></div>
+            ) : detail && (
+              <>
+                <div className="dash__modal-student">
+                  <div className="dash__modal-avatar" style={{ background: '#e0e7ff', color: '#4f46e5' }}>
+                    {initials(detail.first_name, detail.last_name)}
+                  </div>
+                  <div className="dash__modal-info">
+                    <p className="dash__modal-name">{detail.first_name} {detail.last_name}</p>
+                    <p className="dash__modal-doc">Doc. {detail.document_number}</p>
+                  </div>
+                  <span className={`dash__badge dash__badge--${detail.is_active ? 'green' : 'red'}`}>
+                    {detail.is_active ? 'Activo' : 'Inactivo'}
+                  </span>
+                </div>
+
+                <div className="stu-detail__grid">
+                  <div className="stu-detail__item">
+                    <span className="dash__field-label">Correo</span>
+                    <span className="dash__student-group">{detail.email}</span>
+                  </div>
+                  <div className="stu-detail__item">
+                    <span className="dash__field-label">Rol</span>
+                    <span className={`dash__badge dash__badge--${ROLE_CLASS[detail.role]}`} style={{ marginTop: 2 }}>
+                      {ROLE_LABEL[detail.role]}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="dash__modal-actions">
+                  <button type="button" className="btn--secondary" onClick={closeDetail}>Cerrar</button>
+                  <button type="button" className="btn--confirm" onClick={() => openEdit(detail)}>Editar</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -285,10 +454,12 @@ function StaffView() {
 function AcademicView() {
   const [grades, setGrades] = useState([]);
   const [groups, setGroups] = useState([]);
+  const [subjects, setSubjects] = useState([]);
   const { toast, showToast } = useToast();
 
   const [grade, setGrade] = useState({ name: '', level: '' });
   const [group, setGroup] = useState({ grade_id: '', name: '', academic_year: YEAR });
+  const [subject, setSubject] = useState({ name: '' });
 
   // Matrícula
   const [q, setQ] = useState('');
@@ -298,8 +469,8 @@ function AcademicView() {
 
   const load = useCallback(async () => {
     try {
-      const [g, gr] = await Promise.all([adminService.listGrades(), adminService.listGroups()]);
-      setGrades(g); setGroups(gr);
+      const [g, gr, s] = await Promise.all([adminService.listGrades(), adminService.listGroups(), adminService.listSubjects()]);
+      setGrades(g); setGroups(gr); setSubjects(s);
     } catch (e) { showToast(e.message, 'error'); }
   }, [showToast]);
   useEffect(() => { load(); }, [load]);
@@ -322,6 +493,11 @@ function AcademicView() {
     e.preventDefault();
     try { await adminService.createGroup({ grade_id: group.grade_id, name: group.name, academic_year: Number(group.academic_year) }); showToast('Grupo creado'); setGroup({ grade_id: '', name: '', academic_year: YEAR }); load(); }
     catch (err) { showToast(err.message, 'error'); }
+  };
+  const submitSubject = async (e) => {
+    e.preventDefault();
+    try { await adminService.createSubject({ name: subject.name }); showToast('Materia creada'); setSubject({ name: '' }); load(); }
+    catch (err) { showToast(err.status === 409 ? 'Ya existe una materia con ese nombre' : err.message, 'error'); }
   };
   const submitEnroll = async (e) => {
     e.preventDefault();
@@ -354,6 +530,13 @@ function AcademicView() {
           <Field label="Año académico"><input className="dash__field-input" type="number" value={group.academic_year} onChange={e => setGroup(p => ({ ...p, academic_year: e.target.value }))} required /></Field>
           <button className="btn--confirm" type="submit">Crear grupo</button>
           <div className="adm-chips">{groups.map(g => <span className="adm-chip" key={g.id}>{g.grade_name} {g.name} · {g.academic_year}</span>)}</div>
+        </form>
+
+        <form className="card att-form" onSubmit={submitSubject}>
+          <p className="dash__list-title">Crear materia</p>
+          <Field label="Nombre"><input className="dash__field-input" value={subject.name} onChange={e => setSubject({ name: e.target.value })} required placeholder="Matemáticas" maxLength={100} /></Field>
+          <button className="btn--confirm" type="submit">Crear materia</button>
+          <div className="adm-chips">{subjects.map(s => <span className="adm-chip" key={s.id}>{s.name}</span>)}</div>
         </form>
       </div>
 
@@ -397,18 +580,19 @@ function ScheduleView() {
   const [groups, setGroups] = useState([]);
   const [users, setUsers] = useState([]);
   const [assignments, setAssignments] = useState([]);
+  const [subjects, setSubjects] = useState([]);
   const { toast, showToast } = useToast();
 
   const [selGroup, setSelGroup] = useState('');
   const [periods, setPeriods] = useState([]);
   const [cp, setCp] = useState({ name: 'Primera hora', period_order: 1, start_time: '07:00', end_time: '07:50', day_of_week: 1 });
 
-  const [assign, setAssign] = useState({ user_id: '', group_id: '' });
+  const [assign, setAssign] = useState({ user_id: '', group_id: '', subject_id: '' });
 
   const load = useCallback(async () => {
     try {
-      const [g, u, a] = await Promise.all([adminService.listGroups(), adminService.listUsers(), adminService.listAssignments()]);
-      setGroups(g); setUsers(u); setAssignments(a);
+      const [g, u, a, s] = await Promise.all([adminService.listGroups(), adminService.listUsers(), adminService.listAssignments(), adminService.listSubjects()]);
+      setGroups(g); setUsers(u); setAssignments(a); setSubjects(s);
     } catch (e) { showToast(e.message, 'error'); }
   }, [showToast]);
   useEffect(() => { load(); }, [load]);
@@ -434,8 +618,11 @@ function ScheduleView() {
   const submitAssign = async (e) => {
     e.preventDefault();
     try {
-      await adminService.assignTeacher({ user_id: assign.user_id, group_id: assign.group_id, academic_year: YEAR });
-      showToast('Docente asignado'); setAssign({ user_id: '', group_id: '' }); load();
+      await adminService.assignTeacher({
+        user_id: assign.user_id, group_id: assign.group_id, academic_year: YEAR,
+        subject_id: assign.subject_id || null,
+      });
+      showToast('Docente asignado'); setAssign({ user_id: '', group_id: '', subject_id: '' }); load();
     } catch (err) { showToast(err.status === 409 ? 'Ya está asignado a ese grupo ese año' : err.message, 'error'); }
   };
 
@@ -487,6 +674,12 @@ function ScheduleView() {
               {groups.map(g => <option key={g.id} value={g.id}>{g.grade_name} {g.name} · {g.academic_year}</option>)}
             </select>
           </Field>
+          <Field label="Materia (opcional)">
+            <select className="dash__field-input" value={assign.subject_id} onChange={e => setAssign(p => ({ ...p, subject_id: e.target.value }))}>
+              <option value="">Sin materia</option>
+              {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </Field>
         </div>
         <button className="btn--confirm" type="submit">Asignar ({YEAR})</button>
       </form>
@@ -498,98 +691,12 @@ function ScheduleView() {
             <div className="dash__student-row" key={a.id}>
               <div className="dash__student-info">
                 <p className="dash__student-name">{a.user_name}</p>
-                <p className="dash__student-group">{groupLabel(a.group_id)} · {a.academic_year}</p>
+                <p className="dash__student-group">
+                  {groupLabel(a.group_id)} · {a.academic_year}{a.subject_name ? ` · ${a.subject_name}` : ''}
+                </p>
               </div>
             </div>
           ))}
-      </div>
-    </>
-  );
-}
-
-/* ── Solicitudes de demo (leads de la landing) ───────────────── */
-function LeadsView() {
-  const [data, setData] = useState({ items: [], total: 0, counts: {} });
-  const [filter, setFilter] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  const load = useCallback(async () => {
-    setLoading(true); setError(null);
-    try { setData(await adminService.listLeads(filter)); }
-    catch (e) { setError(e.status === 403 ? 'Tu usuario no tiene acceso a las solicitudes de demo.' : e.message); }
-    finally { setLoading(false); }
-  }, [filter]);
-  useEffect(() => { load(); }, [load]);
-
-  const failed = data.counts.FAILED ?? 0;
-
-  if (error) return <div className="dash__empty"><AlertIcon color="#ef4444" /><span>{error}</span></div>;
-
-  return (
-    <>
-      {/* El aviso de fallos va arriba y siempre visible: si un correo no salió,
-          el lead sigue aquí pero nadie se enteró por bandeja. */}
-      {failed > 0 && (
-        <div className="card leads-alert">
-          <AlertIcon color="#ef4444" />
-          <span>
-            <strong>{failed}</strong> {failed === 1 ? 'aviso no se pudo enviar' : 'avisos no se pudieron enviar'} por correo.
-            El contacto está registrado abajo — escríbele a mano.
-          </span>
-        </div>
-      )}
-
-      <div className="leads-filters">
-        {LEAD_FILTERS.map(f => (
-          <button
-            key={f.id || 'all'}
-            className={`leads-filter${filter === f.id ? ' leads-filter--active' : ''}`}
-            onClick={() => setFilter(f.id)}
-          >
-            {f.label}
-            {f.id && data.counts[f.id] > 0 && <span className="leads-filter__count">{data.counts[f.id]}</span>}
-          </button>
-        ))}
-      </div>
-
-      <div className="card dash__list-card">
-        <div className="dash__list-header">
-          <span className="dash__list-title">Solicitudes recibidas</span>
-          <span className="dash__student-group">{data.total}</span>
-        </div>
-
-        {loading && <div className="dash__empty"><Spinner /><span>Cargando solicitudes…</span></div>}
-
-        {!loading && data.items.length === 0 && (
-          <div className="dash__empty">
-            <InboxIcon />
-            <span>{filter ? 'Ninguna solicitud con ese estado.' : 'Todavía no hay solicitudes de demo.'}</span>
-          </div>
-        )}
-
-        {!loading && data.items.map(lead => {
-          const st = LEAD_STATUS[lead.notification_status] ?? { label: lead.notification_status, cls: 'gray' };
-          return (
-            <div className="dash__student-row" key={lead.id}>
-              <div className="dash__student-avatar" style={{ background: '#ede9fe', color: '#6d28d9' }}>
-                {lead.email[0]?.toUpperCase() ?? '?'}
-              </div>
-              <div className="dash__student-info">
-                <p className="dash__student-name">
-                  <a className="leads-mail" href={`mailto:${lead.email}`}>{lead.email}</a>
-                </p>
-                <p className="dash__student-group">
-                  {new Date(lead.created_at).toLocaleString('es-CO', {
-                    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
-                  })}
-                  {lead.notification_error && ` · ${lead.notification_error.slice(0, 90)}`}
-                </p>
-              </div>
-              <span className={`dash__badge dash__badge--${st.cls}`}>{st.label}</span>
-            </div>
-          );
-        })}
       </div>
     </>
   );
@@ -643,8 +750,10 @@ function ShieldIcon() { return <svg width="18" height="18" viewBox="0 0 24 24" f
 function MailIcon()   { return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2" /><path d="M22 7l-10 6L2 7" /></svg>; }
 function ListIcon()   { return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" /></svg>; }
 function CalendarIcon() { return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>; }
-function InboxIcon()  { return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12" /><path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z" /></svg>; }
 function LogoutIcon() { return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>; }
+function CloseIcon({ size = 18 }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>; }
+function EyeIcon()   { return <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>; }
+function SearchIcon() { return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>; }
 function Spinner({ color = '#4f46e5', size = 20 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true" className="dash__spinner">

@@ -56,7 +56,9 @@ def make_service():
     repo = AsyncMock()
     student_repo = AsyncMock()
     guardian_repo = AsyncMock()
-    service = AdminManagementService(repo, student_repo, guardian_repo)
+    pae_repo = AsyncMock()
+    storage = MagicMock()
+    service = AdminManagementService(repo, student_repo, guardian_repo, pae_repo, storage)
     return service, repo, student_repo, guardian_repo
 
 

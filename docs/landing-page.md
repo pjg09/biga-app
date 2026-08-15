@@ -81,7 +81,8 @@ el correo en memoria mostrando un éxito falso.
 - Rate limit por IP en Redis (5/hora). Si Redis cae, **deja pasar** la petición: perder un lead es peor
   que aceptar un envío de más.
 - Un mismo correo dentro de 24 h se guarda pero se marca `SUPPRESSED` y no genera segundo aviso.
-- Se consultan en la consola de admin: **Comercial → Solicitudes** (`GET /admin/leads`).
+- Sin visor en el dashboard del colegio (deliberado, ver `docs/admin.md`): el equipo de BIGA
+  gestiona la repartición de demos por fuera de la app, con el aviso por correo como único canal.
 
 Ver `docs/database-schema.md` para la tabla y `CLAUDE.md` para la decisión de dejarla fuera del tenant.
 

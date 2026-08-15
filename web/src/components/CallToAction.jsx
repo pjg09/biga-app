@@ -21,7 +21,6 @@ export default function CallToAction() {
   const titleRef = useScrollReveal();
   const formRef = useScrollReveal();
 
-  const isEmailValid = EMAIL_PATTERN.test(email.trim());
   const isSending = status === 'sending';
 
   const handleSubmit = useCallback(
@@ -116,8 +115,8 @@ export default function CallToAction() {
             <button
               type="submit"
               className="btn btn--primary cta__submit"
-              disabled={!isEmailValid || isSending}
-              aria-disabled={!isEmailValid || isSending}
+              disabled={isSending}
+              aria-disabled={isSending}
             >
               {isSending ? 'Enviando…' : 'Solicitar demo'}
             </button>

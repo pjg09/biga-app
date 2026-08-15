@@ -126,7 +126,7 @@ Docentes de la institución. Único perfil operativo del MVP.
 |---|---|---|---|
 | `id` | UUID | PK | |
 | `institution_id` | UUID | NOT NULL, FK → institutions | |
-| `document_number` | VARCHAR(20) | NOT NULL | |
+| `document_number` | VARCHAR(20) | NOT NULL, UNIQUE por institución | |
 | `first_name` | VARCHAR(100) | NOT NULL | |
 | `last_name` | VARCHAR(100) | NOT NULL | |
 | `email` | VARCHAR(255) | NOT NULL, UNIQUE | Usado para login |
@@ -135,10 +135,40 @@ Docentes de la institución. Único perfil operativo del MVP.
 | `is_active` | BOOLEAN | NOT NULL, DEFAULT TRUE | |
 | `created_at` | TIMESTAMP | NOT NULL, DEFAULT NOW() | |
 
+**Restricciones adicionales:**
+```sql
+UNIQUE (institution_id, document_number)
+```
+Mismo patrón que `students.document_number` (`UNIQUE(institution_id, document_number)`): único por
+institución, no global — dos instituciones distintas sí pueden tener docentes con el mismo
+documento. Migración `e2f9c6a1d4b7` (ver `docs/admin.md`).
+
 **ENUMs:**
 ```sql
 CREATE TYPE user_role AS ENUM ('TEACHER', 'PAE_OPERATOR', 'ADMIN');
 ```
+
+---
+
+### `subjects`
+
+Catálogo de materias de la institución. Existe para que "Matemáticas" y "Mate" no sean dos
+valores distintos en el filtro de materia del módulo de Aula — ver `docs/students.md`.
+
+| Columna | Tipo | Restricciones | Descripción |
+|---|---|---|---|
+| `id` | UUID | PK | |
+| `institution_id` | UUID | NOT NULL, FK → institutions | |
+| `name` | VARCHAR(100) | NOT NULL | Ej. "Matemáticas" |
+| `created_at` | TIMESTAMP | NOT NULL, DEFAULT NOW() | |
+
+**Restricciones adicionales:**
+```sql
+UNIQUE (institution_id, name)
+```
+
+Solo `POST`/`GET /admin/subjects` (ver `docs/admin.md`) — sin `PUT`/`DELETE`: igual que
+`grades`/`groups`, es un catálogo de alta simple, no un recurso editable desde la API.
 
 ---
 
@@ -152,11 +182,22 @@ Asignación de un docente a un salón para un año académico.
 | `user_id` | UUID | NOT NULL, FK → users | |
 | `group_id` | UUID | NOT NULL, FK → groups | |
 | `academic_year` | SMALLINT | NOT NULL | |
+| `subject_id` | UUID | NULLABLE, FK → subjects | Materia que ese docente dicta en ese salón. `NULL` si no se asignó ninguna. |
 
 **Restricciones adicionales:**
 ```sql
 UNIQUE (user_id, group_id, academic_year)
 ```
+
+`subject_id` vive aquí y no en `class_periods` a propósito: `class_periods` es el horario del
+**salón** (bloques compartidos por cualquier docente asignado a él), mientras que `subject_id`
+es un atributo de la **asignación docente-salón** — dos docentes en el mismo salón pueden
+dictar materias distintas. El filtro "Mis estudiantes por materia" (`docs/students.md`) lee de
+acá (con join a `subjects`), no de `class_periods.name`.
+
+Migración `d7e1a4c8f5b3`: hasta esa migración `subject` era texto libre directo en esta tabla
+(migración `c4d8f2a6b1e9`); se convirtió a catálogo agrupando los valores ya cargados por
+institución y creando una fila de `subjects` por cada uno.
 
 ---
 

@@ -210,7 +210,6 @@ unidad. Variante `--force-stack` cuando la badge debe ir siempre en su propia l�
 | `ForgotPasswordPage` | `pages/` | Reutiliza `login.css` y `LoginBrandPanel`, exportado de `LoginPage` |
 | `AbsencesView` + `AbsenceDetail` | `TeacherDashboard` | Seguimiento → **Inasistencias**. Montada también en `PAEDashboard` |
 | `MensajesView` + `MessageDetail` | `TeacherDashboard` | Pasó de lista de solo lectura a gestión de casos |
-| `LeadsView` | `AdminDashboard` | Comercial → Solicitudes (`GET /admin/leads`) |
 
 `StudentsView` (alta de estudiante + inscripción al PAE) la usa **solo** `AdminDashboard`, aunque por
 historia siga definida en `PAEDashboard.jsx`. El dashboard PAE monta `TeacherStudentsView`. Detalle
