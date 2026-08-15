@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.adapters.email.resend import ResendEmailAdapter
+from app.adapters.email.factory import get_email_adapter
 from app.core.celery import celery_app
 from app.jobs.runner import run_db_job
 from app.repositories.pae_repository import PAERepository
@@ -38,7 +38,7 @@ def notify_pae_no_claim(institution_id: str, delivery_date: str) -> None:
     inst = UUID(institution_id)
     day = date.fromisoformat(delivery_date)
     run_db_job(
-        lambda session: PAENotifier(session, ResendEmailAdapter()).notify_no_claims(inst, day)
+        lambda session: PAENotifier(session, get_email_adapter()).notify_no_claims(inst, day)
     )
 
 
@@ -48,7 +48,7 @@ def notify_pae_late_claim_correction(institution_id: str, student_id: str, deliv
     student = UUID(student_id)
     day = date.fromisoformat(delivery_date)
     run_db_job(
-        lambda session: PAENotifier(session, ResendEmailAdapter()).notify_late_claim_correction(
+        lambda session: PAENotifier(session, get_email_adapter()).notify_late_claim_correction(
             inst, student, day
         )
     )

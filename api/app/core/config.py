@@ -1,4 +1,4 @@
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -39,8 +39,44 @@ class Settings(BaseSettings):
     storage_bucket_name: str
     storage_region: str = "us-east-1"
 
+    # ── Correo ──────────────────────────────────────────────────────
+    # Proveedor activo: `resend` entrega de verdad; `mailtrap` captura todo en
+    # una bandeja de pruebas compartida y NO entrega a nadie.
+    #
+    # El default es `resend` a propósito y no se deduce de `debug` ni de ninguna
+    # otra señal de entorno: un despliegue que cayera en `mailtrap` por
+    # inferencia desviaría en silencio los correos de acudientes reales
+    # (justificaciones, avisos del PAE) a un buzón interno, y los notifiers lo
+    # registrarían como `SENT`. Encenderlo tiene que ser un acto explícito.
+    email_provider: str = "resend"
+
     resend_api_key: str
     email_from: str
+
+    # Solo se usan con email_provider=mailtrap.
+    mailtrap_host: str = "sandbox.smtp.mailtrap.io"
+    mailtrap_port: int = 2525
+    mailtrap_user: str = ""
+    mailtrap_password: str = ""
+
+    @field_validator("email_provider")
+    @classmethod
+    def known_email_provider(cls, v: str) -> str:
+        v = v.strip().lower()
+        if v not in {"resend", "mailtrap"}:
+            raise ValueError("EMAIL_PROVIDER debe ser 'resend' o 'mailtrap'")
+        return v
+
+    @model_validator(mode="after")
+    def mailtrap_needs_credentials(self) -> "Settings":
+        # Falla al arrancar y no en el primer envío: si no, el error aparecería
+        # dentro de un job de Celery, donde solo se ve rebuscando en los logs
+        # del worker y con los correos ya perdidos.
+        if self.email_provider == "mailtrap" and not (self.mailtrap_user and self.mailtrap_password):
+            raise ValueError(
+                "EMAIL_PROVIDER=mailtrap requiere MAILTRAP_USER y MAILTRAP_PASSWORD"
+            )
+        return self
 
     # Buzón interno que recibe el aviso de cada solicitud de demo de la landing.
     # Con `biga.app` sin verificar en Resend, este correo debe ser el de la cuenta
