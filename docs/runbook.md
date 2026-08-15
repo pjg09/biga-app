@@ -87,7 +87,8 @@ Si hubo cambios de esquema desde la última vez: `docker compose exec api alembi
 
 ## 5. Credenciales de prueba
 
-Del seed `seed_dev_users.sql` (una por rol, contraseña `password123`):
+Del seed `seed_dev_users.sql` (una por rol, contraseña `password123`). Todos pertenecen a la
+institución demo `a0000000-0000-0000-0000-000000000001`:
 
 | Email | Rol | Dashboard |
 |---|---|---|

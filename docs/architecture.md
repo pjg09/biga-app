@@ -319,16 +319,35 @@ class EmailAdapter(Protocol):
     def send(self, to: str, subject: str, html: str) -> None:
         ...
 
-class ResendEmailAdapter:
-    def send(self, to: str, subject: str, html: str) -> None:
-        # implementación con Resend SDK
-        ...
+class ResendEmailAdapter:      # entrega de verdad
+    def send(self, to: str, subject: str, html: str) -> None: ...
 
-class SESEmailAdapter:
-    def send(self, to: str, subject: str, html: str) -> None:
-        # implementación con boto3 SES
-        ...
+class MailtrapEmailAdapter:    # captura en una bandeja de QA, NO entrega
+    def send(self, to: str, subject: str, html: str) -> None: ...
 ```
+
+**La elección del proveedor está centralizada** en `app/adapters/email/factory.py`;
+los jobs piden `get_email_adapter()` y nunca una clase concreta:
+
+```python
+def get_email_adapter() -> EmailAdapter:
+    if settings.email_provider == "mailtrap":
+        return MailtrapEmailAdapter()   # + WARNING en cada envío
+    return ResendEmailAdapter()
+```
+
+Se controla con `EMAIL_PROVIDER` (`resend` | `mailtrap`), con dos decisiones
+deliberadas:
+
+- **El default es `resend`**, y no se deduce de `debug` ni de ninguna otra señal
+  de entorno. Un despliegue que cayera en `mailtrap` por inferencia desviaría en
+  silencio los correos de acudientes reales a un buzón interno, y los notifiers
+  lo registrarían como `SENT`. Encenderlo tiene que ser un acto explícito.
+- **`Settings` falla al arrancar** si `EMAIL_PROVIDER=mailtrap` sin credenciales,
+  en vez de reventar dentro de un job de Celery con los correos ya perdidos.
+
+`MailtrapEmailAdapter` habla SMTP con `smtplib` de la stdlib — sin dependencia
+nueva, y sirve igual para cualquier otro buzón SMTP cambiando el host.
 
 #### Storage Adapter
 

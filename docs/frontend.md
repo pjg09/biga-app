@@ -216,7 +216,47 @@ historia siga definida en `PAEDashboard.jsx`. El dashboard PAE monta `TeacherStu
 completo del modal de alta (secciones, estado, endpoint atómico) en `docs/students.md`.
 
 En `services/api.js` hay cuatro entradas según autenticación y formato: `post` / `postForm` (con JWT)
-y `postPublic` / `postFormPublic` (sin `Authorization`, para la landing y el enlace de justificación).
+y `postPublic` / `postFormPublic` (sin `Authorization`, para la landing y el enlace de justificación). Hay además `del`, para las bajas
+lógicas (`DELETE /admin/users/{id}`, `DELETE /admin/students/{id}`); `request` ya devolvía `null` ante
+un `204`.
+
+## Consola de admin: Académico y Horarios (2026-08)
+
+Ambas secciones se partieron en **sub-pestañas** (`.adm-tabs` / `.adm-tab`), un `useState` local
+dentro de la vista — igual que el `activeNav` del sidebar, sin sub-rutas.
+
+| Vista | Sub-pestañas | Notas |
+|---|---|---|
+| `AcademicView` | `SalonesView` · `MateriasView` | Los **grados no se crean**: catálogo fijo de 11 niveles, solo se leen para poblar los `<select>` |
+| `ScheduleView` | `HorarioGrid` · `TeacherAssignView` | Separadas a propósito: responden preguntas distintas (ver abajo) |
+
+**`SalonesView`** — un bloque por grado con sus salones como tarjetas. Se pintan **los 11 grados
+aunque estén vacíos** (el admin necesita ver dónde falta crear salón), pero los vacíos van
+compactados con `.sal-grade--empty`: sin eso son diez tarjetas idénticas que entierran la única con
+contenido. Cada tarjeta abre `SalonRoster`, el panel de matriculados con buscador para agregar.
+
+> Agregar a un estudiante que ya tiene salón lo **mueve** (`student_groups` es único por estudiante
+> y año). El dropdown lo avisa antes (`está en Once A`) y un modal pide confirmación explícita
+> nombrando origen y destino. Sin salón previo se agrega directo, sin fricción.
+
+**`HorarioGrid`** — rejilla semanal del salón: filas = órdenes de hora, columnas = días. Cada celda
+muestra materia y docente, con color derivado de la materia. Los huecos son `+` punteados.
+
+- **Clases de duración variable**: un bloque con `span > 1` se pinta con `rowSpan` y las celdas que
+  cubre no se renderizan. Ojo al calcular las filas visibles — los órdenes que una clase doble
+  **cubre sin empezar en ellos** también cuentan, o la fila desaparece para todos los días.
+- **Lun–Vie siempre**; Sáb/Dom solo si tienen bloques, más un check «Fin de semana» que los fuerza
+  para poder crearlos (temporal, ver `TODO.md`).
+- **«Crear jornada»** arma la semana entera en una petición (`POST /admin/class-periods/bulk`), con
+  un docente por defecto para todos los bloques. Es idempotente: omite lo que ya existe.
+
+**`TeacherAssignView`** es `user_groups`, y no es decorativa: alimenta «Mis estudiantes» del docente
+y su filtro por materia. Está separada de la rejilla porque confundir ambas fue el problema del
+diseño anterior — la propia pantalla lo dice para que nadie las mezcle.
+
+**`MateriasView`** — barra de alta en línea (una materia es un campo; un formulario apilado ocupaba
+media pantalla) y las materias como tarjetas con distintivo de iniciales y color derivado del nombre
+por hash, estable entre recargas sin guardar nada. Cada tarjeta es un botón que abre el renombrado.
 
 ## Gotchas del frontend
 

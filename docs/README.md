@@ -18,6 +18,7 @@ manual) ver `CLAUDE.md` en la raíz.
 | [frontend.md](frontend.md) | Arquitectura del cliente React: routing, auth, servicios, dashboards, CSS. |
 | [database-schema.md](database-schema.md) | Esquema de la base de datos (tablas, enums, índices, extensiones). |
 | [implementation-notes.md](implementation-notes.md) | Restricciones no obvias por capa (multi-tenant, patrones). |
+| [pitfalls.md](pitfalls.md) | Trampas conocidas del repo: Docker, migraciones, auth, correo, scripts. Leer cuando algo "debería funcionar" y no funciona. |
 
 ## Referencia funcional por módulo
 
@@ -33,5 +34,4 @@ manual) ver `CLAUDE.md` en la raíz.
 
 | Doc | Para qué |
 |---|---|
-| [databaseDev.md](databaseDev.md) | Credenciales de los usuarios demo (seed de desarrollo). |
 | [landing-page.md](landing-page.md) | Especificación de contenido de la landing pública. |

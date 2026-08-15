@@ -68,10 +68,30 @@ transiciones posteriores.
 
 ### Cómo se resuelven "las clases de hoy"
 
-`AttendanceRepository.get_teacher_classes_for_day` une
-`user_groups` (docente↔grupo) → `class_periods` filtrando `day_of_week = hoy`
-(cualquier `period_order`), ordenadas por `start_time`. Fin de semana → lista
-vacía. La UNIQUE `(student_id, class_period_id, date)` permite un registro por
+`AttendanceRepository.get_teacher_classes_for_day` filtra
+**`class_periods.user_id == docente`** (el docente **del bloque**, no del salón),
+`day_of_week = hoy` y `Group.academic_year` — ordenadas por `start_time`.
+
+> **Cambió en la migración `d6c1f8a390b4`.** Antes unía `user_groups`
+> (docente↔salón), así que un docente asignado a Once A veía **las seis horas**
+> del día como suyas aunque solo dictara dos. Ahora `class_periods.user_id` es
+> `NOT NULL` y las **cuatro** consultas de `attendance_repository` filtran por
+> bloque, incluida `teacher_owns_class_period`, que es la autorización al
+> registrar asistencia: tomar lista en un bloque ajeno da `404`.
+>
+> `class_periods` no tiene año propio, así que hay que unir `Group` y filtrar
+> `Group.academic_year`; sin eso reaparecerían bloques de años anteriores.
+>
+> Que todo bloque tenga docente es lo que hace segura esta mitad: sin él, nadie
+> tomaría lista ahí y en primera hora la notificación al acudiente no se
+> enviaría nunca. Ver las guardas en `docs/admin.md`.
+
+**El fin de semana no está excluido.** La consulta filtra por el `isoweekday()`
+de hoy (1..7) y no hay ningún punto de control por día en el backend: si un salón
+tiene bloques en sábado, aparecen. Habilitado a propósito para el QA de los
+product owners — ver el bloque `TEMPORAL` de `TODO.md`.
+
+La UNIQUE `(student_id, class_period_id, date)` permite un registro por
 estudiante por clase por día. **La notificación se encola solo cuando
 `period_order == 1`.**
 

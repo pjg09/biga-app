@@ -292,4 +292,10 @@ docker compose exec api alembic upgrade head
 docker compose exec -T postgres psql -U biga -d biga < scripts/seed_dev_users.sql
 ```
 
-Credenciales de los usuarios demo (incluido el admin) en `docs/databaseDev.md`.
+**Baja de un estudiante**: el botón «Eliminar» del formulario de edición es una **baja lógica**
+(`is_active = false`), nunca un borrado — el histórico de convivencia, asistencia, justificaciones y
+PAE sigue apuntando a su `student_id`. Basta con apagar esa columna para que desaparezca de
+listados, búsqueda y rosters, porque todas esas consultas ya la filtran. Detalle y reactivación
+(`include_inactive`) en `docs/admin.md`.
+
+Credenciales de los usuarios demo (incluido el admin) en `docs/runbook.md` §5.

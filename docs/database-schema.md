@@ -31,6 +31,7 @@
 
 ## Extensiones de PostgreSQL
 
+- `btree_gist` (migración `e9a3b7c2d418`): necesaria para el `EXCLUDE` de `class_periods`, que impide que dos bloques del mismo salón y día se solapen. GiST no sabe comparar `uuid`/`smallint` con `=` sin esta extensión.
 - `unaccent` (migración `d4a2c7e91b05`): habilita la búsqueda de estudiantes insensible a acentos. El repositorio envuelve columna y patrón en `unaccent(...)` en el `WHERE` (ej. `unaccent(nombre) ILIKE unaccent('%lopez%')` encuentra "López"). `ILIKE` cubre además el caso de mayúsculas.
 
 ---
@@ -55,6 +56,10 @@ Raíz del modelo multi-tenant. Cada registro representa una institución educati
 
 ### `grades`
 
+> **Catálogo, no alta manual.** Las 11 filas por institución las siembra la migración
+> `a7c3e9f2b581` desde `STANDARD_GRADES` (`app/core/grades.py`). No hay `POST /admin/grades`
+> ni formulario en la consola.
+
 Grados académicos de una institución (Primero a Once).
 
 | Columna | Tipo | Restricciones | Descripción |
@@ -68,7 +73,13 @@ Grados académicos de una institución (Primero a Once).
 **Restricciones adicionales:**
 ```sql
 UNIQUE (institution_id, level)
+UNIQUE (institution_id, name)
 ```
+
+`name` es único además de `level` (migración `b8d4f1a7c360`): el desplegable de Grado del alta de
+salones muestra solo `grades.name`, así que dos grados con el mismo nombre serían indistinguibles
+al matricular. Mismo patrón por institución que `subjects.name` — dos colegios distintos sí pueden
+tener cada uno su "Once".
 
 ---
 
@@ -105,13 +116,27 @@ Bloques horarios de un salón. Define qué clase es "primera hora" por día de l
 | `period_order` | SMALLINT | NOT NULL | 1 = primera hora del día |
 | `start_time` | TIME | NOT NULL | |
 | `end_time` | TIME | NOT NULL | |
-| `day_of_week` | SMALLINT | NOT NULL | 1 = Lunes, 5 = Viernes |
+| `day_of_week` | SMALLINT | NOT NULL | 1 = Lunes … 7 = Domingo. La consola pinta Lun–Vie siempre y añade Sábado solo si ese día tiene bloques. |
+| `span` | SMALLINT | NOT NULL, DEFAULT 1, CHECK ≥ 1 | Cuántos periodos consecutivos ocupa el bloque. `1` = clase normal; `2` = clase doble, que ocupa `period_order` y `period_order + 1`. Es lo que permite que no todas las clases duren lo mismo. |
+| `subject_id` | UUID | NULLABLE, FK → subjects | Materia que se dicta en ese bloque. Sustituye al uso del campo `name` como materia: `name` es la etiqueta del bloque ("Primera hora", "Descanso"), la materia sale del catálogo. |
+| `user_id` | UUID | **NOT NULL**, FK → users | Docente que dicta ese bloque. Obligatorio desde la migración `d6c1f8a390b4`: Asistencia filtra las clases del docente por esta columna, así que un bloque sin docente sería un bloque donde nadie toma lista — y en primera hora, una notificación al acudiente que nunca se envía. |
 | `created_at` | TIMESTAMP | NOT NULL, DEFAULT NOW() | |
 
 **Restricciones adicionales:**
 ```sql
 UNIQUE (group_id, period_order, day_of_week)
-CHECK (day_of_week BETWEEN 1 AND 5)
+
+-- Dos bloques del mismo salón y día no pueden solaparse en el rango de
+-- periodos que ocupan. La UNIQUE de arriba NO basta: una clase doble que
+-- empieza en el orden 2 ocupa el 2 y el 3, y otra clase en el orden 3 no
+-- violaría la UNIQUE. Requiere la extensión `btree_gist` para los `=`.
+EXCLUDE USING gist (
+  group_id WITH =, day_of_week WITH =,
+  int4range(period_order, period_order + span) WITH &&
+)
+
+CHECK (span >= 1)
+CHECK (day_of_week BETWEEN 1 AND 7)
 CHECK (period_order >= 1)
 CHECK (start_time < end_time)
 ```
@@ -133,6 +158,7 @@ Docentes de la institución. Único perfil operativo del MVP.
 | `hashed_password` | VARCHAR(255) | NOT NULL | bcrypt |
 | `role` | ENUM | NOT NULL | `TEACHER`, `PAE_OPERATOR`, `ADMIN` |
 | `is_active` | BOOLEAN | NOT NULL, DEFAULT TRUE | |
+| `photo_url` | VARCHAR(500) | NULLABLE | **Key** del objeto en storage (foto subida vía `POST /admin/users/{id}/photo`); se presigna al leer con `resolve_photo_url`. Misma semántica y mismo helper que `students.photo_url`, pero bajo el prefijo `staff-photos/`. Solo identifica al miembro del personal en la consola del admin: no entra en ningún flujo de identificación del PAE. |
 | `created_at` | TIMESTAMP | NOT NULL, DEFAULT NOW() | |
 
 **Restricciones adicionales:**

@@ -33,6 +33,7 @@ Restricciones que no deben violarse:
 
 - **Strategy**: módulo PAE usa `PAEIdentificationStrategy` (documento en MVP, facial recognition en fase 2).
 - **Adapter**: email y storage se abstraen detrás de un Protocol. Nunca se llama directamente al SDK del proveedor desde un Service.
+  El proveedor de correo se elige con `EMAIL_PROVIDER` (`resend` | `mailtrap`) y se resuelve en `app/adapters/email/factory.py`; los jobs piden `get_email_adapter()`, nunca una clase concreta. **`mailtrap` no entrega a nadie**: captura todo en una bandeja de QA compartida.
 
 ## Frontend
 
@@ -41,7 +42,14 @@ Las convenciones de CSS/JSX y los gotchas del navegador viven en **`web/CLAUDE.m
 ## Convenciones de base de datos
 
 - Todos los IDs son `UUID` generados en la aplicación. Nunca usar `SERIAL` o `BIGSERIAL`.
+- Para impedir **solapamiento de rangos** (no solo duplicados exactos): `EXCLUDE USING gist` + extensión `btree_gist`, como `class_periods_no_overlap` sobre `int4range(period_order, period_order + span)`. Una `UNIQUE` sobre el valor de inicio no cubre un rango que se extiende. Duplicar la comprobación en el service solo para dar un 409 legible.
 - Todo cambio al esquema debe reflejarse en `docs/database-schema.md` antes de escribir la migración.
+
+**Corrección del dato en el tiempo** (no son gotchas: si se rompen, el dato entra mal en la BD):
+
+- `api`, `worker`, `beat` y `postgres` fijan `TZ=America/Bogota` en `docker-compose.yml` (y `postgres` además `-c timezone=America/Bogota` por flag, porque `TZ`/`PGTZ` solo aplican al initdb de un cluster nuevo). Sin eso las imágenes corren en UTC y `date.today()` **adelanta un día entre las 19:00 y medianoche hora Colombia**, escribiendo la fecha equivocada en `attendance_records`, `pae_deliveries` y `early_departures`. No es un problema de presentación: el dato entra mal en la BD.
+- Todo el código usa ya hora local (`datetime.now()` / `date.today()`). **El único UTC explícito que queda es el `exp` del JWT** en `security.py`, y debe seguir así: es un instante absoluto que se codifica a epoch. No reintroducir `datetime.now(timezone.utc)` en los services.
+- Las columnas `TIMESTAMP` son naive y mezclan zonas por historia: las filas creadas **antes** del 2026-08-14 guardan UTC, las posteriores hora de Bogotá. No afecta a los hashes del PAE (la auditoría recalcula desde el valor almacenado, verificado con 18 firmas viejas + 1 nueva conviviendo, 0 manipuladas), pero sí a cualquier consulta que compare marcas de tiempo de ambos lados de esa fecha.
 - Para un campo "único por institución" (no global): `UniqueConstraint("institution_id", campo)` + índice a nivel BD, más un chequeo previo en el service (`get_by_X(institution_id, valor)` → `409` si existe) para dar un mensaje claro en vez de que lo reviente la constraint. Patrón ya usado en `students.document_number`, `subjects.name` y `users.document_number` — replicarlo tal cual, no reinventarlo.
 
 ## Aislamiento multi-tenant — regla crítica
@@ -58,6 +66,7 @@ Los jobs de Celery que acceden a tablas operativas deben recibir `institution_id
 
 - `docker compose up -d` — levantar el stack (el servicio `storage-init` crea el bucket en MinIO automáticamente)
 - `docker compose up -d --build` — rebuild + levantar
+- `docker compose up -d --force-recreate api worker beat` — recrear servicios tras cambiar `.env` (`Settings()` se evalúa al importar, el SIGHUP del worker no basta). Esquiva el problema de AppArmor de `docker stop`.
 - `docker compose exec api alembic upgrade head` — aplicar migraciones pendientes
 - `docker compose exec api alembic revision --autogenerate -m "desc"` — generar migración
 - `docker compose logs -f api` — logs en tiempo real
@@ -66,7 +75,7 @@ Los jobs de Celery que acceden a tablas operativas deben recibir `institution_id
 - `docker compose exec api alembic check` — verificar que no hay drift entre modelos y BD
 - `docker compose exec api python -m scripts.seed_base` — crear institución y usuario demo (BD limpia)
 - `docker compose exec api python -m scripts.seed_agendatorio` — crear estudiante y acudiente de prueba
-- `docker compose exec -T postgres psql -U biga -d biga < scripts/seed_dev_users.sql` — **seed demo completo** (3 usuarios TEACHER/PAE_OPERATOR/ADMIN, grupo 11A con horario, 4 estudiantes + acudientes + matrículas, artículos de convivencia). Correr **después** de `alembic upgrade head`. Credenciales en `docs/databaseDev.md`. Ubicación dual de seeds: `seed_dev_users.sql` vive en `./scripts/` (root, se pipea con `psql <`), mientras que `seed_base`/`seed_pae` viven en `api/scripts/` y se corren con `python -m scripts.X` dentro del contenedor.
+- `docker compose exec -T postgres psql -U biga -d biga < scripts/seed_dev_users.sql` — **seed demo completo** (3 usuarios TEACHER/PAE_OPERATOR/ADMIN, grupo 11A con horario, 4 estudiantes + acudientes + matrículas, artículos de convivencia). Correr **después** de `alembic upgrade head`. Credenciales en `docs/runbook.md` §5. Ubicación dual de seeds: `seed_dev_users.sql` vive en `./scripts/` (root, se pipea con `psql <`), mientras que `seed_base`/`seed_pae` viven en `api/scripts/` y se corren con `python -m scripts.X` dentro del contenedor.
 - `docker compose exec -T api python -m scripts.seed_pae` — inscribe los estudiantes demo al PAE y registra entregas de la semana con la cadena de doble hash válida. Es Python (no SQL) porque los hashes dependen de `PAE_SIGNING_SECRET`. Correr **después** del seed SQL.
 - Obtener token JWT para pruebas manuales (tras `seed_base`, form-urlencoded con `username`/`password`, no JSON):
   `export TOKEN=$(curl -s -X POST http://localhost:8000/auth/login -d "username=demo@biga.app&password=Test1234!" | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")`
@@ -106,7 +115,13 @@ Verificar que un cambio de front compila: `curl -s -o /dev/null -w "%{http_code}
 
 ## Módulos del dominio
 
-Módulos implementados: `auth`, `agendatorio` (registro de convivencia + historial del docente: notas de seguimiento append-only y ocultar del panel vía `archived_at`, sin borrar), `students` (registro append-only + búsqueda), `pae` (inscripción, entrega, reporte semanal, auditoría, notificación de no reclamo), `attendance` (clase a clase; notificación solo primera hora + justificación por link), `departures` (salidas anticipadas), `admin` (estadísticas `GET /admin/stats` + consola de gestión: usuarios, grados, grupos, materias, matrículas, horarios `class_periods` y asignación docente-grupo), `leads` (`POST /leads` **público** desde el formulario de la landing: guarda en `demo_leads` y encola un aviso interno a `LEADS_NOTIFY_EMAIL`). Pendientes: `imports`.
+Módulos implementados: `auth`, `agendatorio` (registro de convivencia + historial del docente: notas de seguimiento append-only y ocultar del panel vía `archived_at`, sin borrar), `students` (registro append-only + búsqueda), `pae` (inscripción, entrega, reporte semanal, auditoría, notificación de no reclamo), `attendance` (clase a clase; notificación solo primera hora + justificación por link), `departures` (salidas anticipadas), `admin` (estadísticas `GET /admin/stats` + consola de gestión: usuarios, salones, materias, matrículas y horarios — rejilla semanal con materia y docente por bloque, más la asignación docente-salón de `user_groups`), `leads` (`POST /leads` **público** desde el formulario de la landing: guarda en `demo_leads` y encola un aviso interno a `LEADS_NOTIFY_EMAIL`). Pendientes: `imports`.
+
+**Grados = catálogo fijo**: 11 niveles sembrados (`app/core/grades.py`, migración `a7c3e9f2b581`). No existe `POST /admin/grades` ni alta en la consola.
+
+**`DELETE` en admin = baja lógica** (`is_active = false`), nunca borrado: usuarios y estudiantes. `get_current_user` valida `is_active`, así que desactivar **revoca el acceso en el request siguiente**, no al expirar el JWT. Los listados aceptan `include_inactive=true` para poder reactivar.
+
+**El admin no fija contraseñas**: al crear un usuario el service genera una temporal y la envía por correo (`notify_staff_welcome`, con `argsrepr` para que no caiga en los logs del worker).
 
 `demo_leads` es la **única tabla sin `institution_id`**, por decisión explícita: un visitante que pide una demo no pertenece a ninguna institución. Su estado de envío vive en columnas `notification_*` propias, no en `notifications_log` (esa tabla exige `institution_id`/`student_id`/`guardian_id` NOT NULL). El endpoint público lleva rate limit por IP en Redis (`app/core/rate_limit.py`); si Redis cae, deja pasar la petición en vez de perder el lead.
 
@@ -161,6 +176,7 @@ Para proteger un endpoint con autenticación: `current_user: User = Depends(get_
 > Referencia completa del módulo en **`docs/attendance.md`** (flujos, endpoints, tablas). Aquí solo los
 > invariantes que no deben romperse.
 
+- **El docente de "Mis clases de hoy" sale de `class_periods.user_id`** (NOT NULL), no de `user_groups`. Antes, un docente asignado al salón veía **todas** las horas de ese salón. Las 4 consultas de `attendance_repository` filtran por bloque — y como `class_periods` no tiene año, hay que unir `Group` y filtrar `Group.academic_year`, o reaparecen bloques de años pasados.
 - **La notificación al acudiente solo se dispara en primera hora** (`period_order == 1`). Se encola con
   `countdown = ATTENDANCE_GRACE_MINUTES * 60` y, al disparar, el job **relee el estado**: si el docente
   marcó tardanza, no envía. La tarea **no se desencola** — releer al disparar cubre también el caso de
@@ -200,30 +216,13 @@ Funciones en `app/core/security.py`. `register_delivery` verifica la capa 1 ante
 
 ## Pitfalls conocidos
 
-- Cada commit de un PR contra `main` (no solo el título) se valida en CI con `commitlint` (`.github/workflows/commitlint.yml`, `@commitlint/config-conventional` → Conventional Commits: `feat:`, `fix:`, etc.). Un push a `main` dispara `semantic-release` (`.github/workflows/release.yml`) que corta un release según esos tipos (`feat`→minor, `fix`→patch, `BREAKING CHANGE`→major; `docs`/`chore`/etc. no liberan). Mensajes mal formateados no rompen el push, pero sí el check de CI del PR.
-- Para separar un working tree grande en commits por temática **sin `git add -p`** (no soportado, pide input interactivo): extraer los hunks de `git diff` con Python por índice de línea — nunca retecleándolos a mano en un editor, un espacio inicial perdido en una línea de contexto vacía corrompe el patch. Al combinar/dividir hunks, recalcular el header `@@ -a,b +c,d @@` con un script (a mano se desincroniza fácil). Validar con `git apply --check --cached` antes de `git apply --cached`, comitear, y **regenerar el diff con `git diff` recién ahí** antes de tocar el mismo archivo de nuevo — los offsets de los hunks restantes cambian con cada commit.
-- Al editar ficheros con scripts (`python3 - <<EOF` o `sed`), **poner `assert <ancla> in t` antes de cada `.replace()`**: una sustitución que no coincide no falla, deja el fichero intacto y el fallo aparece mucho después. Pasó con el `NAV_TITLES` de `PAEDashboard.jsx`, que difiere en alineación del de `TeacherDashboard.jsx`.
-- `psql -c "..."` **no interpola** variables `-v` (`:'x'`): hay que pasar el SQL por stdin (`psql -v h="$H" <<'SQL' ... SQL`). Y `psql -tAc "INSERT ... RETURNING x"` imprime el valor **y** la etiqueta `INSERT 0 1`: encadenar `| head -1`.
-- El build backend en cualquier `pyproject.toml` de este repo debe ser `setuptools.build_meta`. `setuptools.backends.legacy:build` no existe en `python:3.12-slim` y rompe el build de Docker.
-- `api`, `worker`, `beat` y `postgres` fijan `TZ=America/Bogota` en `docker-compose.yml` (y `postgres` además `-c timezone=America/Bogota` por flag, porque `TZ`/`PGTZ` solo aplican al initdb de un cluster nuevo). Sin eso las imágenes corren en UTC y `date.today()` **adelanta un día entre las 19:00 y medianoche hora Colombia**, escribiendo la fecha equivocada en `attendance_records`, `pae_deliveries` y `early_departures`. No es un problema de presentación: el dato entra mal en la BD.
-- Todo el código usa ya hora local (`datetime.now()` / `date.today()`). **El único UTC explícito que queda es el `exp` del JWT** en `security.py`, y debe seguir así: es un instante absoluto que se codifica a epoch. No reintroducir `datetime.now(timezone.utc)` en los services.
-- Las columnas `TIMESTAMP` son naive y mezclan zonas por historia: las filas creadas **antes** del 2026-08-14 guardan UTC, las posteriores hora de Bogotá. No afecta a los hashes del PAE (la auditoría recalcula desde el valor almacenado, verificado con 18 firmas viejas + 1 nueva conviviendo, 0 manipuladas), pero sí a cualquier consulta que compare marcas de tiempo de ambos lados de esa fecha.
-- La variable `DATABASE_URL` en `.env` usa el hostname `postgres` (nombre del servicio Docker). Para conectar desde fuera de Docker (TablePlus, psql local) usar `localhost:5433`.
-- El `DATABASE_URL` requiere el driver `postgresql+asyncpg://` — no `postgresql://` ni `postgres://`.
-- `passlib` es incompatible con `bcrypt>=4.0`. Este proyecto usa `bcrypt` directamente (sin passlib). No reintroducir `passlib[bcrypt]`.
-- En SQLAlchemy 2.x, nombrar una columna `date` en un modelo que también importa `from datetime import date` causa `MappedAnnotationError`. Solución: `from datetime import date as PyDate`.
-- El dummy hash para prevención de timing en login (`AuthService._DUMMY_HASH`) debe ser un bcrypt válido pre-computado. Un string malformado lanza `ValueError: Invalid salt` en bcrypt.
-- `pytest` no está en la imagen Docker de producción. Para correr tests en el contenedor: `docker compose exec api pip install -r requirements-dev.txt` primero.
-- Agregar un valor a un enum nativo de PostgreSQL (`ALTER TYPE ... ADD VALUE`) no corre dentro del bloque transaccional de Alembic. Hay que envolverlo en `with op.get_context().autocommit_block():` (ver migración `c3e8f1a6b9d2`).
-- `docker compose exec api python -c "..."` con código multiline falla por indentación al pegar. Crear scripts en `api/scripts/` y ejecutar con `python -m scripts.nombre`.
-- `STORAGE_PUBLIC_URL` en `.env` debe apuntar al hostname accesible desde el browser (`http://localhost:9000` en dev). `STORAGE_ENDPOINT_URL` es el hostname interno de Docker (`http://minio:9000`) — sin esta separación las URLs presignadas no son accesibles desde el frontend.
-- `docker stop` falla con "permission denied" por AppArmor. Workaround: `sudo kill -9 $(docker inspect --format '{{.State.Pid}}' <id>)`.
-- `POST /auth/login` espera `application/x-www-form-urlencoded` con campos `username`/`password` (OAuth2PasswordRequestForm), no JSON con `email`/`password`.
-- Si un curl a un endpoint con path param (ej. `/agendatorio/records/$RECORD_ID`) devuelve body vacío sin error visible, revisar que la variable no esté vacía: un segmento final vacío (`/records/`) dispara un 307 a `/records` que curl no sigue por defecto, devolviendo body vacío en silencio.
-- Tras un pull que añade vars a `.env.example`, `worker`/`beat` crashean al arrancar con `ValueError: Field required` de Pydantic (campos nuevos en `Settings` que no están en el `.env` local gitignored). Detectar vars ausentes: `diff <(grep -oP '^[A-Z_]+(?==)' .env.example | sort) <(grep -oP '^[A-Z_]+(?==)' .env | sort)`.
-- El `worker` de Celery no tiene autoreload. Usar el comando SIGHUP de "Comandos frecuentes" para recargar — `docker compose restart worker` choca con el problema de AppArmor de `docker stop`.
-- Al crear un módulo de job nuevo en `app/jobs/`, agregarlo al `include` de `app/core/celery.py` — si no, el worker nunca registra el task y `.delay()` encola mensajes que nadie ejecuta nunca (sin error visible).
-- Los tests de repository (queries SQL reales, joins, M2M) no se pueden mockear con sentido. No existe infraestructura de fixtures contra Postgres real (`tests/integration/` vacío) — definir esa infraestructura antes de escribir `test_*_repository.py` en cualquier módulo.
-- Probar correos sin dominio verificado en Resend: `EMAIL_FROM=onboarding@resend.dev` y el destinatario **debe** ser el correo dueño de la cuenta Resend — cualquier otro destinatario da 403 y el notifier lo registra como `FAILED`. Verificar `biga.app` (SPF/DKIM) es requisito para enviar a acudientes reales.
-- `scripts/seed_dev_users.sql` usa `ON CONFLICT (id) DO NOTHING`: re-correrlo **no** actualiza filas existentes. Para cambiar datos ya seedeados (ej. el correo de los acudientes) usar `UPDATE` directo: `UPDATE guardians SET email='...' WHERE is_primary = true;`
-- FastAPI/Starlette resuelve rutas por **orden de registro, no por especificidad**: un `GET /{id}` declarado antes que un `GET /search` hace que "search" matchee como `{id}` (422 si el tipo no castea) y el segundo endpoint nunca se alcanza. Al agregar un endpoint `/{id}` a un router que ya tiene una ruta estática de un solo segmento (`/search`, `/me`, etc.), declararlo **después** en el archivo.
+Extraídos a **`docs/pitfalls.md`** (30 entradas en 8 categorías) para no cargarlos en cada prompt.
+
+**Leerlo antes de** tocar migraciones, Docker/`.env`, autenticación o correo — y siempre que algo
+"debería funcionar" y no funciona. Lo que hay allí: AppArmor y `docker stop`, `passlib` vs `bcrypt`,
+enums nativos de PG fuera del bloque transaccional, `alembic check` ciego a los CHECK, orden de
+registro de rutas en Starlette, validadores de Pydantic tras el `Field`, el `include` de Celery,
+commitlint, y cómo editar ficheros con scripts sin romperlos en silencio.
+
+Las trampas de **frontend** (headless/CDP, `backdrop-filter`, cascade, overflow atrapado) viven
+aparte, en `web/CLAUDE.md`.
