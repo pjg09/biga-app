@@ -14,7 +14,6 @@ class ClassPeriod(Base):
         UniqueConstraint("group_id", "period_order", "day_of_week"),
         CheckConstraint("day_of_week BETWEEN 1 AND 7", name="check_day_of_week"),
         CheckConstraint("period_order >= 1", name="check_period_order"),
-        CheckConstraint("span >= 1", name="check_span_positive"),
         CheckConstraint("start_time < end_time", name="check_time_order"),
         Index("idx_class_periods_group_day", "group_id", "day_of_week"),
     )
@@ -23,15 +22,18 @@ class ClassPeriod(Base):
     institution_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), ForeignKey("institutions.id"), nullable=False)
     group_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), ForeignKey("groups.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
+    # DERIVADO, no lo elige nadie: `_renumber_day` lo recalcula como la posición
+    # del bloque dentro de su día ordenando por `start_time`, así que es denso
+    # 1..N y el 1 es siempre la primera clase real. Sigue existiendo porque
+    # Asistencia dispara la notificación al acudiente con `period_order == 1`.
     period_order: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    # Única fuente de la duración del bloque. El no-solapamiento en el reloj lo
+    # garantiza el EXCLUDE `class_periods_no_time_overlap` (migración
+    # `f2d5a81c9e37`), que SQLAlchemy no modela: vive solo en la BD y está
+    # documentado en database-schema.md.
     start_time: Mapped[time] = mapped_column(Time, nullable=False)
     end_time: Mapped[time] = mapped_column(Time, nullable=False)
     day_of_week: Mapped[int] = mapped_column(SmallInteger, nullable=False)
-    # Periodos consecutivos que ocupa el bloque. 1 = normal, 2 = clase doble
-    # (ocupa `period_order` y `period_order + 1`). El no-solapamiento lo
-    # garantiza el EXCLUDE de la migración `e9a3b7c2d418`, que SQLAlchemy no
-    # modela: vive solo en la BD y está documentado en database-schema.md.
-    span: Mapped[int] = mapped_column(SmallInteger, nullable=False, server_default="1", default=1)
     # Nullable a propósito: un horario a medio armar debe poder guardarse, y los
     # bloques anteriores a la migración `c5b9e2f47a13` no tienen con qué llenarlo.
     subject_id: Mapped[UUID | None] = mapped_column(

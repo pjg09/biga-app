@@ -1,3 +1,4 @@
+from datetime import time
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -5,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.attendance import AttendanceRecord
 from app.models.class_period import ClassPeriod
+from app.models.pae import PAEDelivery, PAEEnrollment
 from app.models.enums import UserRole
 from app.models.grade import Grade
 from app.models.group import Group
@@ -217,18 +219,6 @@ class AdminManagementRepository:
 
     # --- Horarios (class_periods) ---
 
-    async def get_class_period_by_unique(
-        self, group_id: UUID, period_order: int, day_of_week: int
-    ) -> ClassPeriod | None:
-        result = await self.session.execute(
-            select(ClassPeriod).where(
-                ClassPeriod.group_id == group_id,
-                ClassPeriod.period_order == period_order,
-                ClassPeriod.day_of_week == day_of_week,
-            )
-        )
-        return result.scalar_one_or_none()
-
     async def create_class_period(self, cp: ClassPeriod) -> ClassPeriod:
         return await self._add(cp)
 
@@ -252,7 +242,7 @@ class AdminManagementRepository:
                 ClassPeriod.group_id == group_id,
                 ClassPeriod.institution_id == institution_id,
             )
-            .order_by(ClassPeriod.day_of_week, ClassPeriod.period_order)
+            .order_by(ClassPeriod.day_of_week, ClassPeriod.start_time)
         )
         return [(row[0], row[1], row[2]) for row in result.all()]
 
@@ -302,45 +292,149 @@ class AdminManagementRepository:
         return result.scalar_one()
 
     async def find_overlapping_period(
-        self, group_id: UUID, day_of_week: int, start_order: int, span: int,
+        self, group_id: UUID, day_of_week: int, start_time: time, end_time: time,
         exclude_id: UUID | None = None,
     ) -> ClassPeriod | None:
-        """Bloque de ese salón y día cuyo rango de periodos choca con el dado.
+        """Bloque de ese salón y día que se pisa EN EL RELOJ con el rango dado.
 
-        Duplica el EXCLUDE de la BD (migración `e9a3b7c2d418`) para poder dar un
-        409 con mensaje en vez de dejar que reviente la constraint. Rangos
-        semiabiertos: [a, a+span) se solapa con [b, b+span_b) si a < b+span_b y
-        b < a+span.
+        Duplica el EXCLUDE `class_periods_no_time_overlap` (migración
+        `f2d5a81c9e37`) para poder dar un 409 con mensaje en vez de dejar que
+        reviente la constraint. Rangos semiabiertos: [a1,a2) solapa con [b1,b2)
+        si a1 < b2 y b1 < a2 — así dos clases seguidas (07:50 fin, 07:50
+        inicio) NO cuentan como solape.
         """
-        end_order = start_order + span
         stmt = select(ClassPeriod).where(
             ClassPeriod.group_id == group_id,
             ClassPeriod.day_of_week == day_of_week,
-            ClassPeriod.period_order < end_order,
-            ClassPeriod.period_order + ClassPeriod.span > start_order,
+            ClassPeriod.start_time < end_time,
+            ClassPeriod.end_time > start_time,
         )
         if exclude_id:
             stmt = stmt.where(ClassPeriod.id != exclude_id)
-        result = await self.session.execute(stmt.limit(1))
+        result = await self.session.execute(stmt.order_by(ClassPeriod.start_time).limit(1))
         return result.scalar_one_or_none()
 
-    async def existing_period_slots(self, group_id: UUID) -> set[tuple[int, int]]:
-        """(period_order, day_of_week) ya ocupados en ese salón.
+    async def find_teacher_conflict(
+        self, user_id: UUID, day_of_week: int, start_time: time, end_time: time,
+        exclude_id: UUID | None = None,
+    ) -> tuple[ClassPeriod, str, str] | None:
+        """Bloque de OTRO salón donde ese docente ya está a esa hora.
 
-        Se lee de una vez para que la creación masiva omita los existentes sin
-        hacer una consulta por bloque.
+        `find_overlapping_period` mira el salón; esta mira a la persona. Son dos
+        invariantes distintos: un salón no puede tener dos clases a la vez, y un
+        docente no puede estar en dos aulas a la vez. La segunda faltaba, y por
+        eso el docente demo llegó a tener cuatro primeras horas simultáneas y
+        cuatro clases pendientes de lista a las 10:00 en «Mis clases de hoy».
+
+        Devuelve el bloque más el grado y salón, que es lo que hace legible el
+        409 («ya dicta en Once A de 07:00 a 07:50»).
         """
-        result = await self.session.execute(
-            select(ClassPeriod.period_order, ClassPeriod.day_of_week, ClassPeriod.span)
-            .where(ClassPeriod.group_id == group_id)
+        stmt = (
+            select(ClassPeriod, Grade.name, Group.name)
+            .join(Group, Group.id == ClassPeriod.group_id)
+            .join(Grade, Grade.id == Group.grade_id)
+            .where(
+                ClassPeriod.user_id == user_id,
+                ClassPeriod.day_of_week == day_of_week,
+                ClassPeriod.start_time < end_time,
+                ClassPeriod.end_time > start_time,
+            )
         )
-        # Una clase doble ocupa DOS órdenes: si solo se registrara el de inicio,
-        # la creación masiva intentaría crear un bloque en el que ella cubre.
-        ocupados = set()
-        for order, day, span in result.all():
-            for o in range(order, order + span):
-                ocupados.add((o, day))
-        return ocupados
+        if exclude_id:
+            stmt = stmt.where(ClassPeriod.id != exclude_id)
+        row = (await self.session.execute(stmt.order_by(ClassPeriod.start_time).limit(1))).first()
+        return (row[0], row[1], row[2]) if row else None
+
+    async def list_periods_of_day(self, group_id: UUID, day_of_week: int) -> list[ClassPeriod]:
+        """Bloques de ese salón y día, en orden de reloj. Base de la
+        renumeración de `period_order` (ver `_renumber_day` en el service)."""
+        result = await self.session.execute(
+            select(ClassPeriod)
+            .where(ClassPeriod.group_id == group_id, ClassPeriod.day_of_week == day_of_week)
+            .order_by(ClassPeriod.start_time)
+        )
+        return list(result.scalars().all())
+
+    async def max_period_order(self, group_id: UUID, day_of_week: int) -> int:
+        """Mayor `period_order` de ese salón y día, 0 si no hay bloques. Sirve
+        para darle al bloque recién creado un orden provisional que no viole la
+        UNIQUE antes de que `_renumber_day` reparta los definitivos."""
+        result = await self.session.execute(
+            select(func.max(ClassPeriod.period_order)).where(
+                ClassPeriod.group_id == group_id, ClassPeriod.day_of_week == day_of_week
+            )
+        )
+        return result.scalar_one() or 0
+
+    async def flush(self) -> None:
+        await self.session.flush()
+
+    # --- PAE: listado de inscritos para la consola ---
+
+    async def list_pae_enrollments(
+        self, institution_id: UUID, academic_year: int, include_inactive: bool = False,
+        group_id: UUID | None = None,
+    ) -> list[dict]:
+        """Inscritos al PAE con los datos del estudiante ya resueltos.
+
+        Vive aquí y no en `PAERepository` porque es una consulta de la consola de
+        gestión —joins con salón, grado y última entrega— y no una operación
+        sobre la entidad `PAEEnrollment`; esas (crear, reactivar) siguen en
+        `PAERepository`, que el service ya tiene inyectado.
+
+        `LEFT JOIN` en salón y grado a propósito: un estudiante sin matrícula
+        puede estar inscrito al PAE, y ocultarlo del listado dejaría raciones
+        pedidas que nadie ve.
+        """
+        ultima = (
+            select(PAEDelivery.student_id, func.max(PAEDelivery.delivery_date).label("ultima"))
+            .where(PAEDelivery.institution_id == institution_id)
+            .group_by(PAEDelivery.student_id)
+            .subquery()
+        )
+        stmt = (
+            select(
+                PAEEnrollment.student_id, PAEEnrollment.academic_year,
+                PAEEnrollment.enrolled_at, PAEEnrollment.is_active,
+                Student.document_number, Student.first_name, Student.last_name,
+                Student.photo_url, Student.is_active.label("student_is_active"),
+                Grade.name.label("grade_name"), Group.name.label("group_name"),
+                ultima.c.ultima.label("last_delivery"),
+            )
+            .join(Student, Student.id == PAEEnrollment.student_id)
+            .outerjoin(StudentGroup, (StudentGroup.student_id == Student.id)
+                       & (StudentGroup.is_active == True))
+            .outerjoin(Group, (Group.id == StudentGroup.group_id)
+                       & (Group.academic_year == academic_year))
+            .outerjoin(Grade, Grade.id == Group.grade_id)
+            .outerjoin(ultima, ultima.c.student_id == Student.id)
+            .where(
+                PAEEnrollment.institution_id == institution_id,
+                Student.institution_id == institution_id,
+                PAEEnrollment.academic_year == academic_year,
+            )
+            .order_by(Student.last_name, Student.first_name)
+        )
+        if not include_inactive:
+            stmt = stmt.where(PAEEnrollment.is_active == True)
+        result = await self.session.execute(stmt)
+        return [dict(r) for r in result.mappings().all()]
+
+    async def count_pae_enrollments(
+        self, institution_id: UUID, academic_year: int
+    ) -> tuple[int, int]:
+        """(activos, inactivos) del año. Se cuenta en BD y no sobre la lista ya
+        filtrada: el contador debe ser el mismo aunque la vista esté filtrada."""
+        result = await self.session.execute(
+            select(PAEEnrollment.is_active, func.count())
+            .where(
+                PAEEnrollment.institution_id == institution_id,
+                PAEEnrollment.academic_year == academic_year,
+            )
+            .group_by(PAEEnrollment.is_active)
+        )
+        conteo = {bool(row[0]): row[1] for row in result.all()}
+        return conteo.get(True, 0), conteo.get(False, 0)
 
     # --- Asignación docente-grupo (user_groups) ---
 

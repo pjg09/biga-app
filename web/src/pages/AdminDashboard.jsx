@@ -1126,8 +1126,7 @@ function HorarioGrid() {
   const [loading, setLoading] = useState(true);
   const { toast, showToast } = useToast();
 
-  const [editing, setEditing] = useState(null);   // bloque existente o {day,order} nuevo
-  const [bulk, setBulk] = useState(null);         // borrador de jornada
+  const [editing, setEditing] = useState(null);   // bloque existente o borrador nuevo
   // TEMPORAL (QA de fin de semana). Fuerza las columnas Sáb/Dom aunque estén
   // vacías, para poder crear bloques ahí. Ver TODO.md antes de producción.
   const [showWeekend, setShowWeekend] = useState(false);
@@ -1160,37 +1159,76 @@ function HorarioGrid() {
   const days = [1, 2, 3, 4, 5];
   for (const d of [6, 7]) if (showWeekend || periods.some(p => p.day_of_week === d)) days.push(d);
 
-  // Los órdenes visibles incluyen los que una clase doble cubre sin empezar en
-  // ellos: si la 2ª ocupa 2 y 3, la fila 3 debe existir aunque nada empiece ahí.
-  const orders = [...new Set(
-    periods.flatMap(p => Array.from({ length: p.span ?? 1 }, (_, k) => p.period_order + k))
-  )].sort((a, b) => a - b);
-  const cell = (order, day) => periods.find(p => p.period_order === order && p.day_of_week === day);
-  // Celda absorbida por una clase doble que empezó más arriba: no se pinta nada,
-  // el rowSpan del bloque de origen ya ocupa ese hueco.
-  const covered = (order, day) => periods.some(p =>
-    p.day_of_week === day && p.period_order < order && p.period_order + (p.span ?? 1) > order);
-  const rowTime = (order) => {
-    const p = periods.find(x => x.period_order === order);
-    return p ? `${hhmm(p.start_time)}–${hhmm(p.end_time)}` : '';
+  // El eje arranca en la hora en punto anterior al primer bloque y termina en la
+  // posterior al último: un colegio de jornada única no tiene por qué mirar 24h.
+  const startsMin = periods.map(p => toMin(p.start_time));
+  const endsMin = periods.map(p => toMin(p.end_time));
+  const axisStart = startsMin.length ? Math.floor(Math.min(...startsMin) / 60) * 60 : 6 * 60;
+  const axisEnd = endsMin.length ? Math.ceil(Math.max(...endsMin) / 60) * 60 : 14 * 60;
+  const axisHeight = (axisEnd - axisStart) * PX_MIN;
+  const hourMarks = [];
+  for (let m = axisStart; m <= axisEnd; m += 60) hourMarks.push(m);
+
+  const byDay = {};
+  for (const d of days) {
+    byDay[d] = layoutDay(
+      periods.filter(p => p.day_of_week === d)
+        .map(p => ({ p, s: toMin(p.start_time), e: toMin(p.end_time) }))
+    );
+  }
+  const conflictos = days.reduce((n, d) => n + byDay[d].filter(ev => ev.cols > 1).length, 0);
+
+  const draft = (day, startMin, endMin) => ({
+    day_of_week: day, name: '', start_time: toHHMM(startMin), end_time: toHHMM(endMin),
+    subject_id: '', user_id: '',
+  });
+
+  /* Click en un hueco: crea un bloque que empieza en el minuto pinchado
+     (redondeado a 15) y dura 50 min, recortado si topa con la siguiente clase.
+     Es el "click + formulario": abre el modal ya relleno, no guarda nada. */
+  const onColumnClick = (e, day) => {
+    if (e.target.closest('.hor-ev')) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const raw = axisStart + (e.clientY - rect.top) / PX_MIN;
+    const start = Math.max(axisStart, Math.round(raw / SNAP) * SNAP);
+    const ocupados = byDay[day] ?? [];
+    if (ocupados.some(ev => start >= ev.s && start < ev.e)) return;  // dentro de una clase
+    const siguiente = ocupados.filter(ev => ev.s > start).map(ev => ev.s).sort((a, b) => a - b)[0];
+    const tope = Math.min(siguiente ?? 24 * 60, 24 * 60);
+    const end = Math.min(start + NEW_BLOCK_MIN, tope);
+    if (end - start < SNAP) { showToast('No cabe un bloque en ese hueco', 'error'); return; }
+    setEditing(draft(day, start, end));
   };
+
+  const overlapsExisting = (d) => periods.some(p =>
+    p.id !== d.id && p.day_of_week === Number(d.day_of_week) &&
+    toMin(p.start_time) < toMin(d.end_time) && toMin(p.end_time) > toMin(d.start_time));
 
   const savePeriod = async (e) => {
     e.preventDefault();
+    if (toMin(editing.start_time) >= toMin(editing.end_time)) {
+      showToast('La hora de fin debe ser posterior a la de inicio', 'error'); return;
+    }
+    if (overlapsExisting(editing)) {
+      showToast('Ese horario se cruza con otra clase de ese día', 'error'); return;
+    }
     setSaving(true);
+    const subjectName = subjects.find(s => s.id === editing.subject_id)?.name;
     const body = {
-      name: editing.name, period_order: Number(editing.period_order), span: Number(editing.span) || 1,
+      // La etiqueta es opcional en el formulario pero NOT NULL en la BD: si el
+      // admin no escribe nada, la materia es el mejor nombre posible.
+      name: editing.name.trim() || subjectName || 'Clase',
       start_time: `${editing.start_time}:00`, end_time: `${editing.end_time}:00`,
       subject_id: editing.subject_id || null, user_id: editing.user_id,
     };
     try {
-      if (editing.id) await adminService.updateClassPeriod(editing.id, body);
+      if (editing.id) await adminService.updateClassPeriod(editing.id, { ...body, day_of_week: editing.day_of_week });
       else await adminService.createClassPeriod({ ...body, group_id: selGroup, day_of_week: editing.day_of_week });
       showToast('Bloque guardado');
       setEditing(null);
       await loadPeriods();
     } catch (err) {
-      showToast(err.status === 409 ? 'Ya hay un bloque con ese orden ese día' : err.message, 'error');
+      showToast(err.message, 'error');
     } finally { setSaving(false); }
   };
 
@@ -1205,29 +1243,6 @@ function HorarioGrid() {
     finally { setSaving(false); }
   };
 
-  const saveBulk = async (e) => {
-    e.preventDefault();
-    if (!bulk.days.length) { showToast('Elige al menos un día', 'error'); return; }
-    setSaving(true);
-    try {
-      const r = await adminService.bulkCreateClassPeriods({
-        group_id: selGroup,
-        days: bulk.days,
-        periods: bulk.periods.map(p => ({
-          name: p.name, period_order: Number(p.period_order),
-          start_time: `${p.start_time}:00`, end_time: `${p.end_time}:00`,
-          user_id: bulk.user_id,
-        })),
-      });
-      showToast(r.skipped
-        ? `${r.created} bloques creados · ${r.skipped} ya existían`
-        : `${r.created} bloques creados`);
-      setBulk(null);
-      await loadPeriods();
-    } catch (err) { showToast(err.message, 'error'); }
-    finally { setSaving(false); }
-  };
-
   if (loading) return <div className="dash__empty"><Spinner /><span>Cargando horarios…</span></div>;
   if (!groups.length) return (
     <div className="card mat-empty">
@@ -1235,6 +1250,8 @@ function HorarioGrid() {
       <p className="mat-empty__text">Crea un salón en Académico › Salones antes de armar su horario.</p>
     </div>
   );
+
+  const gridCols = { gridTemplateColumns: `var(--hor-gutter) repeat(${days.length}, minmax(132px, 1fr))` };
 
   return (
     <>
@@ -1248,122 +1265,129 @@ function HorarioGrid() {
         <span className="hor-bar__count">
           {periods.length} {periods.length === 1 ? 'bloque' : 'bloques'}
         </span>
+        {conflictos > 0 && (
+          <span className="hor-bar__warn" title="Hay clases que se pisan en el reloj">
+            ⚠ {conflictos} en conflicto
+          </span>
+        )}
         <label className="dash__inactive-toggle" title="Temporal: para QA de fin de semana">
           <input type="checkbox" checked={showWeekend}
             onChange={e => setShowWeekend(e.target.checked)} />
           Fin de semana
         </label>
-        <button type="button" className="btn--confirm hor-bar__btn"
-          onClick={() => setBulk({ days: [1, 2, 3, 4, 5], user_id: '', periods: DEFAULT_PERIODS.map(p => ({ ...p })) })}>
-          Crear jornada
-        </button>
       </div>
 
-      {orders.length === 0 ? (
-        <div className="card mat-empty">
-          <p className="mat-empty__title">{group ? `${group.grade_name} ${group.name} no tiene horario` : 'Sin horario'}</p>
-          <p className="mat-empty__text">
-            «Crear jornada» arma la semana completa de una vez: defines los bloques del día
-            y eliges a qué días aplicarlos.
-          </p>
-        </div>
-      ) : (
-        <div className="hor-scroll">
-          <table className="hor-grid">
-            <thead>
-              <tr>
-                <th className="hor-grid__corner">Hora</th>
-                {days.map(d => <th key={d}>{DAY_SHORT[d]}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {orders.map(o => (
-                <tr key={o}>
-                  <th className="hor-grid__rowhead">
-                    <span className="hor-grid__order">{o}ª</span>
-                    <span className="hor-grid__time">{rowTime(o)}</span>
-                  </th>
-                  {days.map(d => {
-                    if (covered(o, d)) return null;
-                    const p = cell(o, d);
-                    if (!p) return (
-                      <td key={d}>
-                        <button type="button" className="hor-cell hor-cell--empty"
-                          aria-label={`Agregar bloque ${o}ª hora, ${DAY_SHORT[d]}`}
-                          onClick={() => setEditing({
-                            day_of_week: d, period_order: o, name: `${o}ª hora`, span: 1,
-                            start_time: '07:00', end_time: '07:50', subject_id: '', user_id: '',
-                          })}>+</button>
-                      </td>
-                    );
-                    const c = p.subject_name ? subjectColor(p.subject_name) : null;
-                    const span = p.span ?? 1;
-                    return (
-                      <td key={d} rowSpan={span} className={span > 1 ? 'hor-td--span' : undefined}>
-                        <button type="button" className="hor-cell"
-                          style={c ? { background: c.bg, borderColor: c.bg } : undefined}
-                          onClick={() => setEditing({
-                            id: p.id, day_of_week: p.day_of_week, period_order: p.period_order,
-                            span: p.span ?? 1,
-                            name: p.name, start_time: hhmm(p.start_time), end_time: hhmm(p.end_time),
-                            subject_id: p.subject_id || '', user_id: p.user_id || '',
-                          })}>
-                          <span className="hor-cell__subject" style={c ? { color: c.fg } : undefined}>
-                            {p.subject_name || p.name}
-                          </span>
-                          <span className="hor-cell__teacher">{p.teacher_name || 'Sin docente'}</span>
-                          {span > 1 && (
-                            <span className="hor-cell__span">
-                              {hhmm(p.start_time)}–{hhmm(p.end_time)} · {span} bloques
-                            </span>
-                          )}
-                        </button>
-                      </td>
-                    );
-                  })}
-                </tr>
+      <div className="hor-scroll">
+        <div className="hor-cal">
+          <div className="hor-cal__head" style={gridCols}>
+            <div className="hor-cal__gutter-head" />
+            {days.map(d => (
+              <div key={d} className="hor-cal__day-head">
+                <span className="hor-cal__day-full">{DAY_FULL[d]}</span>
+                <span className="hor-cal__day-short">{DAY_SHORT[d]}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="hor-cal__body" style={{ ...gridCols, height: axisHeight }}>
+            <div className="hor-cal__gutter">
+              {hourMarks.map(m => (
+                <span key={m} className="hor-cal__hour" style={{ top: (m - axisStart) * PX_MIN }}>
+                  {toHHMM(m)}
+                </span>
               ))}
-            </tbody>
-          </table>
+            </div>
+
+            {days.map(d => (
+              <div key={d} className="hor-cal__col" onClick={e => onColumnClick(e, d)}
+                role="presentation">
+                {hourMarks.map(m => (
+                  <span key={m} className="hor-cal__line" style={{ top: (m - axisStart) * PX_MIN }} />
+                ))}
+                {hourMarks.slice(0, -1).map(m => (
+                  <span key={`h${m}`} className="hor-cal__line hor-cal__line--half"
+                    style={{ top: (m + 30 - axisStart) * PX_MIN }} />
+                ))}
+
+                {byDay[d].map(({ p, s, e, col, cols }) => {
+                  const c = p.subject_name ? subjectColor(p.subject_name) : null;
+                  const mins = e - s;
+                  const ancho = 100 / cols;
+                  return (
+                    <button type="button" key={p.id}
+                      className={`hor-ev${mins <= 35 ? ' hor-ev--tiny' : ''}${cols > 1 ? ' hor-ev--clash' : ''}`}
+                      style={{
+                        top: (s - axisStart) * PX_MIN,
+                        height: Math.max(mins * PX_MIN - 2, 16),
+                        left: `calc(${col * ancho}% + 3px)`,
+                        width: `calc(${ancho}% - 6px)`,
+                        ...(c ? { background: c.bg, borderColor: c.fg, color: c.fg } : {}),
+                      }}
+                      title={`${hhmm(p.start_time)}–${hhmm(p.end_time)} · ${durLabel(mins)}`}
+                      onClick={ev => {
+                        ev.stopPropagation();
+                        setEditing({
+                          id: p.id, day_of_week: p.day_of_week, name: p.name,
+                          start_time: hhmm(p.start_time), end_time: hhmm(p.end_time),
+                          subject_id: p.subject_id || '', user_id: p.user_id || '',
+                        });
+                      }}>
+                      <span className="hor-ev__time">
+                        {hhmm(p.start_time)}–{hhmm(p.end_time)}
+                        {p.period_order === 1 && <span className="hor-ev__first" title="Primera hora: es la que notifica al acudiente">1ª</span>}
+                      </span>
+                      <span className="hor-ev__subject">{p.subject_name || p.name}</span>
+                      <span className="hor-ev__teacher">{p.teacher_name || 'Sin docente'}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+
+          {periods.length === 0 && (
+            <p className="hor-cal__hint">
+              {group ? `${group.grade_name} ${group.name}` : 'Este salón'} no tiene horario.
+              Haz clic en cualquier hueco del calendario para crear el primer bloque:
+              se abre con la hora ya puesta y solo hay que elegir materia y docente.
+            </p>
+          )}
         </div>
-      )}
+      </div>
 
       {editing && (
         <div className="dash__modal-overlay" onClick={() => !saving && setEditing(null)}>
           <form className="dash__modal" onSubmit={savePeriod} onClick={e => e.stopPropagation()}
             role="dialog" aria-modal="true">
             <p className="dash__modal-label">
-              {editing.id ? 'Editar bloque' : 'Nuevo bloque'} · {DAY_SHORT[editing.day_of_week]} {editing.period_order}ª hora
+              {editing.id ? 'Editar bloque' : 'Nuevo bloque'} ·{' '}
+              {DAY_FULL[editing.day_of_week]} {editing.start_time}–{editing.end_time}
+              {' · '}{durLabel(Math.max(0, toMin(editing.end_time) - toMin(editing.start_time)))}
             </p>
             <div className="dash__form-grid">
               <label className="dash__field">
-                <span className="dash__field-label">Etiqueta del bloque</span>
-                <input className="dash__field-input" required maxLength={100} value={editing.name}
+                <span className="dash__field-label">
+                  Etiqueta <span className="dash__field-optional">(opcional)</span>
+                </span>
+                <input className="dash__field-input" maxLength={100} value={editing.name}
+                  placeholder="Se usa el nombre de la materia"
                   onChange={e => setEditing(p => ({ ...p, name: e.target.value }))} />
               </label>
               <label className="dash__field">
-                <span className="dash__field-label">Orden</span>
-                <input className="dash__field-input" type="number" min={1} required value={editing.period_order}
-                  onChange={e => setEditing(p => ({ ...p, period_order: e.target.value }))} />
-              </label>
-              <label className="dash__field">
-                <span className="dash__field-label">Duración</span>
-                <select className="dash__field-input" value={editing.span}
-                  onChange={e => setEditing(p => ({ ...p, span: Number(e.target.value) }))}>
-                  <option value={1}>1 bloque</option>
-                  <option value={2}>2 bloques (doble)</option>
-                  <option value={3}>3 bloques</option>
-                  <option value={4}>4 bloques</option>
+                <span className="dash__field-label">Día</span>
+                <select className="dash__field-input" value={editing.day_of_week}
+                  onChange={e => setEditing(p => ({ ...p, day_of_week: Number(e.target.value) }))}>
+                  {[1, 2, 3, 4, 5, 6, 7].map(d => <option key={d} value={d}>{DAY_FULL[d]}</option>)}
                 </select>
               </label>
               <label className="dash__field">
                 <span className="dash__field-label">Inicio</span>
-                <input className="dash__field-input" type="time" required value={editing.start_time}
+                <input className="dash__field-input" type="time" required step={300} value={editing.start_time}
                   onChange={e => setEditing(p => ({ ...p, start_time: e.target.value }))} />
               </label>
               <label className="dash__field">
                 <span className="dash__field-label">Fin</span>
-                <input className="dash__field-input" type="time" required value={editing.end_time}
+                <input className="dash__field-input" type="time" required step={300} value={editing.end_time}
                   onChange={e => setEditing(p => ({ ...p, end_time: e.target.value }))} />
               </label>
               <label className="dash__field">
@@ -1384,9 +1408,11 @@ function HorarioGrid() {
               </label>
             </div>
             <p className="dash__form-hint">
-              El docente es obligatorio: es quien verá este bloque en «Mis clases de hoy» y
-              quien toma lista. La 1ª hora es la que dispara la notificación de inasistencia al
-              acudiente, así que dejarla sin dueño la silenciaría.
+              La duración del bloque es la que marquen estas dos horas: no hay bloques de tamaño
+              fijo. El orden lo calcula el sistema por la hora de inicio, y la primera clase del
+              día es la que dispara la notificación de inasistencia al acudiente. El docente es
+              obligatorio: es quien verá el bloque en «Mis clases de hoy» y quien toma lista, y
+              no puede tener otra clase a la misma hora en otro salón.
             </p>
             <div className="dash__modal-actions">
               {editing.id && (
@@ -1404,89 +1430,6 @@ function HorarioGrid() {
         </div>
       )}
 
-      {bulk && (
-        <div className="dash__modal-overlay" onClick={() => !saving && setBulk(null)}>
-          <form className="dash__modal hor-bulk" onSubmit={saveBulk} onClick={e => e.stopPropagation()}
-            role="dialog" aria-modal="true">
-            <p className="dash__modal-label">Crear jornada · {group?.grade_name} {group?.name}</p>
-
-            <span className="dash__field-label">Días</span>
-            <div className="hor-days">
-              {/* 7 = domingo, habilitado para el QA de fin de semana (ver TODO.md). */}
-              {[1, 2, 3, 4, 5, 6, 7].map(d => (
-                <label key={d} className={`hor-day${bulk.days.includes(d) ? ' hor-day--on' : ''}`}>
-                  <input type="checkbox" checked={bulk.days.includes(d)}
-                    onChange={e => setBulk(b => ({
-                      ...b,
-                      days: e.target.checked ? [...b.days, d] : b.days.filter(x => x !== d),
-                    }))} />
-                  {DAY_SHORT[d]}
-                </label>
-              ))}
-            </div>
-
-            <label className="dash__field" style={{ marginBottom: 14 }}>
-              <span className="dash__field-label">Docente de todos los bloques</span>
-              <select className="dash__field-input" required value={bulk.user_id}
-                onChange={e => setBulk(b => ({ ...b, user_id: e.target.value }))}>
-                <option value="">Seleccionar…</option>
-                {users.map(u => <option key={u.id} value={u.id}>{u.first_name} {u.last_name}</option>)}
-              </select>
-            </label>
-
-            <span className="dash__field-label">Bloques del día</span>
-            <div className="hor-rows">
-              {bulk.periods.map((p, i) => (
-                <div className="hor-row" key={i}>
-                  <span className="hor-row__n">{p.period_order}ª</span>
-                  <input className="dash__field-input" value={p.name} required maxLength={100}
-                    aria-label={`Etiqueta del bloque ${p.period_order}`}
-                    onChange={e => setBulk(b => ({
-                      ...b, periods: b.periods.map((x, j) => j === i ? { ...x, name: e.target.value } : x),
-                    }))} />
-                  <input className="dash__field-input hor-row__time" type="time" value={p.start_time} required
-                    aria-label="Inicio"
-                    onChange={e => setBulk(b => ({
-                      ...b, periods: b.periods.map((x, j) => j === i ? { ...x, start_time: e.target.value } : x),
-                    }))} />
-                  <input className="dash__field-input hor-row__time" type="time" value={p.end_time} required
-                    aria-label="Fin"
-                    onChange={e => setBulk(b => ({
-                      ...b, periods: b.periods.map((x, j) => j === i ? { ...x, end_time: e.target.value } : x),
-                    }))} />
-                  <button type="button" className="hor-row__del" aria-label="Quitar bloque"
-                    onClick={() => setBulk(b => ({ ...b, periods: b.periods.filter((_, j) => j !== i) }))}>✕</button>
-                </div>
-              ))}
-            </div>
-            <button type="button" className="btn--secondary dash__guardian-add"
-              onClick={() => setBulk(b => {
-                const last = b.periods[b.periods.length - 1];
-                const n = (last?.period_order ?? 0) + 1;
-                return { ...b, periods: [...b.periods, {
-                  period_order: n, name: `${n}ª hora`,
-                  start_time: last?.end_time ?? '07:00', end_time: last?.end_time ?? '07:50',
-                }] };
-              })}>
-              + Agregar bloque
-            </button>
-
-            <p className="dash__form-hint">
-              Se crean {bulk.days.length * bulk.periods.length} bloques
-              ({bulk.periods.length} × {bulk.days.length} {bulk.days.length === 1 ? 'día' : 'días'}).
-              Los que ya existan se respetan, no se sobrescriben. Todos quedan a nombre del
-              docente elegido arriba; luego se reasignan uno a uno tocando cada celda.
-            </p>
-            <div className="dash__modal-actions">
-              <button type="button" className="btn--secondary" disabled={saving}
-                onClick={() => setBulk(null)}>Cancelar</button>
-              <button type="submit" className="btn--confirm" disabled={saving} aria-busy={saving}>
-                {saving ? <><Spinner color="white" size={16} /> Creando…</> : 'Crear jornada'}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
     </>
   );
 }
@@ -1546,7 +1489,7 @@ function TeacherAssignView() {
 
       <p className="dash__form-hint" style={{ marginBottom: 16 }}>
         Esta asignación es la que hace que un salón aparezca en «Mis clases de hoy» del docente.
-        Sin ella, aunque el horario tenga su nombre en la rejilla, no podrá tomar asistencia.
+        Sin ella, aunque el horario tenga su nombre en el calendario, no podrá tomar asistencia.
       </p>
 
       <form className="card hor-assign" onSubmit={submit}>

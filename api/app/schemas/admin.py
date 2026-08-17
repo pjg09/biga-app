@@ -289,11 +289,14 @@ class AdminStudentDetailResponse(BaseModel):
 class _ClassPeriodFields(BaseModel):
     """Campos comunes de un bloque. `name` es la etiqueta ("Primera hora",
     "Descanso"); la materia va en `subject_id`, del catálogo. Antes se usaba
-    `name` para ambas cosas y ya divergía del catálogo."""
+    `name` para ambas cosas y ya divergía del catálogo.
+
+    **No lleva `period_order`.** Un bloque se define por su hora de inicio y de
+    fin, y el orden se deriva de ahí (ver `_renumber_day` en el service): que el
+    admin pudiera elegirlo permitía un orden 2 que empezaba antes que el orden 1.
+    Tampoco lleva `span`: la duración es `end_time - start_time` y nada más.
+    """
     name: str = Field(min_length=1, max_length=100)
-    period_order: int = Field(ge=1)
-    # Periodos consecutivos que ocupa. 2 = clase doble.
-    span: int = Field(default=1, ge=1, le=12)
     start_time: time
     end_time: time
     subject_id: UUID | None = None
@@ -320,56 +323,68 @@ class ClassPeriodCreate(_ClassPeriodFields):
 
 
 class ClassPeriodUpdate(_ClassPeriodFields):
-    """No incluye `group_id` ni `day_of_week`: mover un bloque de salón o de día
-    es recolocarlo, no editarlo, y chocaría con UNIQUE(group, orden, día)."""
-
-
-class ClassPeriodBulkCreate(BaseModel):
-    """Crea la jornada completa de un salón en una sola petición.
-
-    Sin esto, un horario de 6 periodos × 5 días son 30 envíos de formulario.
-    Los bloques que ya existan para ese (salón, orden, día) se **omiten**, no
-    fallan: así se puede reejecutar para rellenar huecos.
-    """
-    group_id: UUID
-    days: list[int] = Field(min_length=1)
-    periods: list[_ClassPeriodFields] = Field(min_length=1)
-
-    @field_validator("days")
-    @classmethod
-    def valid_days(cls, v: list[int]) -> list[int]:
-        if any(d < 1 or d > 7 for d in v):
-            raise ValueError("Los días deben estar entre 1 (lunes) y 7 (domingo)")
-        return sorted(set(v))
-
-    @model_validator(mode="after")
-    def unique_orders(self):
-        orders = [p.period_order for p in self.periods]
-        if len(orders) != len(set(orders)):
-            raise ValueError("Hay dos bloques con el mismo orden")
-        return self
-
-
-class ClassPeriodBulkResult(BaseModel):
-    created: int
-    skipped: int
+    """No incluye `group_id`: mover un bloque de salón es recolocarlo, no
+    editarlo. `day_of_week` sí es opcionalmente editable — arrastrar una clase
+    del martes al jueves es una edición legítima, y al derivarse el orden ya no
+    hay ningún `UNIQUE(group, orden, día)` que esquivar: los dos días afectados
+    se renumeran."""
+    day_of_week: int | None = Field(default=None, ge=1, le=7)
 
 
 class ClassPeriodResponse(BaseModel):
     id: UUID
     group_id: UUID
     name: str
+    # Derivado por el service, no enviado por el cliente. Se devuelve porque la
+    # UI marca cuál es la primera hora (la que notifica al acudiente).
     period_order: int
     start_time: time
     end_time: time
     day_of_week: int
-    span: int = 1
     subject_id: UUID | None = None
     subject_name: str | None = None
     user_id: UUID | None = None
     teacher_name: str | None = None
 
     model_config = {"from_attributes": True}
+
+
+# ── Gestión: PAE (inscritos) ──────────────────────────────────────────
+
+class PAEEnrollmentAdd(BaseModel):
+    """Inscribir a un estudiante **ya existente**. Solo el id: el año académico
+    es el vigente y `enrolled_at` lo pone el servidor, porque ambos entran en el
+    `enrollment_hash` (capa 1 de la cadena de integridad del PAE) y aceptarlos
+    del cliente permitiría fabricar una inscripción con fecha elegida."""
+    student_id: UUID
+
+
+class PAEEnrollmentItem(BaseModel):
+    """Fila del listado de inscritos. Lleva los datos del estudiante ya
+    resueltos (nombre, salón, foto) para que la consola no tenga que pedir el
+    detalle uno por uno."""
+    student_id: UUID
+    document_number: str
+    first_name: str
+    last_name: str
+    photo_url: str | None = None
+    grade_name: str | None = None
+    group_name: str | None = None
+    academic_year: int
+    enrolled_at: datetime
+    is_active: bool
+    student_is_active: bool
+    # Última ración reclamada, para distinguir de un vistazo al inscrito que
+    # usa el programa del que se inscribió y nunca apareció.
+    last_delivery: PyDate | None = None
+
+
+class PAEEnrollmentSummary(BaseModel):
+    activos: int
+    inactivos: int
+    sin_reclamar_nunca: int
+    academic_year: int
+    items: list[PAEEnrollmentItem]
 
 
 class UserGroupCreate(BaseModel):

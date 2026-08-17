@@ -31,12 +31,13 @@ from app.schemas.admin import (
     AdminUserCreate,
     AdminUserResponse,
     AdminUserUpdate,
-    ClassPeriodBulkCreate,
-    ClassPeriodBulkResult,
     ClassPeriodCreate,
     ClassPeriodUpdate,
     ClassPeriodResponse,
     GradeResponse,
+    PAEEnrollmentAdd,
+    PAEEnrollmentItem,
+    PAEEnrollmentSummary,
     GroupCreate,
     GroupResponse,
     StudentGroupCreate,
@@ -55,12 +56,19 @@ def _not_found(detail: str) -> HTTPException:
 
 
 def _overlap_msg(otro) -> str:
-    ocupa = (
-        f"el orden {otro.period_order}"
-        if otro.span == 1
-        else f"los órdenes {otro.period_order} a {otro.period_order + otro.span - 1}"
+    return (
+        f"Ese horario se cruza con «{otro.name}», de "
+        f"{otro.start_time:%H:%M} a {otro.end_time:%H:%M}"
     )
-    return f"Ese rango de horas choca con «{otro.name}», que ocupa {ocupa} ese día"
+
+
+def _teacher_conflict_msg(docente, bloque, grado: str, salon: str) -> str:
+    quien = f"{docente.first_name} {docente.last_name}" if docente else "Ese docente"
+    return (
+        f"{quien} ya dicta «{bloque.name}» en {grado} {salon} de "
+        f"{bloque.start_time:%H:%M} a {bloque.end_time:%H:%M} ese día. "
+        "Un docente no puede estar en dos salones a la vez."
+    )
 
 
 def _conflict(detail: str) -> HTTPException:
@@ -675,6 +683,29 @@ class AdminManagementService:
 
     # --- Horarios ---
 
+    async def _renumber_day(self, group_id: UUID, day_of_week: int) -> None:
+        """Reasigna `period_order` = 1..N por hora de inicio en ese (salón, día).
+
+        `period_order` es derivado desde la migración `f2d5a81c9e37`: el admin
+        define horas, no números. Hay que llamarlo después de **cualquier**
+        alta, edición o borrado de bloques de ese día — incluido el borrado, o
+        eliminar la clase de las 7:00 dejaría el día sin `period_order = 1` y
+        con él sin la notificación de inasistencia al acudiente.
+
+        Dos fases porque `UNIQUE(group_id, period_order, day_of_week)` no es
+        DEFERRABLE: el ORM emite un UPDATE por fila y la unicidad se comprueba
+        fila a fila, así que una permutación directa (2→1, 1→2) choca a medio
+        camino. El desplazamiento a 1000+ deja el rango final libre; los órdenes
+        reales son de un dígito y el techo del SMALLINT queda lejísimos.
+        """
+        bloques = await self.repo.list_periods_of_day(group_id, day_of_week)
+        for i, cp in enumerate(bloques):
+            cp.period_order = 1000 + i
+        await self.repo.flush()
+        for i, cp in enumerate(bloques):
+            cp.period_order = i + 1
+        await self.repo.flush()
+
     async def create_class_period(
         self, data: ClassPeriodCreate, institution_id: UUID
     ) -> ClassPeriodResponse:
@@ -683,26 +714,52 @@ class AdminManagementService:
         if data.start_time >= data.end_time:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "La hora de inicio debe ser menor a la de fin")
         choque = await self.repo.find_overlapping_period(
-            data.group_id, data.day_of_week, data.period_order, data.span
+            data.group_id, data.day_of_week, data.start_time, data.end_time
         )
         if choque:
             raise _conflict(_overlap_msg(choque))
         await self._check_period_refs(data, institution_id, data.group_id)
+        await self._check_teacher_free(
+            data.user_id, data.day_of_week, data.start_time, data.end_time, institution_id
+        )
         cp = ClassPeriod(
             id=uuid4(),
             institution_id=institution_id,
             group_id=data.group_id,
             name=data.name,
-            period_order=data.period_order,
+            # Provisional: solo tiene que no chocar con la UNIQUE hasta que
+            # `_renumber_day` reparta los definitivos dos líneas más abajo.
+            period_order=await self.repo.max_period_order(data.group_id, data.day_of_week) + 1,
             start_time=data.start_time,
             end_time=data.end_time,
             day_of_week=data.day_of_week,
-            span=data.span,
             subject_id=data.subject_id,
             user_id=data.user_id,
         )
         await self.repo.create_class_period(cp)
+        await self._renumber_day(data.group_id, data.day_of_week)
         return await self._period_response(cp, institution_id)
+
+    async def _check_teacher_free(
+        self, user_id: UUID, day_of_week: int, start_time, end_time,
+        institution_id: UUID, exclude_id: UUID | None = None,
+    ) -> None:
+        """El docente no puede tener otro bloque a esa hora, **en ningún salón**.
+
+        Es un invariante distinto del no-solapamiento del salón: aquel protege el
+        aula, este a la persona. Sin él, «Mis clases de hoy» le muestra al docente
+        cuatro clases simultáneas y cuatro listas por tomar a la misma hora — y en
+        primera hora, cuatro tandas de notificaciones a acudientes de salones en
+        los que no estuvo. Lo respalda el EXCLUDE `class_periods_teacher_no_overlap`
+        (migración `b7e4f1c8a209`); esto solo da el 409 legible.
+        """
+        conflicto = await self.repo.find_teacher_conflict(
+            user_id, day_of_week, start_time, end_time, exclude_id=exclude_id
+        )
+        if conflicto:
+            bloque, grado, salon = conflicto
+            docente = await self.repo.get_user(user_id, institution_id)
+            raise _conflict(_teacher_conflict_msg(docente, bloque, grado, salon))
 
     async def _check_period_refs(self, data, institution_id: UUID, group_id: UUID) -> None:
         """Valida materia y docente, y garantiza el vínculo docente–salón.
@@ -739,36 +796,6 @@ class AdminManagementService:
             resp.teacher_name = f"{u.first_name} {u.last_name}" if u else None
         return resp
 
-    async def bulk_create_class_periods(
-        self, data: ClassPeriodBulkCreate, institution_id: UUID
-    ) -> ClassPeriodBulkResult:
-        """Crea la jornada de un salón (periodos × días) en una sola petición.
-
-        Omite los (orden, día) ya existentes en vez de fallar: así se puede
-        volver a lanzar para rellenar huecos sin borrar lo que ya estaba, que es
-        el caso real cuando a un horario se le añade un día o una hora más.
-        """
-        if not await self.repo.get_group(data.group_id, institution_id):
-            raise _not_found("Salón no encontrado en esta institución")
-        for p in data.periods:
-            await self._check_period_refs(p, institution_id, data.group_id)
-
-        ocupados = await self.repo.existing_period_slots(data.group_id)
-        created = skipped = 0
-        for day in data.days:
-            for p in data.periods:
-                if (p.period_order, day) in ocupados:
-                    skipped += 1
-                    continue
-                await self.repo.create_class_period(ClassPeriod(
-                    id=uuid4(), institution_id=institution_id, group_id=data.group_id,
-                    name=p.name, period_order=p.period_order,
-                    start_time=p.start_time, end_time=p.end_time, day_of_week=day,
-                    span=p.span, subject_id=p.subject_id, user_id=p.user_id,
-                ))
-                created += 1
-        return ClassPeriodBulkResult(created=created, skipped=skipped)
-
     async def update_class_period(
         self, cp_id: UUID, data: ClassPeriodUpdate, institution_id: UUID
     ) -> ClassPeriodResponse:
@@ -777,21 +804,37 @@ class AdminManagementService:
             raise _not_found("Bloque no encontrado en esta institución")
         await self._check_period_refs(data, institution_id, cp.group_id)
 
-        # Orden y span pueden cambiar; ambos mueven el rango que ocupa el bloque.
+        dia_anterior = cp.day_of_week
+        dia_nuevo = data.day_of_week or dia_anterior
         choque = await self.repo.find_overlapping_period(
-            cp.group_id, cp.day_of_week, data.period_order, data.span, exclude_id=cp.id
+            cp.group_id, dia_nuevo, data.start_time, data.end_time, exclude_id=cp.id
         )
         if choque:
             raise _conflict(_overlap_msg(choque))
+        await self._check_teacher_free(
+            data.user_id, dia_nuevo, data.start_time, data.end_time, institution_id,
+            exclude_id=cp.id,
+        )
 
         cp.name = data.name
-        cp.period_order = data.period_order
-        cp.span = data.span
         cp.start_time = data.start_time
         cp.end_time = data.end_time
         cp.subject_id = data.subject_id
         cp.user_id = data.user_id
+        if dia_nuevo != dia_anterior:
+            # El orden provisional se pide ANTES de mover el día: el SELECT de
+            # `max_period_order` dispara autoflush, y con `day_of_week` ya
+            # cambiado y el orden viejo aún puesto, esa escritura intermedia
+            # choca contra la UNIQUE del día destino. El definitivo lo pone
+            # `_renumber_day`, que además recoloca el día de origen.
+            provisional = await self.repo.max_period_order(cp.group_id, dia_nuevo) + 1
+            cp.day_of_week = dia_nuevo
+            cp.period_order = provisional
         await self.repo.save_class_period(cp)
+
+        await self._renumber_day(cp.group_id, dia_nuevo)
+        if dia_nuevo != dia_anterior:
+            await self._renumber_day(cp.group_id, dia_anterior)
         return await self._period_response(cp, institution_id)
 
     async def delete_class_period(self, cp_id: UUID, institution_id: UUID) -> None:
@@ -806,7 +849,11 @@ class AdminManagementService:
                 "No se puede eliminar: ya se tomó asistencia en este bloque. "
                 "Edítalo en vez de borrarlo."
             )
+        group_id, day = cp.group_id, cp.day_of_week
         await self.repo.delete_class_period(cp)
+        # Sin esto, borrar la clase de las 7:00 deja el día empezando en el
+        # orden 2 y nadie dispara la notificación de inasistencia.
+        await self._renumber_day(group_id, day)
 
     async def list_class_periods(self, group_id: UUID, institution_id: UUID) -> list[ClassPeriodResponse]:
         if not await self.repo.get_group(group_id, institution_id):
@@ -818,6 +865,96 @@ class AdminManagementService:
             resp.teacher_name = teacher_name
             out.append(resp)
         return out
+
+    # --- PAE: inscritos ---
+
+    async def list_pae_enrollments(
+        self, institution_id: UUID, include_inactive: bool = False
+    ) -> PAEEnrollmentSummary:
+        anio = date.today().year
+        filas = await self.repo.list_pae_enrollments(
+            institution_id, anio, include_inactive=include_inactive
+        )
+        activos, inactivos = await self.repo.count_pae_enrollments(institution_id, anio)
+        items = [
+            PAEEnrollmentItem(
+                **{k: v for k, v in f.items() if k != "photo_url"},
+                photo_url=resolve_photo_url(self.storage, f["photo_url"]),
+            )
+            for f in filas
+        ]
+        return PAEEnrollmentSummary(
+            activos=activos,
+            inactivos=inactivos,
+            # Inscrito que nunca reclamó una ración: es el caso que hay que
+            # revisar uno por uno, no un dato de color.
+            sin_reclamar_nunca=sum(1 for i in items if i.is_active and i.last_delivery is None),
+            academic_year=anio,
+            items=items,
+        )
+
+    async def add_pae_enrollment(
+        self, data: PAEEnrollmentAdd, institution_id: UUID
+    ) -> PAEEnrollmentItem:
+        """Inscribe a un estudiante existente, o **reactiva** su inscripción.
+
+        Difiere a propósito de `POST /pae/enrollments`, que da 409 si existe
+        cualquier inscripción del año: aquí una inscripción dada de baja se
+        reactiva. La fila nunca se recrea — `enrolled_at` y `enrollment_hash`
+        entran en la cadena de integridad del PAE, así que volver a inscribir
+        emitiendo una firma nueva borraría la fecha real de ingreso al programa.
+        `is_active` es el único campo fuera del hash, y por eso es el único que
+        se toca.
+        """
+        student = await self.repo.get_student(data.student_id, institution_id)
+        if not student:
+            raise _not_found("Estudiante no encontrado en esta institución")
+        if not student.is_active:
+            raise _conflict(
+                f"{student.first_name} {student.last_name} está dado de baja: "
+                "reactívalo en Estudiantes antes de inscribirlo al PAE"
+            )
+
+        anio = date.today().year
+        existente = await self.pae_repo.get_any_enrollment(student.id, institution_id, anio)
+        if existente and existente.is_active:
+            raise _conflict(
+                f"{student.first_name} {student.last_name} ya está inscrito en el PAE {anio}"
+            )
+        if existente:
+            existente.is_active = True
+            await self.pae_repo.save_enrollment(existente)
+        else:
+            await self._enroll_in_pae(student.id, institution_id)
+
+        return await self._pae_item(student.id, institution_id, anio)
+
+    async def set_pae_enrollment_active(
+        self, student_id: UUID, institution_id: UUID, active: bool
+    ) -> PAEEnrollmentItem:
+        """Baja/alta lógica de la inscripción. **Nunca borra la fila**: las
+        entregas ya registradas encadenan su hash con el de la inscripción
+        (capa 2 del PAE), así que borrarla rompería la auditoría de todo lo que
+        ese estudiante reclamó."""
+        anio = date.today().year
+        enrollment = await self.pae_repo.get_any_enrollment(student_id, institution_id, anio)
+        if not enrollment:
+            raise _not_found("Ese estudiante no tiene inscripción al PAE este año")
+        enrollment.is_active = active
+        await self.pae_repo.save_enrollment(enrollment)
+        return await self._pae_item(student_id, institution_id, anio)
+
+    async def _pae_item(
+        self, student_id: UUID, institution_id: UUID, anio: int
+    ) -> PAEEnrollmentItem:
+        filas = await self.repo.list_pae_enrollments(institution_id, anio, include_inactive=True)
+        fila = next((f for f in filas if f["student_id"] == student_id), None)
+        if not fila:
+            raise _not_found("No se pudo leer la inscripción recién guardada")
+        return PAEEnrollmentItem(
+            **{k: v for k, v in fila.items() if k != "photo_url"},
+            photo_url=resolve_photo_url(self.storage, fila["photo_url"]),
+        )
 
     # --- Asignación docente-grupo ---
 

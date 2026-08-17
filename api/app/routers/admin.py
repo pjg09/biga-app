@@ -357,21 +357,6 @@ async def create_class_period(
     return await service.create_class_period(body, current_user.institution_id)
 
 
-@router.post("/class-periods/bulk", response_model=ClassPeriodBulkResult,
-             status_code=status.HTTP_201_CREATED)
-async def bulk_create_class_periods(
-    body: ClassPeriodBulkCreate,
-    current_user: User = Depends(require_admin),
-    service: AdminManagementService = Depends(get_mgmt_service),
-):
-    """Crea la jornada completa de un salón (periodos × días) de una vez.
-
-    Declarado **antes** que `/class-periods/{cp_id}` a propósito: Starlette
-    resuelve por orden de registro, y si no, "bulk" entraría como `{cp_id}`
-    y daría 422 al no castear a UUID."""
-    return await service.bulk_create_class_periods(body, current_user.institution_id)
-
-
 @router.put("/class-periods/{cp_id}", response_model=ClassPeriodResponse)
 async def update_class_period(
     cp_id: UUID,
@@ -379,7 +364,9 @@ async def update_class_period(
     current_user: User = Depends(require_admin),
     service: AdminManagementService = Depends(get_mgmt_service),
 ):
-    """Edita un bloque. No cambia de salón ni de día: eso es recolocarlo."""
+    """Edita un bloque: etiqueta, horas, materia, docente y —opcionalmente— día.
+    No cambia de salón: eso sí es recolocarlo. El `period_order` no se envía,
+    lo deriva el service de la hora de inicio."""
     return await service.update_class_period(cp_id, body, current_user.institution_id)
 
 

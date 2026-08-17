@@ -2512,7 +2512,10 @@ img.dash__modal-avatar { object-fit: cover; }
   .mat-card__edit { opacity: 1; }
 }
 
-/* ─── Horarios › Rejilla semanal ─────────────────────────────── */
+/* ─── Horarios › Calendario semanal ──────────────────────────────
+   El alto de un bloque es su duración real (PX_MIN en AdminDashboard.jsx), no
+   una celda de rejilla de tamaño fijo. Por eso los bloques van posicionados en
+   absoluto sobre la columna del día en vez de ser filas de una tabla. */
 
 .hor-bar {
   display: flex;
@@ -2526,9 +2529,13 @@ img.dash__modal-avatar { object-fit: cover; }
   background: var(--surface); border: 1px solid var(--border);
   border-radius: 999px; padding: 5px 12px; white-space: nowrap;
 }
-.dash .btn--confirm.hor-bar__btn { flex: 0 0 auto; margin-left: auto; white-space: nowrap; }
+.hor-bar__warn {
+  font-size: 0.78rem; font-weight: 700; color: #b45309;
+  background: #fef3c7; border: 1px solid #fcd34d;
+  border-radius: 999px; padding: 5px 12px; white-space: nowrap;
+}
 
-/* La rejilla scrollea dentro de su caja, nunca empuja el body (ver el gotcha
+/* El calendario scrollea dentro de su caja, nunca empuja el body (ver el gotcha
    de overflow atrapado en .dash__content, en web/CLAUDE.md). */
 .hor-scroll {
   overflow-x: auto;
@@ -2537,94 +2544,145 @@ img.dash__modal-avatar { object-fit: cover; }
   border-radius: 14px;
   box-shadow: var(--shadow-sm);
 }
-.hor-grid {
-  width: 100%;
-  border-collapse: collapse;
+
+.hor-cal {
+  --hor-gutter: 58px;
+  position: relative;
   min-width: 620px;
+  /* La línea de la última hora cae justo en el borde inferior del cuerpo y su
+     `border-top` desbordaba 1px, lo que bastaba para que `.hor-scroll` sacara
+     una barra de scroll vertical (su `overflow-x:auto` hace que la Y también
+     compute a `auto` — el gotcha de web/CLAUDE.md). */
+  padding-bottom: 1px;
 }
-.hor-grid th {
+/* Cabecera y cuerpo son dos grids con las MISMAS columnas (se les pasa el mismo
+   `grid-template-columns` inline desde el JSX, que depende de cuántos días se
+   pinten): así el día y su columna quedan alineados sin duplicar el cálculo. */
+.hor-cal__head {
+  display: grid;
+  border-bottom: 1px solid var(--border);
+}
+.hor-cal__day-head {
+  padding: 11px 8px;
+  text-align: center;
   font-size: 0.76rem;
   font-weight: 700;
   color: var(--t2);
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  padding: 12px 8px;
-  border-bottom: 1px solid var(--border);
+  border-left: 1px solid var(--border);
 }
-.hor-grid__corner { width: 86px; text-align: left; padding-left: 14px !important; }
-.hor-grid__rowhead {
-  width: 86px;
-  text-align: left;
-  padding-left: 14px !important;
-  border-right: 1px solid var(--border);
-  vertical-align: middle;
-}
-.hor-grid__order { display: block; font-size: 0.86rem; color: var(--t1); text-transform: none; }
-.hor-grid__time  { display: block; font-size: 0.68rem; color: var(--t3); font-weight: 500;
-                   text-transform: none; letter-spacing: 0; margin-top: 1px; white-space: nowrap; }
-.hor-grid td { padding: 5px; border-bottom: 1px solid var(--border); vertical-align: top; }
-.hor-grid tbody tr:last-child td,
-.hor-grid tbody tr:last-child th { border-bottom: none; }
+.hor-cal__day-short { display: none; }
 
-.hor-cell {
-  width: 100%;
-  min-height: 54px;
+.hor-cal__body {
+  display: grid;
+  position: relative;
+}
+
+/* Eje de horas. `sticky left` lo mantiene visible al scrollear en horizontal:
+   sin él, en móvil se pierde la referencia de a qué hora corresponde un bloque. */
+.hor-cal__gutter {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--surface);
+}
+.hor-cal__gutter-head {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--surface);
+}
+.hor-cal__hour {
+  position: absolute;
+  right: 8px;
+  transform: translateY(-50%);
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--t3);
+  white-space: nowrap;
+}
+/* La primera y la última etiqueta se salen media línea por el translateY: se
+   empujan hacia dentro para que no las recorte la caja. */
+.hor-cal__hour:first-child { transform: translateY(-2px); }
+.hor-cal__hour:last-of-type { transform: translateY(-100%); }
+
+.hor-cal__col {
+  position: relative;
+  border-left: 1px solid var(--border);
+  cursor: copy;               /* el hueco es clicable: crea un bloque ahí */
+}
+.hor-cal__line {
+  position: absolute;
+  left: 0; right: 0;
+  height: 0;
+  border-top: 1px solid var(--border);
+  pointer-events: none;
+}
+.hor-cal__line--half { border-top-style: dotted; opacity: 0.55; }
+
+.hor-cal__hint {
+  position: absolute;
+  top: 45%; left: 50%;
+  transform: translate(-50%, -50%);
+  max-width: 420px;
+  margin: 0;
+  padding: 14px 18px;
+  text-align: center;
+  font-size: 0.82rem;
+  line-height: 1.55;
+  color: var(--t2);
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  pointer-events: none;       /* el clic tiene que llegar a la columna de abajo */
+}
+
+/* --- Bloque de clase --- */
+.hor-ev {
+  position: absolute;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  gap: 2px;
+  gap: 1px;
+  overflow: hidden;
   text-align: left;
-  padding: 8px 10px;
+  padding: 5px 8px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-left-width: 3px;
+  border-radius: 8px;
   background: var(--bg);
+  color: var(--t1);
   cursor: pointer;
-  transition: box-shadow 0.13s, transform 0.1s;
+  transition: box-shadow 0.13s, filter 0.13s;
 }
-.hor-cell:hover { transform: translateY(-1px); box-shadow: 0 5px 14px rgba(15,10,35,0.09); }
-.hor-cell__subject {
-  font-size: 0.8rem; font-weight: 700; color: var(--t1);
+.hor-ev:hover { box-shadow: 0 5px 14px rgba(15,10,35,0.13); filter: brightness(0.97); }
+.hor-ev__time {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 0.66rem; font-weight: 700; opacity: 0.75;
+  white-space: nowrap;
+}
+.hor-ev__first {
+  font-size: 0.6rem; font-weight: 800;
+  background: rgba(255,255,255,0.72);
+  border-radius: 5px; padding: 0 4px;
+}
+.hor-ev__subject {
+  font-size: 0.78rem; font-weight: 700;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.hor-cell__teacher {
-  font-size: 0.7rem; color: var(--t2);
+.hor-ev__teacher {
+  font-size: 0.68rem; opacity: 0.8;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-/* Hueco: se ve que falta y se puede llenar de un clic, sin gritar. */
-.hor-cell--empty {
-  align-items: center;
-  color: var(--t3);
-  font-size: 1.1rem;
-  font-weight: 700;
-  background: transparent;
-  border-style: dashed;
-}
-.hor-cell--empty:hover { color: var(--green-acc); border-color: var(--green-acc); }
-
-/* --- Modal de jornada --- */
-.hor-bulk { max-width: 660px; }
-.hor-days { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 18px; }
-.hor-day {
-  display: flex; align-items: center; gap: 6px;
-  font-size: 0.8rem; font-weight: 600; color: var(--t2);
-  background: var(--bg); border: 1px solid var(--border);
-  border-radius: 9px; padding: 7px 12px; cursor: pointer;
-  transition: border-color 0.13s, color 0.13s, background 0.13s;
-}
-.hor-day--on { border-color: var(--green-acc); color: var(--green-acc); background: var(--green-soft); }
-.hor-day input { width: 14px; height: 14px; cursor: pointer; }
-
-.hor-rows { display: flex; flex-direction: column; gap: 7px; margin: 6px 0 10px; }
-.hor-row { display: flex; align-items: center; gap: 7px; }
-.hor-row__n { flex: 0 0 26px; font-size: 0.78rem; font-weight: 700; color: var(--t2); }
-.hor-row__time { flex: 0 0 118px; }
-.hor-row .dash__field-input { min-width: 0; }
-.hor-row__del {
-  flex: 0 0 auto;
-  background: none; border: none; cursor: pointer;
-  color: var(--t3); font-size: 0.95rem; padding: 6px 8px; border-radius: 7px;
-}
-.hor-row__del:hover { color: var(--red); background: #fef2f2; }
+/* Bloques de media hora o menos: no cabe el docente, y forzarlo deja tres
+   líneas cortadas a la mitad. Se queda la materia, que es lo que identifica. */
+.hor-ev--tiny { padding: 2px 7px; gap: 0; }
+.hor-ev--tiny .hor-ev__teacher { display: none; }
+.hor-ev--tiny .hor-ev__time { font-size: 0.6rem; }
+.hor-ev--tiny .hor-ev__subject { font-size: 0.7rem; }
+/* Clases que se pisan en el reloj: se reparten el ancho (como Google Calendar)
+   y se marcan, porque casi siempre es un error de captura, no algo querido. */
+.hor-ev--clash { outline: 2px solid var(--red); outline-offset: -2px; }
 
 /* --- Asignación docente-salón --- */
 .hor-assign {

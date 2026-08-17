@@ -31,7 +31,7 @@
 
 ## Extensiones de PostgreSQL
 
-- `btree_gist` (migración `e9a3b7c2d418`): necesaria para el `EXCLUDE` de `class_periods`, que impide que dos bloques del mismo salón y día se solapen. GiST no sabe comparar `uuid`/`smallint` con `=` sin esta extensión.
+- `btree_gist` (migración `e9a3b7c2d418`): necesaria para el `EXCLUDE` de `class_periods`, que impide que dos bloques del mismo salón y día se solapen **en el reloj** (desde `f2d5a81c9e37`; antes era sobre el rango de `period_order`). GiST no sabe comparar `uuid`/`smallint` con `=` sin esta extensión.
 - `unaccent` (migración `d4a2c7e91b05`): habilita la búsqueda de estudiantes insensible a acentos. El repositorio envuelve columna y patrón en `unaccent(...)` en el `WHERE` (ej. `unaccent(nombre) ILIKE unaccent('%lopez%')` encuentra "López"). `ILIKE` cubre además el caso de mayúsculas.
 
 ---
@@ -113,11 +113,10 @@ Bloques horarios de un salón. Define qué clase es "primera hora" por día de l
 | `institution_id` | UUID | NOT NULL, FK → institutions | Denormalizado |
 | `group_id` | UUID | NOT NULL, FK → groups | |
 | `name` | VARCHAR(100) | NOT NULL | "Primera hora", "Educación Física" |
-| `period_order` | SMALLINT | NOT NULL | 1 = primera hora del día |
-| `start_time` | TIME | NOT NULL | |
+| `period_order` | SMALLINT | NOT NULL | **Derivado, no lo elige el admin** (migración `f2d5a81c9e37`): la app lo recalcula como la posición del bloque dentro de su día ordenando por `start_time`, así que siempre es denso `1..N` y `1` = la primera clase real del día. Sigue existiendo porque Asistencia dispara la notificación al acudiente con `period_order = 1`. |
+| `start_time` | TIME | NOT NULL | Junto con `end_time` es **la única fuente de la duración** del bloque. |
 | `end_time` | TIME | NOT NULL | |
 | `day_of_week` | SMALLINT | NOT NULL | 1 = Lunes … 7 = Domingo. La consola pinta Lun–Vie siempre y añade Sábado solo si ese día tiene bloques. |
-| `span` | SMALLINT | NOT NULL, DEFAULT 1, CHECK ≥ 1 | Cuántos periodos consecutivos ocupa el bloque. `1` = clase normal; `2` = clase doble, que ocupa `period_order` y `period_order + 1`. Es lo que permite que no todas las clases duren lo mismo. |
 | `subject_id` | UUID | NULLABLE, FK → subjects | Materia que se dicta en ese bloque. Sustituye al uso del campo `name` como materia: `name` es la etiqueta del bloque ("Primera hora", "Descanso"), la materia sale del catálogo. |
 | `user_id` | UUID | **NOT NULL**, FK → users | Docente que dicta ese bloque. Obligatorio desde la migración `d6c1f8a390b4`: Asistencia filtra las clases del docente por esta columna, así que un bloque sin docente sería un bloque donde nadie toma lista — y en primera hora, una notificación al acudiente que nunca se envía. |
 | `created_at` | TIMESTAMP | NOT NULL, DEFAULT NOW() | |
@@ -126,20 +125,57 @@ Bloques horarios de un salón. Define qué clase es "primera hora" por día de l
 ```sql
 UNIQUE (group_id, period_order, day_of_week)
 
--- Dos bloques del mismo salón y día no pueden solaparse en el rango de
--- periodos que ocupan. La UNIQUE de arriba NO basta: una clase doble que
--- empieza en el orden 2 ocupa el 2 y el 3, y otra clase en el orden 3 no
--- violaría la UNIQUE. Requiere la extensión `btree_gist` para los `=`.
+-- Dos bloques del mismo salón y día no pueden solaparse EN EL RELOJ.
+-- Requiere la extensión `btree_gist` para los `=` sobre uuid/smallint.
 EXCLUDE USING gist (
   group_id WITH =, day_of_week WITH =,
-  int4range(period_order, period_order + span) WITH &&
+  timerange(start_time, end_time) WITH &&
 )
 
-CHECK (span >= 1)
+-- Y un docente no puede estar en dos salones a la vez (migración `b7e4f1c8a209`).
+-- Es un invariante DISTINTO del anterior: aquel protege el aula, este a la
+-- persona. Sin él, un docente puede acumular cuatro primeras horas simultáneas.
+EXCLUDE USING gist (
+  user_id WITH =, day_of_week WITH =,
+  timerange(start_time, end_time) WITH &&
+)
+
 CHECK (day_of_week BETWEEN 1 AND 7)
 CHECK (period_order >= 1)
 CHECK (start_time < end_time)
 ```
+
+`timerange` es un tipo range propio (`CREATE TYPE timerange AS RANGE (subtype = time)`,
+migración `f2d5a81c9e37`): PostgreSQL no trae uno de fábrica para `time`. Se declara sin
+`subtype_diff` — solo afecta al cálculo de penalización del GiST, irrelevante con decenas
+de filas por salón. La clase `range_ops` de GiST vale para cualquier range type, así que el
+`EXCLUDE` funciona sin nada más.
+
+> **Por qué el `EXCLUDE` es sobre horas y no sobre `int4range(period_order, period_order + span)`,
+> como era hasta la migración `f2d5a81c9e37`.** El anterior protegía un invariante que no era el
+> real: los bloques no chocan por número de orden, chocan por reloj. Un bloque `period_order = 2,
+> span = 2` de 07:00–08:50 y otro `period_order = 1` de 07:00–07:50 **no** solapan en órdenes
+> (`[2,4)` vs `[1,2)`) y sí se pisan una hora entera — se comprobó que la BD de desarrollo tenía
+> exactamente esa fila. Con la vista de calendario proporcional al tiempo, esa incoherencia deja de
+> ser invisible y se dibuja como dos bloques encimados, así que el invariante tuvo que mudarse al
+> reloj. La columna `span` desapareció en la misma migración: la duración ya la dan
+> `start_time`/`end_time`, y tener las dos cosas permitía guardar un `span = 2` de 50 minutos.
+
+> **Dos constraints porque son dos invariantes.** `class_periods_no_time_overlap` mira el
+> **salón** (dos clases no pueden compartir aula y hora) y `class_periods_teacher_no_overlap`
+> mira al **docente** (nadie está en dos aulas a la vez). Tener solo la primera dejaba pasar
+> un horario donde el mismo docente aparecía en cuatro salones a las 07:00 — y Asistencia,
+> que filtra las clases del docente por `class_periods.user_id`, se lo mostraba como cuatro
+> clases simultáneas con cuatro listas por tomar. En primera hora eso son además cuatro tandas
+> de notificaciones a acudientes de salones donde no estuvo. Lo destapó el seed de
+> estadísticas, que asignaba docentes sin comprobar ocupación.
+
+> **La migración aborta si encuentra solapes preexistentes.** Un `EXCLUDE` no admite `NOT VALID`
+> (solo `CHECK` y `FK`), así que no hay forma de añadirlo "a validar después": o los datos están
+> limpios o el `ALTER TABLE` falla. La migración los detecta antes con un `DO` que hace `RAISE
+> EXCEPTION` listando salón, día y horas de cada par en conflicto, para que el error diga qué
+> corregir en vez de un mensaje genérico de constraint violada. No repara nada por su cuenta:
+> recortar un `end_time` ajeno es decidir por el colegio cuál de las dos clases cede.
 
 ---
 
