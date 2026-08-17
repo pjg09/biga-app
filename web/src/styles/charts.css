@@ -1,0 +1,176 @@
+/* Primitivas de gráfico (Charts.jsx).
+   Chrome recesivo: rejilla y ejes en tinta apagada, la marca de datos es lo
+   único con color. Los tokens de texto nunca toman el color de la serie. */
+
+.chart { position: relative; }
+/* El gráfico deja hueco a la izquierda para las etiquetas del eje Y, que son
+   HTML y no escalan con el viewBox (ver cabecera de Charts.jsx). */
+.chart__plot { position: relative; margin-left: 46px; }
+.chart__svg { width: 100%; height: auto; display: block; overflow: visible; }
+.chart__grid { stroke: #eceaf4; stroke-width: 1; }
+
+.chart__ylabels span, .chart__xlabels span {
+  position: absolute;
+  font-size: 0.76rem; font-weight: 600; color: var(--t2);
+  white-space: nowrap; pointer-events: none;
+}
+.chart__ylabels span { right: calc(100% + 8px); transform: translateY(-50%); }
+.chart__xlabels {
+  position: relative; height: 20px; margin: 6px 0 0 46px;
+}
+.chart__xlabels span { top: 0; transform: translateX(-50%); }
+.chart__line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.chart__crosshair { stroke: var(--t3); stroke-width: 1; stroke-dasharray: 3 3; }
+.chart__dot { stroke: var(--surface); stroke-width: 2; }
+
+.chart-tip {
+  position: absolute;
+  transform: translate(-50%, 0);
+  display: flex; flex-direction: column; gap: 1px;
+  background: var(--t1); color: #fff;
+  font-size: 0.79rem; line-height: 1.4;
+  padding: 7px 10px; border-radius: 8px;
+  pointer-events: none; white-space: nowrap; z-index: 5;
+  box-shadow: 0 6px 18px rgba(15, 10, 35, 0.22);
+}
+.chart-tip strong { font-weight: 700; }
+
+.chart-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; }
+.chart-legend__item {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 0.79rem; font-weight: 600; color: var(--t2);
+}
+.chart-legend__item i, .stack__tip i {
+  width: 10px; height: 10px; border-radius: 3px; display: inline-block; flex: 0 0 auto;
+}
+
+/* --- Barras horizontales --- */
+.barsh { display: flex; flex-direction: column; gap: 9px; }
+.barsh__row { display: flex; align-items: center; gap: 10px; }
+.barsh__label {
+  flex: 0 0 132px; min-width: 0;
+  font-size: 0.82rem; font-weight: 600; color: var(--t2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.barsh__track {
+  flex: 1 1 auto; min-width: 0; height: 20px;
+  background: #f3f2f9; border-radius: 5px; overflow: hidden;
+}
+.barsh__fill { display: block; height: 100%; border-radius: 5px; }
+.barsh__value {
+  flex: 0 0 auto; min-width: 92px; text-align: right;
+  font-size: 0.83rem; font-weight: 700; color: var(--t1);
+}
+.barsh__note {
+  display: block; font-style: normal;
+  font-size: 0.74rem; font-weight: 600; color: var(--t2);
+}
+
+/* --- Columnas --- */
+.cols__plot {
+  display: flex; align-items: flex-end; gap: 10px;
+  height: 168px; padding-top: 18px;
+}
+.cols__col {
+  flex: 1 1 0; min-width: 0; position: relative;
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
+  height: 100%;
+}
+.cols__bar { width: 100%; max-width: 54px; border-radius: 5px 5px 0 0; }
+.cols__value {
+  position: absolute; top: -4px;
+  font-size: 0.79rem; font-weight: 700; color: var(--t1);
+}
+.cols__label {
+  margin-top: 7px; font-size: 0.79rem; font-weight: 600; color: var(--t2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+}
+.cols__tip {
+  position: absolute; bottom: 100%; margin-bottom: 4px;
+  background: var(--t1); color: #fff; font-size: 0.68rem;
+  padding: 3px 7px; border-radius: 6px; white-space: nowrap; z-index: 3;
+}
+.cols__base { margin: 6px 0 0; font-size: 0.74rem; font-weight: 600; color: var(--t2); text-align: right; }
+
+/* --- Apiladas --- */
+/* Centrado y con tope de ancho por columna: con dos o tres meses, `flex:1`
+   repartía todo el ancho y dejaba dos barras diminutas a los extremos de un
+   espacio vacío. */
+.stack__plot {
+  display: flex; align-items: flex-end; justify-content: center;
+  gap: 26px; padding-top: 16px;
+}
+.stack__col {
+  flex: 1 1 0; min-width: 0; max-width: 130px; position: relative;
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
+  height: 100%;
+}
+.stack__bar {
+  width: 100%; max-width: 60px;
+  display: flex; flex-direction: column-reverse; gap: 2px;  /* separador de 2px */
+  border-radius: 5px 5px 0 0; overflow: hidden;
+}
+.stack__seg { display: block; min-height: 3px; }
+.stack__total { font-size: 0.79rem; font-weight: 700; color: var(--t1); margin-bottom: 3px; }
+.stack__label { margin-top: 7px; font-size: 0.79rem; font-weight: 600; color: var(--t2); }
+.stack__tip {
+  position: absolute; bottom: 100%; margin-bottom: 6px;
+  display: flex; flex-direction: column; gap: 3px;
+  background: var(--t1); color: #fff; font-size: 0.68rem;
+  padding: 6px 9px; border-radius: 8px; white-space: nowrap; z-index: 4;
+}
+.stack__tip span { display: flex; align-items: center; gap: 6px; }
+
+/* --- Medidor --- */
+.meter { display: flex; flex-direction: column; gap: 6px; }
+.meter__head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.meter__label { font-size: 0.85rem; font-weight: 600; color: var(--t2); }
+.meter__value { font-size: 1.25rem; font-weight: 800; color: var(--t1); }
+.meter__track {
+  position: relative; display: block; height: 10px;
+  background: #f3f2f9; border-radius: 5px; overflow: hidden;
+}
+.meter__fill { display: block; height: 100%; background: #059669; border-radius: 5px; }
+.meter--alerta .meter__fill { background: #a32d1e; }
+.meter__umbral {
+  position: absolute; top: -2px; bottom: -2px; width: 2px;
+  background: var(--t2); opacity: 0.55;
+}
+.meter__detail { margin: 0; font-size: 0.79rem; font-weight: 500; color: var(--t2); line-height: 1.5; }
+
+/* --- Tarjeta de indicador --- */
+.tile {
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 14px 16px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+}
+.tile__label {
+  font-size: 0.76rem; font-weight: 700; color: var(--t2);
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.tile__value { font-size: 1.7rem; font-weight: 800; color: var(--t1); line-height: 1.1; }
+.tile__value em { font-style: normal; font-size: 0.95rem; font-weight: 700; margin-left: 1px; }
+.tile__delta { font-size: 0.79rem; font-weight: 700; }
+.tile__delta--ok  { color: #047857; }
+.tile__delta--mal { color: #a32d1e; }
+.tile__delta--none { color: var(--t2); font-weight: 600; }
+
+@media (max-width: 640px) {
+  .barsh__label { flex-basis: 92px; }
+  .barsh__value { min-width: 66px; font-size: 0.72rem; }
+  .cols__plot { gap: 5px; }
+  .cols__value { font-size: 0.62rem; }
+  .cols__label { font-size: 0.64rem; }
+}
+
+/* Muestra insuficiente: la barra se apaga y el número se marca. Ocultar la fila
+   sería peor (el salón existe); dejarla igual que las demás, también. */
+.barsh__row--flojo .barsh__label,
+.barsh__row--flojo .barsh__value { color: var(--t2); font-weight: 600; }
+/* La fila con muestra insuficiente se distingue por la barra gris, el asterisco
+   y la nota al pie — no por un texto más claro: `--t3` da 2.41:1 sobre blanco y
+   "atenuado" acabaría significando "ilegible". */
+.barsh__flag, .cols__flag { color: var(--t2); font-weight: 800; margin-left: 3px; }
+.barsh__aviso, .cols__aviso {
+  margin: 6px 0 0; font-size: 0.74rem; font-weight: 500; color: var(--t2); line-height: 1.5;
+}

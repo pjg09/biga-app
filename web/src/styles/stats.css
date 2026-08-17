@@ -1,0 +1,166 @@
+/* Sección de Estadísticas (AdminStats.jsx). Complementa dashboard.css, que
+   sigue aportando .card, .adm-tabs, .btn--*, .dash__empty y las variables. */
+
+.sta-bar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.sta-periodos {
+  display: flex; gap: 2px; padding: 3px;
+  background: #f3f2f9; border-radius: 10px;
+}
+.sta-periodo {
+  border: none; background: none; cursor: pointer;
+  font-size: 0.82rem; font-weight: 600; color: var(--t2);
+  padding: 7px 14px; border-radius: 8px;
+  font-family: inherit;
+  transition: background 0.13s, color 0.13s;
+}
+.sta-periodo--on { background: var(--surface); color: var(--t1); box-shadow: var(--shadow-sm); }
+.sta-rango { font-size: 0.82rem; font-weight: 600; color: var(--t2); }
+
+/* Tarjetas de indicador: se ajustan solas, sin romper a una columna hasta que
+   de verdad no caben. */
+.sta-tiles {
+  display: grid; gap: 12px; margin-bottom: 18px;
+  grid-template-columns: repeat(auto-fit, minmax(178px, 1fr));
+}
+
+.sta-card { padding: 18px 20px; margin-bottom: 18px; }
+.sta-card__head { margin-bottom: 14px; }
+.sta-card__title { margin: 0; font-size: 1.02rem; font-weight: 700; color: var(--t1); }
+.sta-card__help {
+  margin: 5px 0 0; font-size: 0.84rem; font-weight: 500; line-height: 1.55;
+  color: var(--t2); max-width: 76ch;
+}
+
+.sta-grid {
+  display: grid; gap: 18px; margin-bottom: 18px;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+.sta-grid .sta-card { margin-bottom: 0; }
+
+/* --- Alertas --- */
+.sta-alertas { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.sta-alerta {
+  display: flex; gap: 12px; align-items: flex-start;
+  padding: 13px 15px; border-radius: 11px;
+  border: 1px solid var(--border); background: #fbfbfd;
+}
+.sta-alerta__icono {
+  flex: 0 0 22px; height: 22px; border-radius: 7px;
+  display: grid; place-items: center;
+  font-size: 0.78rem; font-weight: 800; color: #fff;
+  background: var(--t3);
+}
+/* El color nunca va solo: cada nivel lleva icono y la palabra que lo nombra. */
+.sta-alerta--critico  { border-color: #f0c4bc; background: #fdf6f4; }
+.sta-alerta--critico  .sta-alerta__icono { background: #a32d1e; }
+.sta-alerta--atencion { border-color: #f3d9c8; background: #fdfaf6; }
+.sta-alerta--atencion .sta-alerta__icono { background: #dd6042; }
+.sta-alerta--info     { border-color: #c8e6d8; background: #f6fbf9; }
+.sta-alerta--info     .sta-alerta__icono { background: #059669; }
+
+.sta-alerta__cuerpo { min-width: 0; }
+.sta-alerta__titulo {
+  margin: 0 0 4px; font-size: 0.9rem; font-weight: 700; color: var(--t1); line-height: 1.45;
+}
+.sta-alerta__nivel {
+  display: inline-block; margin-right: 7px;
+  font-size: 0.68rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--t2); background: #ffffff; border: 1px solid var(--border);
+  border-radius: 5px; padding: 1px 6px; vertical-align: 1px;
+}
+.sta-alerta__detalle { margin: 0; font-size: 0.84rem; line-height: 1.6; color: var(--t2); }
+.sta-alerta__link {
+  margin-top: 6px; padding: 0; border: none; background: none; cursor: pointer;
+  font-family: inherit; font-size: 0.81rem; font-weight: 700; color: var(--green-acc);
+}
+.sta-alerta__link:hover { text-decoration: underline; }
+
+/* --- Pares de números --- */
+.sta-pareja { display: flex; gap: 22px; flex-wrap: wrap; }
+.sta-pareja div { display: flex; flex-direction: column; gap: 2px; }
+.sta-pareja__n { font-size: 1.5rem; font-weight: 800; color: var(--t1); }
+.sta-pareja__l { font-size: 0.79rem; font-weight: 600; color: var(--t2); }
+.sta-pareja--mal .sta-pareja__n { color: #a32d1e; }
+
+/* --- Listas --- */
+.sta-lista { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+/* Posiciones explícitas en las tres celdas: con auto-placement, el `grid-row`
+   del valor empujaba el nombre a la segunda columna y la fila se leía al revés
+   ("5 casos … Mariana Gómez"). */
+.sta-lista__item {
+  display: grid; grid-template-columns: 1fr auto; gap: 2px 12px;
+  padding: 9px 0; border-bottom: 1px solid var(--border);
+}
+.sta-lista__item:last-child { border-bottom: none; }
+.sta-lista__nombre {
+  grid-column: 1; grid-row: 1;
+  font-size: 0.88rem; font-weight: 700; color: var(--t1);
+}
+.sta-lista__meta { grid-column: 1; grid-row: 2; font-size: 0.78rem; font-weight: 500; color: var(--t2); }
+.sta-lista__valor {
+  grid-column: 2; grid-row: 1 / span 2; align-self: center;
+  font-size: 0.83rem; font-weight: 700; color: var(--t2); white-space: nowrap;
+}
+.sta-vacio { margin: 0; font-size: 0.84rem; color: var(--t2); line-height: 1.6; }
+
+/* --- Tabla de riesgo --- */
+.sta-filtros { display: flex; gap: 7px; flex-wrap: wrap; margin-bottom: 12px; }
+.sta-filtro {
+  border: 1px solid var(--border); background: var(--surface); cursor: pointer;
+  font-family: inherit; font-size: 0.81rem; font-weight: 600; color: var(--t2);
+  padding: 6px 13px; border-radius: 999px;
+}
+.sta-filtro--on { border-color: var(--green-acc); color: var(--green-acc); background: var(--green-soft); }
+
+/* La tabla scrollea dentro de su caja, nunca empuja el body (gotcha de
+   .dash__content en web/CLAUDE.md). */
+.sta-tabla-scroll { overflow-x: auto; }
+.sta-tabla { width: 100%; border-collapse: collapse; min-width: 720px; }
+.sta-tabla th {
+  text-align: left; padding: 9px 10px;
+  font-size: 0.74rem; font-weight: 700; color: var(--t2);
+  text-transform: uppercase; letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--border); white-space: nowrap;
+}
+.sta-tabla td {
+  padding: 11px 10px; border-bottom: 1px solid var(--border);
+  font-size: 0.84rem; color: var(--t2); vertical-align: middle;
+}
+.sta-tabla tbody tr:last-child td { border-bottom: none; }
+.sta-tabla .num { text-align: right; }
+.sta-tabla__nombre { display: block; font-weight: 700; color: var(--t1); }
+.sta-tabla__doc { display: block; font-size: 0.76rem; font-weight: 500; color: var(--t2); }
+.sta-tabla__sub { display: block; font-size: 0.75rem; color: var(--t2); font-weight: 500; }
+
+.sta-señales { display: flex; flex-wrap: wrap; gap: 4px; }
+.sta-señales em {
+  font-style: normal; font-size: 0.74rem; font-weight: 600; color: var(--t2);
+  background: #f3f2f9; border-radius: 5px; padding: 2px 7px; white-space: nowrap;
+}
+.sta-nivel {
+  display: inline-block; font-size: 0.73rem; font-weight: 800;
+  border-radius: 6px; padding: 3px 9px; white-space: nowrap;
+}
+.sta-nivel--alto { background: #fdecea; color: #a32d1e; }
+.sta-nivel--medio { background: #fdf1e9; color: #b4471f; }
+.sta-nivel--seguimiento { background: #f3f2f9; color: var(--t2); }
+
+/* --- Error --- */
+.sta-error { padding: 22px; text-align: center; }
+.sta-error__title { margin: 0 0 4px; font-size: 0.92rem; font-weight: 700; color: var(--t1); }
+.sta-error__text { margin: 0 0 14px; font-size: 0.85rem; color: var(--t2); }
+.sta-error .btn--secondary { width: auto; padding-left: 22px; padding-right: 22px; }
+
+@media (max-width: 640px) {
+  .sta-bar { gap: 8px; }
+  .sta-periodos { width: 100%; justify-content: space-between; }
+  .sta-card { padding: 15px 14px; }
+  .sta-grid { grid-template-columns: 1fr; }
+}
+
+/* Recarga con datos ya en pantalla (cambio de período): se atenúa en vez de
+   vaciarse. El parpadeo a blanco se lee como que algo se rompió. */
+.sta-recargando { opacity: 0.55; transition: opacity 0.15s; pointer-events: none; }

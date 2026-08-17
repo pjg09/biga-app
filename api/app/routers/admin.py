@@ -11,6 +11,7 @@ from app.repositories.admin_management_repository import AdminManagementReposito
 from app.repositories.admin_repository import AdminRepository
 from app.repositories.guardian_repository import GuardianRepository
 from app.repositories.pae_repository import PAERepository
+from app.repositories.stats_repository import StatsRepository
 from app.repositories.student_repository import StudentRepository
 from app.schemas.admin import (
     AdminStats,
@@ -20,8 +21,6 @@ from app.schemas.admin import (
     AdminUserCreate,
     AdminUserResponse,
     AdminUserUpdate,
-    ClassPeriodBulkCreate,
-    ClassPeriodBulkResult,
     ClassPeriodCreate,
     ClassPeriodUpdate,
     ClassPeriodResponse,
@@ -30,6 +29,9 @@ from app.schemas.admin import (
     GroupStudentAdd,
     GroupUpdate,
     GroupResponse,
+    PAEEnrollmentAdd,
+    PAEEnrollmentItem,
+    PAEEnrollmentSummary,
     StudentGroupCreate,
     StudentGroupResponse,
     SubjectCreate,
@@ -38,9 +40,17 @@ from app.schemas.admin import (
     UserGroupCreate,
     UserGroupResponse,
 )
+from app.schemas.stats import (
+    AttendanceStats,
+    DisciplineStats,
+    OverviewStats,
+    PAEStats,
+    RiskStats,
+)
 from app.schemas.students import StudentResponse
 from app.services.admin_management_service import AdminManagementService
 from app.services.admin_service import AdminService
+from app.services.stats_service import StatsService
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -59,6 +69,10 @@ def get_mgmt_service(
     )
 
 
+def get_stats_service(db: AsyncSession = Depends(get_db)) -> StatsService:
+    return StatsService(StatsRepository(db), AdminRepository(db))
+
+
 # --- Estadísticas ---
 
 @router.get("/stats", response_model=AdminStats)
@@ -66,7 +80,126 @@ async def get_stats(
     current_user: User = Depends(require_admin),
     service: AdminService = Depends(get_admin_service),
 ):
+    """Foto del día, la que alimenta el Resumen del dashboard. Las series
+    históricas y los cruces por salón/estudiante viven en `/stats/*`."""
     return await service.get_stats(institution_id=current_user.institution_id)
+
+
+# Ventanas ofrecidas. Cerrada a propósito en vez de aceptar cualquier entero:
+# un `days=100000` recorre la tabla de asistencia entera por gusto, y el front
+# no ofrece nada fuera de esta lista.
+_DIAS = Query(default=30, description="Ventana en días", ge=7, le=365)
+
+
+@router.get("/stats/overview", response_model=OverviewStats)
+async def stats_overview(
+    days: int = _DIAS,
+    current_user: User = Depends(require_admin),
+    service: StatsService = Depends(get_stats_service),
+):
+    """KPIs con variación contra el período anterior + alertas accionables."""
+    return await service.overview(current_user.institution_id, days)
+
+
+@router.get("/stats/attendance", response_model=AttendanceStats)
+async def stats_attendance(
+    days: int = _DIAS,
+    current_user: User = Depends(require_admin),
+    service: StatsService = Depends(get_stats_service),
+):
+    return await service.attendance(current_user.institution_id, days)
+
+
+@router.get("/stats/pae", response_model=PAEStats)
+async def stats_pae(
+    days: int = _DIAS,
+    current_user: User = Depends(require_admin),
+    service: StatsService = Depends(get_stats_service),
+):
+    return await service.pae(current_user.institution_id, days)
+
+
+@router.get("/stats/discipline", response_model=DisciplineStats)
+async def stats_discipline(
+    days: int = _DIAS,
+    current_user: User = Depends(require_admin),
+    service: StatsService = Depends(get_stats_service),
+):
+    return await service.discipline(current_user.institution_id, days)
+
+
+@router.get("/stats/risk", response_model=RiskStats)
+async def stats_risk(
+    days: int = _DIAS,
+    current_user: User = Depends(require_admin),
+    service: StatsService = Depends(get_stats_service),
+):
+    """Estudiantes ordenados por señales de riesgo (ausentismo, convivencia,
+    salidas, PAE sin reclamar). Es la vista que se usa para decidir a quién
+    llamar, así que devuelve nombre y documento — no es anónima a propósito."""
+    return await service.risk(current_user.institution_id, days)
+
+
+# --- PAE: inscritos (consola de gestión) ---
+
+@router.get("/pae/enrollments", response_model=PAEEnrollmentSummary)
+async def list_pae_enrollments(
+    include_inactive: bool = Query(
+        False, description="Incluir inscripciones dadas de baja (para reactivarlas)"
+    ),
+    current_user: User = Depends(require_admin),
+    service: AdminManagementService = Depends(get_mgmt_service),
+):
+    """Inscritos al PAE del año en curso, con salón y última ración reclamada.
+
+    Solo ADMIN, igual que `POST /pae/enrollments`: el operador del PAE *opera* el
+    programa pero no decide quién entra (ver `docs/pae.md`)."""
+    return await service.list_pae_enrollments(
+        current_user.institution_id, include_inactive=include_inactive
+    )
+
+
+@router.post("/pae/enrollments", response_model=PAEEnrollmentItem,
+             status_code=status.HTTP_201_CREATED)
+async def add_pae_enrollment(
+    body: PAEEnrollmentAdd,
+    current_user: User = Depends(require_admin),
+    service: AdminManagementService = Depends(get_mgmt_service),
+):
+    """Inscribe a un estudiante ya existente, o reactiva su inscripción si la
+    tuvo dada de baja. **No** duplica la fila: `enrolled_at` y el hash de la
+    inscripción son la capa 1 de la cadena de integridad del PAE.
+
+    Se diferencia de `POST /pae/enrollments` (módulo PAE), que responde 409 ante
+    cualquier inscripción existente del año — semántica correcta para un alta
+    puntual, inservible para una consola donde reinscribir es una operación
+    normal."""
+    return await service.add_pae_enrollment(body, current_user.institution_id)
+
+
+@router.delete("/pae/enrollments/{student_id}", response_model=PAEEnrollmentItem)
+async def deactivate_pae_enrollment(
+    student_id: UUID,
+    current_user: User = Depends(require_admin),
+    service: AdminManagementService = Depends(get_mgmt_service),
+):
+    """Baja lógica: el estudiante deja de aparecer en el listado del día del
+    operador. **No borra la inscripción** — las entregas ya registradas encadenan
+    su hash con el de ella y borrarla rompería la auditoría."""
+    return await service.set_pae_enrollment_active(
+        student_id, current_user.institution_id, active=False
+    )
+
+
+@router.post("/pae/enrollments/{student_id}/reactivate", response_model=PAEEnrollmentItem)
+async def reactivate_pae_enrollment(
+    student_id: UUID,
+    current_user: User = Depends(require_admin),
+    service: AdminManagementService = Depends(get_mgmt_service),
+):
+    return await service.set_pae_enrollment_active(
+        student_id, current_user.institution_id, active=True
+    )
 
 
 # --- Personal (usuarios) ---

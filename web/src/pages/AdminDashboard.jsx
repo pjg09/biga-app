@@ -55,9 +55,35 @@ export default function AdminDashboard() {
   const fullName = `${user.first_name ?? ''} ${user.last_name ?? ''}`.trim();
   const [activeNav, setActiveNav] = useState('overview');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Pestaña con la que abre Estadísticas. Las tarjetas del Resumen la fijan
+  // para caer directamente en la vista que corresponde al dato pulsado.
+  const [statsTab, setStatsTab] = useState('resumen');
+  /* Contador de navegaciones explícitas. `StatsView` lo usa como `key`, así que
+     cada clic —de tarjeta o de menú— la remonta con la pestaña pedida. Sin
+     esto, ir al menú «Estadísticas» estando ya en Estadísticas no cambiaba
+     `activeNav`, el componente no se remontaba y se quedaba en la pestaña
+     anterior. Mismo patrón que `StudentSearch` (ver web/CLAUDE.md). */
+  const [navSeq, setNavSeq] = useState(0);
 
   // Cierra el cajón móvil al navegar entre secciones sin tocar cada NavItem.
   useEffect(() => { setSidebarOpen(false); }, [activeNav]);
+
+  /* Navegación desde las tarjetas del Resumen. `tab` solo aplica a
+     Estadísticas; para el resto se ignora. */
+  const irASeccion = useCallback((seccion, tab = 'resumen') => {
+    setStatsTab(tab);
+    setNavSeq(n => n + 1);
+    setActiveNav(seccion);
+  }, []);
+
+  /* Entrar por la barra lateral siempre abre Estadísticas en Resumen: si no se
+     reseteara, el menú llevaría a la última pestaña que dejó una tarjeta, y el
+     usuario que pulsa «Estadísticas» no pidió PAE ni Convivencia. */
+  const irPorMenu = useCallback((id) => {
+    setStatsTab('resumen');
+    setNavSeq(n => n + 1);
+    setActiveNav(id);
+  }, []);
 
   const logout = useCallback(() => {
     localStorage.removeItem('token');
@@ -119,11 +145,13 @@ export default function AdminDashboard() {
         </div>
 
         <main className="dash__content">
-          {activeNav === 'overview' && <OverviewView />}
+          {activeNav === 'overview' && <OverviewView onNavegar={irASeccion} />}
           {activeNav === 'students' && <StudentsView />}
           {activeNav === 'staff'    && <StaffView />}
           {activeNav === 'academic' && <AcademicView />}
+          {activeNav === 'pae'      && <PAEView />}
           {activeNav === 'schedule' && <ScheduleView />}
+          {activeNav === 'stats'    && <StatsView key={navSeq} tabInicial={statsTab} />}
         </main>
       </div>
     </div>
@@ -131,7 +159,7 @@ export default function AdminDashboard() {
 }
 
 /* ── Resumen (estadísticas) ──────────────────────────────────── */
-function OverviewView() {
+function OverviewView({ onNavegar }) {
   const [stats, setStats]   = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]   = useState(null);
@@ -1548,14 +1576,26 @@ function TeacherAssignView() {
 function Section({ title, children }) {
   return <div className="admin-section"><p className="admin-section__title">{title}</p><div className="dash__stats">{children}</div></div>;
 }
-function Stat({ icon, value, label, delta }) {
-  return (
-    <div className="dash__stat-card">
+/* Con `onClick` la tarjeta es un `<button>` de verdad, no un div con handler:
+   así entra en el orden de tabulación, responde a Enter/Espacio y el lector de
+   pantalla la anuncia como accionable. `irA` nombra el destino en el `title` —
+   una flecha sola no dice a dónde lleva. */
+function Stat({ icon, value, label, delta, onClick, irA }) {
+  const cuerpo = (
+    <>
       <div className="dash__stat-icon dash__stat-icon--admin">{icon}</div>
       <p className="dash__stat-value">{value}</p>
       <p className="dash__stat-label">{label}</p>
       {delta && <p className="dash__stat-delta">{delta}</p>}
-    </div>
+    </>
+  );
+  if (!onClick) return <div className="dash__stat-card">{cuerpo}</div>;
+  return (
+    <button type="button" className="dash__stat-card dash__stat-card--link"
+      onClick={onClick} title={`Ver ${irA}`} aria-label={`${label}: ${value}. Ver ${irA}`}>
+      {cuerpo}
+      <span className="dash__stat-go" aria-hidden="true">→</span>
+    </button>
   );
 }
 function Field({ label, children }) {
