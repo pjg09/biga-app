@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Documentación
 
-`docs/README.md` es el índice de los 13 documentos del proyecto — consultarlo antes de tocar un módulo. Dos tienen valor de regla: **`docs/scope.md`** es la fuente de verdad de *qué* se construye, y **`docs/database-schema.md`** debe actualizarse **antes** de escribir cada migración.
+`docs/README.md` es el índice de los 16 documentos del proyecto — consultarlo antes de tocar un módulo. Dos tienen valor de regla: **`docs/scope.md`** es la fuente de verdad de *qué* se construye, y **`docs/database-schema.md`** debe actualizarse **antes** de escribir cada migración.
 
-Al cerrar un cambio de módulo, sincronizar también su doc temático (`attendance.md`, `pae.md`, `students.md`, `admin.md`, `frontend.md`, `landing-page.md`…), no solo `database-schema.md`: es la deuda que más rápido se acumula.
+Al cerrar un cambio de módulo, sincronizar también su doc temático (`attendance.md`, `pae.md`, `students.md`, `admin.md`, `schedule.md`, `statistics.md`, `frontend.md`…), no solo `database-schema.md`: es la deuda que más rápido se acumula.
 
 ## Arquitectura
 
@@ -42,7 +42,7 @@ Las convenciones de CSS/JSX y los gotchas del navegador viven en **`web/CLAUDE.m
 ## Convenciones de base de datos
 
 - Todos los IDs son `UUID` generados en la aplicación. Nunca usar `SERIAL` o `BIGSERIAL`.
-- Para impedir **solapamiento de rangos** (no solo duplicados exactos): `EXCLUDE USING gist` + extensión `btree_gist`, como `class_periods_no_overlap` sobre `int4range(period_order, period_order + span)`. Una `UNIQUE` sobre el valor de inicio no cubre un rango que se extiende. Duplicar la comprobación en el service solo para dar un 409 legible.
+- Para impedir **solapamiento de rangos** (no solo duplicados exactos): `EXCLUDE USING gist` + extensión `btree_gist`, como `class_periods_no_time_overlap` sobre `timerange(start_time, end_time)` (tipo range propio: PG no trae uno para `time`). Una `UNIQUE` sobre el valor de inicio no cubre un rango que se extiende. Duplicar la comprobación en el service solo para dar un 409 legible. **Y comprobar que el rango excluido es el que de verdad importa**: hasta `f2d5a81c9e37` esta constraint iba sobre `int4range(period_order, period_order + span)`, que dejaba pasar dos clases pisándose una hora entera con órdenes distintos. Un `EXCLUDE` no admite `NOT VALID`, así que la migración que lo estrecha tiene que detectar y reportar los datos sucios antes de intentar crearlo.
 - Todo cambio al esquema debe reflejarse en `docs/database-schema.md` antes de escribir la migración.
 
 **Corrección del dato en el tiempo** (no son gotchas: si se rompen, el dato entra mal en la BD):
@@ -60,6 +60,8 @@ El `institution_id` siempre proviene del token JWT del usuario autenticado (`cur
 
 Los jobs de Celery que acceden a tablas operativas deben recibir `institution_id` explícitamente vía `.delay()` (ej. `.delay(str(record.id), str(institution_id))`) — el job corre fuera del contexto del request y no tiene acceso al JWT.
 
+**Cómo verificarlo de verdad** (leer los `WHERE` no basta en consultas con varios JOIN): crear una segunda institución con datos propios, llamar a los endpoints con el token de la primera y comprobar que no aparecen ni en conteos ni en listados. Al unir tablas hay que filtrar `institution_id` en **todas** las que lo tengan, no solo en la principal — y `attendance_justifications` no lo tiene, así que su tenant se valida por el join con `attendance_records`.
+
 ## Comandos frecuentes
 
 > Guía operativa completa (arranque, credenciales, troubleshooting) en `docs/runbook.md`.
@@ -76,11 +78,18 @@ Los jobs de Celery que acceden a tablas operativas deben recibir `institution_id
 - `docker compose exec api python -m scripts.seed_base` — crear institución y usuario demo (BD limpia)
 - `docker compose exec api python -m scripts.seed_agendatorio` — crear estudiante y acudiente de prueba
 - `docker compose exec -T postgres psql -U biga -d biga < scripts/seed_dev_users.sql` — **seed demo completo** (3 usuarios TEACHER/PAE_OPERATOR/ADMIN, grupo 11A con horario, 4 estudiantes + acudientes + matrículas, artículos de convivencia). Correr **después** de `alembic upgrade head`. Credenciales en `docs/runbook.md` §5. Ubicación dual de seeds: `seed_dev_users.sql` vive en `./scripts/` (root, se pipea con `psql <`), mientras que `seed_base`/`seed_pae` viven en `api/scripts/` y se corren con `python -m scripts.X` dentro del contenedor.
+- `docker compose exec -T api python -m scripts.seed_stats_demo` — **historia sintética para Estadísticas** (3 salones, 66 estudiantes, ~12 semanas de asistencia/PAE/convivencia/salidas). Sin esto la sección funciona pero sobre una muestra de juguete donde ningún error de agregación se nota. `--limpiar` deshace solo lo que creó (estudiantes con documento `99…`).
 - `docker compose exec -T api python -m scripts.seed_pae` — inscribe los estudiantes demo al PAE y registra entregas de la semana con la cadena de doble hash válida. Es Python (no SQL) porque los hashes dependen de `PAE_SIGNING_SECRET`. Correr **después** del seed SQL.
 - Obtener token JWT para pruebas manuales (tras `seed_base`, form-urlencoded con `username`/`password`, no JSON):
   `export TOKEN=$(curl -s -X POST http://localhost:8000/auth/login -d "username=demo@biga.app&password=Test1234!" | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")`
 - Recargar worker Celery tras cambiar código en `app/jobs/` (no tiene autoreload):
   `docker compose exec worker python -c "import os, signal; os.kill(1, signal.SIGHUP)"`
+- Ejecutar un job de Celery a mano para verificar su efecto (sin esperar al beat):
+  `docker compose exec -T worker python -c "from app.jobs.pae_jobs import sweep_pae_no_claim; sweep_pae_no_claim()"`.
+  Ojo: los `sweep_*` solo **encolan**; el envío lo hace el worker al consumir, así que el resultado se mira en
+  `notifications_log` y en `docker compose logs worker`, no en la salida del comando.
+- Comprobar que una tarea **nueva** quedó registrada tras el SIGHUP:
+  `docker compose exec -T worker celery -A app.core.celery:celery_app inspect registered | grep <tarea>`
 
 ## Tests
 
@@ -101,6 +110,8 @@ Correr localmente fuera del contenedor: `set -a && source ../.env && set +a` ant
 
 Sin virtualenv local y con el stack abajo, correr unitarios en contenedor efímero (sin levantar servicios): `docker compose run --rm --no-deps api sh -c "pip install -q -r requirements-dev.txt && pytest tests/unit -q"`
 
+Al cambiar un comportamiento que ya tenía tests, **trasladar lo que verificaban** al diseño nuevo en vez de borrarlos: cuando el envío del PAE pasó de bucle a una tarea por correo, "notifica a cada estudiante" siguió siendo cierto pero se comprueba sobre lo que se encola, no sobre lo que se envía.
+
 Verificar que un cambio de front compila: `curl -s -o /dev/null -w "%{http_code}" http://localhost:5173/src/pages/X.jsx` (200 = transforma OK; un error de sintaxis da 500) y `docker compose logs web | grep -iE "error|Internal server"`. **200 y logs limpios NO significan que la pantalla funcione**: un error en tiempo de ejecución (p. ej. borrar por accidente un helper compartido como `fmtShort`) deja la app **en blanco** con Vite sirviendo 200 y sin registrar nada. Comprobar siempre el DOM renderizado; para ver el error real, capturar `Runtime.exceptionThrown` / `Log.entryAdded` por CDP.
 
 ## Gestión de dependencias
@@ -115,7 +126,7 @@ Verificar que un cambio de front compila: `curl -s -o /dev/null -w "%{http_code}
 
 ## Módulos del dominio
 
-Módulos implementados: `auth`, `agendatorio` (registro de convivencia + historial del docente: notas de seguimiento append-only y ocultar del panel vía `archived_at`, sin borrar), `students` (registro append-only + búsqueda), `pae` (inscripción, entrega, reporte semanal, auditoría, notificación de no reclamo), `attendance` (clase a clase; notificación solo primera hora + justificación por link), `departures` (salidas anticipadas), `admin` (estadísticas `GET /admin/stats` + consola de gestión: usuarios, salones, materias, matrículas y horarios — rejilla semanal con materia y docente por bloque, más la asignación docente-salón de `user_groups`), `leads` (`POST /leads` **público** desde el formulario de la landing: guarda en `demo_leads` y encola un aviso interno a `LEADS_NOTIFY_EMAIL`). Pendientes: `imports`.
+Módulos implementados: `auth`, `agendatorio` (registro de convivencia + historial del docente: notas de seguimiento append-only y ocultar del panel vía `archived_at`, sin borrar), `students` (registro append-only + búsqueda), `pae` (inscripción, entrega, reporte semanal, auditoría, notificación de no reclamo), `attendance` (clase a clase; notificación solo primera hora + justificación por link), `departures` (salidas anticipadas), `admin` (estadísticas: `GET /admin/stats` para la foto del día y `GET /admin/stats/{overview,attendance,pae,discipline,risk}?days=` para la sección de análisis con series históricas, alertas accionables y ranking de estudiantes en riesgo — reglas en `docs/statistics.md` + consola de gestión: usuarios, salones, materias, matrículas y horarios — calendario semanal proporcional al tiempo con materia y docente por bloque, más la asignación docente-salón de `user_groups`), `leads` (`POST /leads` **público** desde el formulario de la landing: guarda en `demo_leads` y encola un aviso interno a `LEADS_NOTIFY_EMAIL`). Pendientes: `imports`.
 
 **Grados = catálogo fijo**: 11 niveles sembrados (`app/core/grades.py`, migración `a7c3e9f2b581`). No existe `POST /admin/grades` ni alta en la consola.
 
@@ -127,9 +138,11 @@ Módulos implementados: `auth`, `agendatorio` (registro de convivencia + histori
 
 Sin visor en el `AdminDashboard` (deliberado — ver `docs/admin.md`): esa consola es del colegio, y los leads son datos comerciales de BIGA, no de la institución. El equipo de BIGA gestiona la repartición de demos por fuera de la app; el único aviso es el correo a `LEADS_NOTIFY_EMAIL`.
 
+**Inscritos al PAE**: sección propia en la consola (`/admin/pae/enrollments`, solo ADMIN). Inscribir a alguien que estuvo de baja **reactiva su fila**, nunca crea otra ni la borra: `enrolled_at`/`enrollment_hash` son la capa 1 de la cadena de integridad y las entregas encadenan con ellos. Se diferencia de `POST /pae/enrollments` (módulo PAE), que da 409 ante cualquier inscripción existente del año. Detalle en `docs/admin.md` § PAE — inscritos.
+
 **Referencia completa del ciclo de vida de estudiantes y acudientes (alta, matrícula,
 búsqueda, acudiente principal) en `docs/students.md`; consola de gestión del admin
-(usuarios, grados, salones, horarios) en `docs/admin.md`.** Acá solo las reglas más
+(usuarios, grados, salones) en `docs/admin.md` y horarios en `docs/schedule.md`.** Acá solo las reglas más
 fáciles de romper por accidente:
 
 - `GET /students` está **acotado por rol**: `TEACHER`/`PAE_OPERATOR` solo ven los salones
@@ -151,9 +164,7 @@ fáciles de romper por accidente:
   para editar. Mismo componente de front para crear y editar (`editingId` decide el modo). Detalle en
   `docs/students.md` y `docs/admin.md`.
 
-Foto del estudiante: se **sube a MinIO** vía `POST /students/{id}/photo` (multipart), igual que la firma del agendatorio. `students.photo_url` guarda la **key** (no la URL); todo servicio que la devuelve la presigna con `resolve_photo_url(storage, ...)` de `app/core/photos.py` (deja pasar URLs `http(s)://` externas por compat). Por eso `PAEService`/`AttendanceService`/`StudentService` reciben el `S3StorageAdapter` inyectado.
-
-Para exponer `photo_url` en un endpoint de **lista/detalle nuevo** (de cualquier módulo, no solo estudiantes): (1) agregar el campo al Row/dataclass del repo y al schema de respuesta, (2) `select(Student.photo_url)` en la query + mapearlo, (3) presignar con `resolve_photo_url(self.storage, key)` en el service (que debe recibir `S3StorageAdapter` vía `Depends(get_storage_adapter)`). Sin migración (solo lee `students.photo_url`). El front renderiza `<StudentPhoto src={x.photo_url}>` con fallback a avatar de iniciales.
+Foto del estudiante: se sube a MinIO; `students.photo_url` guarda la **key**, no la URL, y se presigna con `resolve_photo_url()` de `app/core/photos.py`. Receta para exponerla en un endpoint nuevo (lista o detalle, de cualquier módulo) en `docs/students.md` § Foto del estudiante.
 
 ## Recuperación de contraseña
 
@@ -176,6 +187,7 @@ Para proteger un endpoint con autenticación: `current_user: User = Depends(get_
 > Referencia completa del módulo en **`docs/attendance.md`** (flujos, endpoints, tablas). Aquí solo los
 > invariantes que no deben romperse.
 
+- **Dos invariantes distintos en `class_periods`, no uno**: `class_periods_no_time_overlap` (salón: dos clases no comparten aula y hora) y `class_periods_teacher_no_overlap` (docente: nadie está en dos aulas a la vez, migración `b7e4f1c8a209`). Tener solo el primero dejó al docente demo con cuatro primeras horas simultáneas en «Mis clases de hoy» — y en primera hora, cuatro tandas de notificación a acudientes de salones donde no estuvo. Todo alta masiva de horario debe comprobar la ocupación del docente, no solo la del salón.
 - **El docente de "Mis clases de hoy" sale de `class_periods.user_id`** (NOT NULL), no de `user_groups`. Antes, un docente asignado al salón veía **todas** las horas de ese salón. Las 4 consultas de `attendance_repository` filtran por bloque — y como `class_periods` no tiene año, hay que unir `Group` y filtrar `Group.academic_year`, o reaparecen bloques de años pasados.
 - **La notificación al acudiente solo se dispara en primera hora** (`period_order == 1`). Se encola con
   `countdown = ATTENDANCE_GRACE_MINUTES * 60` y, al disparar, el job **relee el estado**: si el docente
@@ -195,6 +207,11 @@ Para proteger un endpoint con autenticación: `current_user: User = Depends(get_
   `attendance_records`. Comprobarlo antes de escribir queries nuevas sobre esa tabla.
 - El cierre de una inasistencia es `attendance_records.absence_closed_at`, **no** `archived_at`: el
   registro sigue contando en el roster y en las estadísticas; solo se cierra el seguimiento.
+- **Un correo = una tarea de Celery, nunca un bucle dentro de un job**: los proveedores limitan por
+  tasa y el límite se alcanza en operación normal (12 de 14 avisos del PAE murieron con `550 Too many
+  emails per second`, y un `FAILED` no se reencola). Van juntas tres piezas —`countdown` escalonado,
+  `rate_limit` en la tarea y `RetryingEmailAdapter` en el factory— y la fila se crea **PENDING al
+  encolar**, no al enviar. Detalle en `docs/pae.md`.
 - **Jobs Celery + BD async**: `app/jobs/runner.py::run_db_job` levanta un engine `NullPool` por tarea,
   hace commit/rollback y lo descarta. Un fallo de correo se registra como `FAILED` y **no** relanza.
 - **PAE no reclamado**: único job **programado** (`beat_schedule`, cada 15 min). `PAENotifier` es
@@ -216,7 +233,7 @@ Funciones en `app/core/security.py`. `register_delivery` verifica la capa 1 ante
 
 ## Pitfalls conocidos
 
-Extraídos a **`docs/pitfalls.md`** (30 entradas en 8 categorías) para no cargarlos en cada prompt.
+Extraídos a **`docs/pitfalls.md`** (36 entradas en 8 categorías) para no cargarlos en cada prompt.
 
 **Leerlo antes de** tocar migraciones, Docker/`.env`, autenticación o correo — y siempre que algo
 "debería funcionar" y no funciona. Lo que hay allí: AppArmor y `docker stop`, `passlib` vs `bcrypt`,

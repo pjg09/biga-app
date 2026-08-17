@@ -3,6 +3,13 @@
 Complementa el `CLAUDE.md` de la raíz, que sigue siendo la referencia de arquitectura, multi-tenant y backend.
 Referencia extensa del front: `docs/frontend.md`.
 
+## Comandos
+
+- `docker compose logs -f web` — logs de Vite · la app en `http://localhost:5173`
+- Tras añadir una dependencia npm: `docker compose up -d --build --force-recreate --renew-anon-volumes web`
+  (el volumen anónimo de `node_modules` tapa el de la imagen; ver gotchas)
+- No hay `test` ni `lint` en `package.json`: la verificación es manual (ver § Verificar un cambio de front)
+
 ## Convenciones
 
 - Cada componente tiene su propio archivo CSS en `web/src/styles/` con el mismo nombre: `Hero.jsx` → `styles/hero.css`.
@@ -34,6 +41,11 @@ Referencia extensa del front: `docs/frontend.md`.
 - `<select>`/`<input>` no heredan `font-family` de la app por defecto (hoja de estilos del navegador): se ven en la fuente del SO salvo que se fije `font-family: inherit` explícito.
 - `align-items:stretch` + `aspect-ratio` en un `<img>` sin `width`/`height` explícitos usa el tamaño intrínseco real del archivo (puede ser cientos de px), no el alto de un hermano flex — no sirve para "igualar la foto a la altura del texto de al lado". Medir en JS (`ResizeObserver` + estado) y aplicar `width`/`height` inline es lo que funcionó.
 - Varias badges/pills como hijos flex sueltos de una fila (`.dash__student-row`) se desordenan al hacer `flex-wrap` en móvil (cada una envuelve por separado). Agruparlas en un div contenedor (patrón `.att-class-row__badges`) para que envuelvan como unidad.
+- **El texto dentro de un `<svg viewBox>` que se estira NO mide lo que dice el CSS**: escala con el ancho del contenedor. Los mismos 12,5px de `.chart__axis` se veían a **19px en escritorio** (más que el título de la tarjeta) y a **5,5px en móvil**. Las etiquetas de eje van en HTML posicionado por porcentaje sobre el gráfico (patrón de `LineChart` en `Charts.jsx`), nunca en `<text>`. Medirlo con `getComputedStyle` **no** basta: devuelve el valor del CSS, no el visual — hay que multiplicar por `anchoRenderizado / anchoDelViewBox`, o medir el `getBoundingClientRect().height` del propio `<text>`.
+- **`--t3` (#a8a4be) da 2,41:1 sobre blanco y no es un color de texto**: falla el mínimo de accesibilidad incluso para texto grande (3:1). Sirve para chrome no textual (líneas, fondos de icono). Todo texto legible usa `--t2` (5,36:1) o `--t1` (17,4:1). "Atenuar" un dato secundario se hace con tamaño y peso, no bajando el contraste hasta hacerlo invisible.
+- **Un filtro que cambia el rango de una consulta necesita descartar las respuestas viejas.** Si dos ventanas tardan distinto (en Estadísticas, `?days=180` tarda 1,6 s y `?days=30` 0,3 s), al cambiar rápido la respuesta lenta llega **después** y pisa a la rápida: la etiqueta dice un período y las cifras son de otro. El síntoma se reporta como "cambiar el filtro no cambia los datos", y es justo lo contrario — cambian al período que más tarde en responder. Patrón aplicado en `useStats` (`AdminStats.jsx`): un contador de secuencia por carga (`useRef`) y solo la última escribe el estado. El mismo cuidado hace falta en cualquier buscador o selector que dispare fetch.
+- **Al recargar por cambio de filtro, no vaciar la pantalla**: `setLoading(true)` con spinner a pantalla completa produce un parpadeo a blanco que se lee como que algo se rompió. Spinner solo en la primera carga (`loading && !hayDatos`); en las siguientes, atenuar lo que ya está (`.sta-recargando`).
+- **`StrictMode` duplica los efectos en desarrollo**, así que las peticiones se ven ×2 en la pestaña de red (y ×4 si además hay un re-render del padre por un `setState` del hijo). Antes de perseguir un fetch duplicado, comprobarlo quitando `StrictMode` de `main.jsx` temporalmente — en producción no ocurre.
 - Patrón "ficha de detalle en lista" (`TeacherStudentsView`, `StudentsView`, `StaffView` de `AdminDashboard`): ícono `EyeIcon` al extremo izquierdo de la fila/`<tr>` (oculto en móvil vía `@media max-width:640px`, ahí la fila entera es clicable), abre un `.dash__modal` de solo lectura con botón "Editar" que reabre el form de alta precargado. Reusa `.stu-row__detail-icon`/`.stu-detail__grid` — no reinventar el layout para una lista nueva.
 
 ## Verificar un cambio de front

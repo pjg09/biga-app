@@ -84,7 +84,7 @@ transiciones posteriores.
 >
 > Que todo bloque tenga docente es lo que hace segura esta mitad: sin él, nadie
 > tomaría lista ahí y en primera hora la notificación al acudiente no se
-> enviaría nunca. Ver las guardas en `docs/admin.md`.
+> enviaría nunca. Ver las guardas en `docs/schedule.md`.
 
 **El fin de semana no está excluido.** La consulta filtra por el `isoweekday()`
 de hoy (1..7) y no hay ningún punto de control por día en el backend: si un salón

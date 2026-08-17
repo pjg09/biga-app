@@ -24,27 +24,49 @@ del estudiante — un dato que ADMIN también gestiona, pero con entidad propia.
 
 ## Estadísticas
 
-### `GET /admin/stats`
-Snapshot del día y semana actuales (`AdminService.get_stats`, `AdminRepository`). Todos los
-conteos filtran por `institution_id`.
+Movidas a **`docs/statistics.md`**: `GET /admin/stats` (foto del día) y `/admin/stats/*`
+(series históricas, alertas accionables y ranking de estudiantes en riesgo).
 
-```json
-{
-  "date": "2026-08-14",
-  "students_active": 4, "staff_total": 3, "teachers": 1, "pae_operators": 1,
-  "pae_enrolled": 4, "pae_delivered_today": 2, "pae_delivered_week": 2, "pae_claim_rate": 50.0,
-  "attendance_present_today": 0, "attendance_absent_today": 0, "attendance_late_today": 0,
-  "attendance_justified_today": 0, "attendance_rate_today": 0.0,
-  "departures_today": 0,
-  "discipline_records": 0, "discipline_leve": 0, "discipline_moderada": 0, "discipline_grave": 0,
-  "notifications_sent": 12, "notifications_failed": 0, "notifications_pending": 0
-}
-```
+---
 
-`pae_claim_rate` = % de inscritos que reclamaron **hoy** (no acumulado). `attendance_rate_today`
-= (presentes + tardanzas) / total de registros de hoy — una tardanza cuenta como asistencia
-para esta métrica, aunque dispare la notificación de inasistencia si no se marca a tiempo
-(ver `docs/attendance.md`).
+## PAE — inscritos (`/admin/pae/enrollments`)
+
+Sección propia en Gestión: quiénes están admitidos al programa este año, con salón, fecha de
+ingreso y última ración reclamada. **Solo ADMIN**, igual que `POST /pae/enrollments`: el
+operador del PAE *opera* el programa —toma el listado del día y entrega— pero no decide quién
+entra (ver `docs/pae.md`).
+
+| Endpoint | Qué hace |
+|---|---|
+| `GET /admin/pae/enrollments?include_inactive=` | Listado + contadores (activos, de baja, nunca reclamaron) |
+| `POST /admin/pae/enrollments` | Inscribe a un estudiante existente **o reactiva** su inscripción |
+| `DELETE /admin/pae/enrollments/{student_id}` | Baja lógica de la inscripción |
+| `POST /admin/pae/enrollments/{student_id}/reactivate` | Alta de una inscripción dada de baja |
+
+### Por qué no reutiliza `POST /pae/enrollments`
+
+El del módulo PAE responde **409 ante cualquier inscripción existente del año**, incluida una
+dada de baja. Es la semántica correcta para un alta puntual e inservible para una consola,
+donde reinscribir a alguien que salió del programa es una operación normal. El de admin
+distingue: si la inscripción existe y está activa → `409`; si existe dada de baja → la
+**reactiva**.
+
+### La fila nunca se recrea ni se borra — regla crítica
+
+Reinscribir **no** emite una firma nueva: se enciende `is_active` sobre la fila existente.
+`enrolled_at` y `enrollment_hash` son la capa 1 de la cadena de integridad del PAE y las
+entregas encadenan su hash con ellos (capa 2), así que:
+
+- recrear la inscripción borraría la fecha real de ingreso al programa e invalidaría la
+  auditoría de todo lo que ese estudiante ya reclamó;
+- borrarla haría lo mismo.
+
+`is_active` es el único campo fuera del hash, y por eso es el único que estas pantallas tocan —
+la misma excepción que ya usaba el switch «Inscrito en el PAE» de la ficha del estudiante.
+
+Otras dos guardas: un estudiante **dado de baja** no puede inscribirse (`409`, se pide
+reactivarlo primero en Estudiantes), y la columna «Nunca» en última ración marca al inscrito
+que no ha reclamado ni una vez — el caso que hay que revisar uno por uno.
 
 ---
 
@@ -251,130 +273,10 @@ ya existía antes de que el alta atómica incluyera este paso, o para cambiarlo 
 
 ---
 
-## Horarios — rejilla semanal y docentes por salón
+## Horarios
 
-La consola está partida en dos pestañas porque responden preguntas distintas, y confundirlas era
-el problema del diseño anterior:
-
-- **Rejilla semanal** — el horario del salón: qué materia y qué docente en cada día y hora.
-- **Docentes por salón** — `user_groups`. **Esta es la que decide qué clases ve un docente en
-  «Mis clases de hoy»**: Asistencia une `ClassPeriod → UserGroup` por salón. Un docente que
-  aparezca en la rejilla pero no aquí **no podrá tomar asistencia**.
-
-### Materia y docente por bloque (migración `c5b9e2f47a13`)
-
-`class_periods` tiene `subject_id` y `user_id`, ambos **nullable**: un horario a medio armar debe
-poder guardarse. Antes la materia vivía duplicada en `class_periods.name` (texto libre que ya
-divergía del catálogo) y el docente solo estaba a nivel de salón entero.
-
-`name` sigue existiendo pero como **etiqueta del bloque** ("Primera hora", "Descanso"); la materia
-sale del catálogo. La rejilla muestra `subject_name` y cae a `name` cuando no hay materia, para no
-dejar en blanco los bloques anteriores a la migración.
-
-El cambio es **aditivo**: no toca `user_groups` ni el join de Asistencia, así que ese módulo no
-cambió de comportamiento. Que el docente vea solo sus bloques en vez del salón entero es una
-decisión pendiente, no algo que esta migración haya hecho.
-
-### El docente del bloque es quien toma lista — regla crítica
-
-`class_periods.user_id` es **NOT NULL** (migración `d6c1f8a390b4`) y Asistencia filtra por él, no
-por `user_groups`. Antes, un docente asignado a un salón veía **todas** las horas de ese salón como
-suyas: con 3 docentes en Once A, los 3 veían las 6 clases del día.
-
-Las cuatro consultas de `attendance_repository` que unían `ClassPeriod → UserGroup` ahora filtran
-`ClassPeriod.user_id == user_id`, incluida `teacher_owns_class_period`, que es la **autorización**
-al registrar asistencia: un docente ya no puede tomar lista en un bloque ajeno (`404`).
-
-> **Ojo con el año académico.** `class_periods` no tiene `academic_year`; lo aportaba el join a
-> `user_groups`. Al quitarlo hay que unir `Group` y filtrar `Group.academic_year`, o un bloque de un
-> salón de 2025 reaparecería en 2026. Las cuatro consultas lo hacen.
-
-Por qué la columna es obligatoria: si un bloque no tuviera docente, nadie tomaría lista ahí — y si
-fuese primera hora, **la notificación de inasistencia al acudiente nunca se enviaría**. La regla
-"todo bloque tiene docente" es lo que hace segura la otra mitad del cambio. Tres guardas la
-sostienen:
-
-- `POST`/`PUT`/`bulk` de bloques exigen `user_id` → `422` sin él.
-- No se puede asignar un docente **desactivado** a un bloque → `409`.
-- **No se puede desactivar a un docente que dicta bloques** → `409` con el conteo, pidiendo
-  reasignarlos primero en la rejilla.
-
-Al fijar un docente en un bloque se crea, si falta, su fila en `user_groups`. Sin ella vería la
-clase en «Mis clases de hoy» (que ahora filtra por bloque) pero no a sus estudiantes en «Mis
-estudiantes» (que sigue filtrando por salón).
-
-### `POST /admin/class-periods/bulk`
-
-Crea la jornada completa de un salón (periodos × días) en **una** petición. Sin esto, un horario de
-6 periodos × 5 días eran 30 envíos de formulario.
-
-Los (orden, día) que ya existan se **omiten**, no fallan: así se puede relanzar para rellenar
-huecos al añadir un día o una hora, sin tocar lo que ya estaba. Devuelve `{created, skipped}`.
-
-Declarado **antes** que `/class-periods/{cp_id}` en el router: Starlette resuelve por orden de
-registro y, si no, "bulk" entraría como `{cp_id}` y daría 422 al no castear a UUID.
-
-### Clases de duración variable (`span`)
-
-No todas las clases duran lo mismo. `class_periods.span` dice cuántos periodos **consecutivos**
-ocupa un bloque: `1` = normal, `2` = clase doble. Un bloque con `period_order = 2` y `span = 2`
-ocupa el 2 y el 3, así que el orden 3 de ese día queda tomado y no admite otro bloque.
-
-> **La `UNIQUE(group_id, period_order, day_of_week)` no basta con spans.** Esa clase doble no
-> impediría crear otra en el orden 3. Por eso la migración `e9a3b7c2d418` añade un `EXCLUDE
-> USING gist` sobre `int4range(period_order, period_order + span)` — requiere la extensión
-> `btree_gist`. El service duplica la comprobación (`find_overlapping_period`) solo para dar un
-> `409` legible («choca con «Matemáticas», que ocupa los órdenes 2 a 3 ese día») en vez de dejar
-> que reviente la constraint.
-
-En la rejilla el bloque se pinta con `rowSpan`, ocupando visualmente sus dos filas, y las celdas
-que cubre no se renderizan. Ojo al calcular las filas visibles: los órdenes que una clase doble
-**cubre sin empezar en ellos** también cuentan, o la fila 3 desaparecería. Y `existing_period_slots`
-(el que usa la creación masiva para omitir lo ya existente) expande cada bloque a todos los órdenes
-que ocupa, no solo al de inicio.
-
-### `PUT` / `DELETE /admin/class-periods/{cp_id}`
-
-El `PUT` no cambia `group_id` ni `day_of_week`: mover un bloque de salón o de día es recolocarlo,
-y chocaría con `UNIQUE(group_id, period_order, day_of_week)`. Cambiar el orden sí se permite, con
-chequeo previo de esa constraint → `409`.
-
-El `DELETE` es **borrado real, no baja lógica**: un bloque es configuración, no histórico. Pero
-`409` si ya tiene asistencia tomada — `attendance_records.class_period_id` es FK y esos registros
-sí son histórico.
-
-### `day_of_week` llega a 7, no a 5
-
-El modelo declaraba `CHECK BETWEEN 1 AND 5` mientras la BD real tenía `1 AND 7`, y existen bloques
-en sábado creados por API que el front nunca mostró. Se alineó el modelo a la BD (`c5b9e2f47a13`)
-en vez de estrechar el CHECK y tener que borrar esas filas. La rejilla pinta Lun–Vie siempre y
-añade Sáb/Dom **solo si esos días tienen bloques**, para no mostrar dos columnas vacías en el 99%
-de los colegios.
-
-
-### `POST /admin/class-periods` / `GET /admin/class-periods?group_id=`
-`ClassPeriodCreate(group_id, name, period_order, start_time, end_time, day_of_week)`.
-`day_of_week` 1–5 (lunes a viernes, sin fin de semana). Valida `start_time < end_time` y que
-no exista ya un bloque con el mismo `(group_id, period_order, day_of_week)` (`409`).
-
-### `POST /admin/teacher-assignments` / `GET /admin/teacher-assignments`
-`UserGroupCreate(user_id, group_id, academic_year, subject_id=None)` — asigna un docente a un
-salón para un año, opcionalmente con la materia que dicta ahí (`subject_id`, FK al catálogo
-`subjects` de arriba, `NULL` si se omite; `404` si el `subject_id` no existe en la
-institución). Esta tabla (`user_groups`) es la que usa `StudentService.list_students` para
-acotar "Mis estudiantes" de `TEACHER`/`PAE_OPERATOR` (ver `docs/students.md`), y la que
-determina qué salones ve un docente en Horario/Asistencia — **no** el horario de clases en sí
-(`class_periods`), que es una tabla distinta.
-
-`subject_id` alimenta el filtro "materia" del módulo de Aula del docente: sin valor, ese
-docente simplemente no tiene materia asociada a ese salón y el filtro de materia lo ignora
-(no rompe nada, solo queda sin dato). La respuesta (`UserGroupResponse`) trae también
-`subject_name` resuelto (join a `subjects`) para no forzar un segundo fetch en el front.
-
-Antes de la migración `d7e1a4c8f5b3` la materia era texto libre directo en `user_groups`
-(sin catálogo) — se migró justamente porque dos docentes del mismo salón podían dictar la
-misma materia escrita distinto ("Matemáticas" vs "Mate") y el filtro los trataba como
-valores diferentes.
+Movidos a **`docs/schedule.md`**: calendario semanal proporcional al tiempo, `period_order`
+derivado, los dos `EXCLUDE` (salón y docente) y la asignación docente-salón de `user_groups`.
 
 ---
 

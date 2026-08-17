@@ -68,6 +68,14 @@ docker compose exec -T postgres psql -U biga -d biga < scripts/seed_dev_users.sq
 # 5. Seed PAE (inscribe estudiantes y registra entregas de la semana con doble hash).
 #    Es Python porque los hashes dependen de PAE_SIGNING_SECRET.
 docker compose exec -T api python -m scripts.seed_pae
+
+# 6. (Opcional) Historia sintética para la sección de Estadísticas: 3 salones,
+#    66 estudiantes y ~12 semanas de asistencia, PAE, convivencia y salidas.
+#    Sin esto la sección funciona pero muestra cifras sobre una muestra de
+#    juguete, donde ninguna estadística significa nada.
+docker compose exec -T api python -m scripts.seed_stats_demo
+#    Para deshacerlo (borra solo lo que creó, por prefijo de documento `99…`):
+docker compose exec -T api python -m scripts.seed_stats_demo --limpiar
 ```
 
 Abrir el frontend: **http://localhost:5173**

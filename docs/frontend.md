@@ -228,7 +228,8 @@ dentro de la vista — igual que el `activeNav` del sidebar, sin sub-rutas.
 | Vista | Sub-pestañas | Notas |
 |---|---|---|
 | `AcademicView` | `SalonesView` · `MateriasView` | Los **grados no se crean**: catálogo fijo de 11 niveles, solo se leen para poblar los `<select>` |
-| `ScheduleView` | `HorarioGrid` · `TeacherAssignView` | Separadas a propósito: responden preguntas distintas (ver abajo) |
+| `StatsView` (`AdminStats.jsx`) | 5 pestañas + `Charts.jsx` | Estadísticas: resumen, asistencia, PAE, convivencia, riesgo |
+| `ScheduleView` | `HorarioCalendar` · `TeacherAssignView` | Separadas a propósito: responden preguntas distintas (ver abajo) |
 
 **`SalonesView`** — un bloque por grado con sus salones como tarjetas. Se pintan **los 11 grados
 aunque estén vacíos** (el admin necesita ver dónde falta crear salón), pero los vacíos van
@@ -239,19 +240,92 @@ contenido. Cada tarjeta abre `SalonRoster`, el panel de matriculados con buscado
 > y año). El dropdown lo avisa antes (`está en Once A`) y un modal pide confirmación explícita
 > nombrando origen y destino. Sin salón previo se agrega directo, sin fricción.
 
-**`HorarioGrid`** — rejilla semanal del salón: filas = órdenes de hora, columnas = días. Cada celda
-muestra materia y docente, con color derivado de la materia. Los huecos son `+` punteados.
+**`HorarioCalendar`** — calendario semanal del salón, tipo Google Calendar: columnas = días, eje
+vertical = reloj real. Los bloques van en `position: absolute` sobre la columna, con
+`top = (inicio − inicioDelEje) × PX_MIN` y `height = duración × PX_MIN`.
 
-- **Clases de duración variable**: un bloque con `span > 1` se pinta con `rowSpan` y las celdas que
-  cubre no se renderizan. Ojo al calcular las filas visibles — los órdenes que una clase doble
-  **cubre sin empezar en ellos** también cuentan, o la fila desaparece para todos los días.
+- **El alto ES la duración.** Sustituye a la rejilla de filas = `period_order`, donde una celda del
+  mismo tamaño valía igual para 50 minutos que para dos horas, el descanso de media mañana no se
+  veía, y la hora de la cabecera de fila salía del primer día que la tuviera — o sea, mentía en
+  cuanto dos días no coincidían en horario.
+- **El eje se ajusta a los datos**: de la hora en punto anterior al primer bloque a la posterior al
+  último (06:00–14:00 si el salón está vacío). Marcas cada hora, punteadas a la media.
+- **Clic en un hueco** = crear: redondea al cuarto de hora, propone 50 min y recorta si topa con la
+  siguiente clase. Abre el mismo modal que la edición, ya relleno. No hay arrastrar-y-soltar.
+- **Solapes**: `layoutDay` agrupa por clústeres y reparte el ancho como Google Calendar, con
+  `outline` rojo y un contador «⚠ N en conflicto» en la barra. Con la constraint de BD nueva no
+  deberían aparecer, pero los datos anteriores a `f2d5a81c9e37` pudieron guardarlos.
 - **Lun–Vie siempre**; Sáb/Dom solo si tienen bloques, más un check «Fin de semana» que los fuerza
   para poder crearlos (temporal, ver `TODO.md`).
-- **«Crear jornada»** arma la semana entera en una petición (`POST /admin/class-periods/bulk`), con
-  un docente por defecto para todos los bloques. Es idempotente: omite lo que ya existe.
+- **No hay creación masiva.** El botón «Crear jornada» y su modal se eliminaron: asignaban un
+  mismo docente a la semana entera de un salón, algo que ni ocurre en un colegio ni permite ya la
+  constraint de docente (a partir del segundo salón se omitía todo). El horario se arma bloque a
+  bloque, y el estado vacío del calendario lo dice.
+- El eje de horas es `position: sticky; left: 0`: en móvil el calendario scrollea en horizontal
+  dentro de su tarjeta (nunca empuja el `body`) y sin eso se pierde la referencia horaria.
+
+**Tarjetas del Resumen que navegan.** Las 10 tarjetas con destino (`Stat` con `onClick`) se
+renderizan como `<button>`, no como `div` con handler: entran en el orden de tabulación,
+responden a Enter/Espacio y el lector de pantalla las anuncia con su valor y su destino. Las que
+no llevan a ningún lado (salidas tempranas, notificaciones) siguen siendo `div`. Las que apuntan
+a Estadísticas fijan además la pestaña de destino:
+
+> `StatsView` recibe la pestaña como **valor inicial**, así que hace falta remontarla para que
+> un clic posterior la cambie: `key={navSeq}`, un contador que sube en cada navegación explícita
+> (mismo patrón que `StudentSearch`, ver `web/CLAUDE.md`). Sin él, entrar por el menú lateral a
+> Estadísticas estando ya en Estadísticas no cambiaba `activeNav`, el componente no se remontaba
+> y se quedaba en la pestaña que hubiera dejado la última tarjeta.
+
+**`PAEView`** (sección Gestión › PAE) — inscritos del año con salón, fecha de ingreso y última
+ración. Filtro local (nombre/documento/salón), toggle «Ver dados de baja» y modal de inscripción
+que busca con `GET /students/search` — el que alcanza a toda la institución, necesario aquí
+porque se admite a cualquier estudiante, no solo a los del salón de quien consulta. Los ya
+inscritos aparecen marcados en los resultados en vez de ocultarse: verlos confirma que la
+búsqueda funcionó. Reutiliza `.tile` de `charts.css` y `.sta-tabla` de `stats.css` (misma
+familia visual que Estadísticas); lo propio vive en `styles/pae-admin.css`.
+
+### Estadísticas (`AdminStats.jsx` + `components/Charts.jsx`)
+
+Sección propia del `AdminDashboard` (nav «Análisis › Estadísticas») con cinco pestañas —
+Resumen, Asistencia, PAE, Convivencia y Estudiantes en riesgo — y un selector de período
+(7 / 30 / 90 días / semestre) que se aplica a todas.
+
+El hook `useStats(fetcher, days, onPeriodo)` centraliza la carga de las cinco pestañas: descarta
+las respuestas obsoletas con un contador de secuencia (sin eso, cambiar de período mostraba las
+cifras del período que más tardara bajo la etiqueta del recién elegido) y **reporta al contenedor
+el `periodo` que venía en los datos**, de modo que el rango de fechas rotulado siempre describe lo
+que hay en pantalla — antes salía de una petición aparte a `overview`, que en las pestañas PAE o
+Convivencia describía otra consulta distinta.
+
+**Gráficas en SVG a mano, sin librería.** El proyecto no tiene ninguna de charts y añadirla
+arrastra el gotcha del volumen anónimo de `node_modules`; las cuatro formas que hacen falta
+(línea, barras horizontales, columnas, apiladas) más el medidor y la tarjeta de indicador
+caben en un archivo. Viven en `components/Charts.jsx` y son reutilizables.
+
+Decisiones de codificación visual, todas con motivo:
+
+- **Un color por serie, nunca una rampa sobre categorías.** Los salones y los días de la
+  semana no son magnitudes: pintarlos más oscuros cuanto más altos duplicaría en color lo que
+  ya dice el largo de la barra. Se usa *emphasis*: la barra que importa (la peor con muestra
+  suficiente) va en el acento y el resto atenuado.
+- **La gravedad sí es una escala ordenada**, así que usa rampa de una sola hue (claro→oscuro).
+  El trío amarillo/naranja/rojo habitual **falla** el piso de separación para visión normal
+  (ΔE 13.6 < 15, medido con el validador): dos de las tres clases se confunden. La leyenda
+  está siempre presente — la identidad nunca queda solo en el color.
+- **Un día sin registros no es 0%**: la línea se **corta**. Por eso el backend manda
+  `registros` por día en la serie: sin ese dato, un festivo se dibuja como un colegio vacío.
+- **Muestra insuficiente = barra gris + asterisco + nota al pie.** Un salón con 16 registros
+  al 75% no puede competir visualmente con uno de 1.800, ni estirar el eje de las columnas
+  (el dominio se calcula ignorando esas barras).
+- **Base recortada declarada**: en tasas del 85–95% una base en 0 aplasta las diferencias que
+  la gráfica existe para mostrar, así que se recorta y se rotula («Eje desde 80%»).
+
+La paleta está validada con el script del skill *dataviz* contra la superficie real del
+dashboard (`#FFFFFF`): serie `#059669` y rampa ordinal `#e8977c → #dd6042 → #a32d1e` pasan
+todos los checks. El dashboard es de tema claro fijo, así que no hay modo oscuro que validar.
 
 **`TeacherAssignView`** es `user_groups`, y no es decorativa: alimenta «Mis estudiantes» del docente
-y su filtro por materia. Está separada de la rejilla porque confundir ambas fue el problema del
+y su filtro por materia. Está separada del calendario porque confundir ambas fue el problema del
 diseño anterior — la propia pantalla lo dice para que nadie las mezcle.
 
 **`MateriasView`** — barra de alta en línea (una materia es un campo; un formulario apilado ocupaba

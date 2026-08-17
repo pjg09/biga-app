@@ -154,7 +154,7 @@ activa debe seguir apareciendo, solo que sin `grade_name`/`group_name`).
 
 El listado de docente/operador PAE (`StudentRepository.list_for_teacher`) también trae
 `grade_name`/`group_name`, más `subject`: el nombre de la materia (catálogo `subjects`, vía
-`user_groups.subject_id` — ver `docs/database-schema.md` y `docs/admin.md`) que **ese**
+`user_groups.subject_id` — ver `docs/database-schema.md` y `docs/schedule.md`) que **ese**
 docente dicta en **ese** salón. `outerjoin` a `subjects`: `subject_id` es nullable (una
 asignación docente-salón puede no tener materia cargada), y el estudiante debe seguir
 apareciendo en el listado aunque `subject` salga `null`. A diferencia del admin, el join
@@ -299,3 +299,11 @@ listados, búsqueda y rosters, porque todas esas consultas ya la filtran. Detall
 (`include_inactive`) en `docs/admin.md`.
 
 Credenciales de los usuarios demo (incluido el admin) en `docs/runbook.md` §5.
+
+---
+
+## Foto del estudiante
+
+Foto del estudiante: se **sube a MinIO** vía `POST /students/{id}/photo` (multipart), igual que la firma del agendatorio. `students.photo_url` guarda la **key** (no la URL); todo servicio que la devuelve la presigna con `resolve_photo_url(storage, ...)` de `app/core/photos.py` (deja pasar URLs `http(s)://` externas por compat). Por eso `PAEService`/`AttendanceService`/`StudentService` reciben el `S3StorageAdapter` inyectado.
+
+Para exponer `photo_url` en un endpoint de **lista/detalle nuevo** (de cualquier módulo, no solo estudiantes): (1) agregar el campo al Row/dataclass del repo y al schema de respuesta, (2) `select(Student.photo_url)` en la query + mapearlo, (3) presignar con `resolve_photo_url(self.storage, key)` en el service (que debe recibir `S3StorageAdapter` vía `Depends(get_storage_adapter)`). Sin migración (solo lee `students.photo_url`). El front renderiza `<StudentPhoto src={x.photo_url}>` con fallback a avatar de iniciales.

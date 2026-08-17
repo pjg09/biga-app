@@ -2,7 +2,16 @@
 
 Plataforma web mobile-first para el control del PAE y la comunicación colegio–acudiente en instituciones educativas públicas colombianas.
 
-Documentación del proyecto: [`docs/`](docs/)
+Documentación del proyecto: [`docs/`](docs/) — empezar por [`docs/README.md`](docs/README.md).
+
+**Módulos:** asistencia clase a clase con aviso al acudiente y justificación por enlace ·
+PAE (inscripción, entrega con doble hash encadenado, auditoría, aviso de no reclamo) ·
+convivencia con firma · salidas anticipadas · estudiantes y acudientes ·
+consola de administración (personal, académico, horarios, inscritos al PAE, estadísticas) ·
+landing pública con solicitud de demo.
+
+**Despliegue:** Railway. Un push a `main` **no** aplica migraciones por sí mismo — las corre el
+contenedor al arrancar. Ver [`docs/deployment.md`](docs/deployment.md) antes de desplegar.
 
 ---
 
@@ -52,8 +61,11 @@ Todos los servicios deben mostrar `Up`. `postgres` y `redis` deben mostrar `(hea
 docker compose logs -f api
 docker compose logs -f worker
 
-# Verificar jobs registrados en Celery
-docker compose logs worker --tail=20
+# Tareas registradas en Celery (esto sí las lista; los logs solo muestran actividad)
+docker compose exec -T worker celery -A app.core.celery:celery_app inspect registered
+
+# Recargar el worker tras cambiar código en api/app/jobs/ (no tiene autoreload)
+docker compose exec worker python -c "import os, signal; os.kill(1, signal.SIGHUP)"
 
 # Correr migraciones
 docker compose exec api alembic upgrade head
@@ -74,9 +86,14 @@ docker compose down -v
 
 ```
 biga/
-  api/          # Backend FastAPI
+  api/          # Backend FastAPI (app/, alembic/, scripts/, tests/)
   web/          # Frontend React + Vite
-  docs/         # Documentación de arquitectura, esquema y alcance
+  docs/         # Documentación: índice en docs/README.md
+  infra/        # Imágenes auxiliares (init del bucket de MinIO)
+  scripts/      # Seeds SQL que se pipean con psql (los de Python viven en api/scripts/)
   docker-compose.yml
   .env.example
 ```
+
+Los `CLAUDE.md` de la raíz y de `web/` contienen las reglas de trabajo del repo (arquitectura,
+invariantes y gotchas); se cargan solos al trabajar con Claude Code y se leen igual de bien a mano.

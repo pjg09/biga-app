@@ -7,7 +7,8 @@ manual) ver `CLAUDE.md` en la raíz.
 
 | Doc | Para qué |
 |---|---|
-| [runbook.md](runbook.md) | Cómo levantar el stack, credenciales de prueba y troubleshooting. |
+| [runbook.md](runbook.md) | Cómo levantar el stack **en local**, credenciales de prueba y troubleshooting. |
+| [deployment.md](deployment.md) | Despliegue en Railway: qué hace (y qué no) un push a `main`, los tres procesos del backend, variables obligatorias y qué comprobar antes de desplegar. |
 | [scope.md](scope.md) | Alcance y requerimientos del MVP (la fuente de verdad de qué se construye). |
 
 ## Arquitectura y modelo
@@ -28,7 +29,9 @@ manual) ver `CLAUDE.md` en la raíz.
 | [pae.md](pae.md) | Programa de Alimentación Escolar: inscripción, entrega, doble hash, reporte. |
 | [agendatorio.md](agendatorio.md) | Convivencia: registro con firma, notificación, historial (notas + ocultar). |
 | [students.md](students.md) | Estudiantes y acudientes: alta atómica, matrícula, búsqueda, foto, acudiente principal. |
-| [admin.md](admin.md) | Consola de gestión: estadísticas, usuarios, académico, horarios, leads. |
+| [admin.md](admin.md) | Consola de gestión: personal, académico (grados/salones/materias) e inscritos al PAE. |
+| [schedule.md](schedule.md) | Horarios: bloques del calendario semanal (`class_periods`) y asignación docente-salón (`user_groups`). |
+| [statistics.md](statistics.md) | Estadísticas del admin: foto del día y sección de análisis (series, alertas, riesgo). |
 
 ## Otros
 
