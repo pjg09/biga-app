@@ -206,6 +206,21 @@ class PAERepository:
         )
         return result.scalar_one()
 
+    async def has_delivery_on(
+        self, student_id: UUID, institution_id: UUID, delivery_date: date
+    ) -> bool:
+        """¿Ese estudiante reclamó ese día? Se consulta al **disparar** el aviso
+        de no reclamo, no al encolarlo: entre ambos momentos pueden pasar minutos
+        y el estudiante puede haber reclamado, con lo que el correo sería falso."""
+        result = await self.session.execute(
+            select(PAEDelivery.id).where(
+                PAEDelivery.student_id == student_id,
+                PAEDelivery.institution_id == institution_id,
+                PAEDelivery.delivery_date == delivery_date,
+            ).limit(1)
+        )
+        return result.scalar_one_or_none() is not None
+
     async def get_no_claim_students_with_guardians(
         self,
         institution_id: UUID,

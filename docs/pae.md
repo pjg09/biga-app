@@ -262,3 +262,40 @@ entrega. La inscripción se hace desde la app (no por SQL) porque el
 ---
 
 *Referencia funcional — Módulo PAE | BIGA*
+
+
+---
+
+## Envío de los avisos de no reclamo — un correo, una tarea
+
+`sweep_pae_no_claim` (beat, cada 15 min) encola `notify_pae_no_claim` por institución cuya hora
+de cierre ya pasó. Ese job **ya no envía**: prepara y reparte.
+
+1. Si hubo **0 entregas** ese día no hace nada (el PAE no operó; notificar sería un falso
+   positivo a todas las familias).
+2. Por cada inscrito sin ración y con acudiente primario, crea la fila de `notifications_log`
+   en estado **PENDING** y encola `send_pae_no_claim_email` con `countdown = i × notification_spacing_seconds`.
+3. `send_pae_no_claim_email` **relee el estado** antes de enviar: si el estudiante reclamó
+   mientras esperaba turno, la marca `SUPPRESSED` (no se intentó a propósito) en vez de mandar
+   un correo falso. Si ya no está `PENDING`, no hace nada — no hay segundo correo a la familia.
+
+### Por qué así
+
+Con el bucle anterior —un job por institución que enviaba todo seguido— el proveedor rechazó
+**12 de 14** avisos con `550 Too many emails per second`. Un `FAILED` no se reintenta ni tiene
+pantalla de reenvío: esos 12 se perdían.
+
+Las tres piezas son necesarias y distintas:
+
+| Pieza | Qué resuelve |
+|---|---|
+| `countdown` escalonado | Reparte la salida inicial del lote |
+| `rate_limit` en la tarea | **Coordina entre tareas**, incluidos los reintentos, que el countdown ignora |
+| `RetryingEmailAdapter` | Absorbe el rechazo puntual con backoff exponencial + jitter |
+
+> El PENDING al encolar es lo que hace idempotente al barrido: con 300 inscritos los últimos
+> correos salen minutos después, y sin esa marca el barrido de los 15 minutos siguientes los
+> volvería a encolar.
+
+Mismo escalonado en Asistencia (`attendance_service`): 30 ausencias de primera hora se encolaban
+con el **mismo** `countdown` y salían en ráfaga.

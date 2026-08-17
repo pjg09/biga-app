@@ -11,12 +11,27 @@ el proceso y no razonar sobre qué se importó primero.
 import logging
 
 from app.adapters.email.base import EmailAdapter
+from app.adapters.email.retrying import RetryingEmailAdapter
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 
 def get_email_adapter() -> EmailAdapter:
+    """Devuelve el proveedor activo **envuelto en reintento con backoff**.
+
+    El wrapper va aquí y no en cada notifier para que ningún envío del proyecto
+    se quede sin él por olvido: el límite de tasa del proveedor se alcanza en la
+    operación normal (ver `retrying.py`).
+    """
+    return RetryingEmailAdapter(
+        _build_provider(),
+        attempts=settings.email_retry_attempts,
+        base_delay=settings.email_retry_base_delay,
+    )
+
+
+def _build_provider() -> EmailAdapter:
     if settings.email_provider == "mailtrap":
         from app.adapters.email.mailtrap import MailtrapEmailAdapter
 

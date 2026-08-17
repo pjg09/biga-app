@@ -76,51 +76,62 @@ async def test_no_candidates_does_not_notify():
         env.notification_repo.create_log.assert_not_called()
 
 
-async def test_notifies_each_no_claim_student_and_logs_sent():
+async def test_encola_un_aviso_por_estudiante_como_pending():
+    """Antes este test comprobaba que `notify_no_claims` **enviaba** los correos
+    en un bucle. Ese diseño hacía que el proveedor rechazara casi todo el lote
+    por límite de tasa, así que ahora encola una tarea por destinatario y deja la
+    fila en PENDING; el envío y el SENT los hace `send_no_claim_email`."""
     institution_id = uuid4()
     s1, g1 = make_student("Ana", "Gómez"), make_guardian()
     s2, g2 = make_student("Luis", "Díaz"), make_guardian()
 
-    with NotifierEnv() as env:
+    with NotifierEnv() as env, patch("app.jobs.pae_jobs.send_pae_no_claim_email") as tarea:
         env.repo.count_deliveries_on.return_value = 10
         env.repo.get_no_claim_students_with_guardians.return_value = [(s1, g1), (s2, g2)]
 
         await env.notifier.notify_no_claims(institution_id, DELIVERY_DATE)
 
-        assert env.email_adapter.send.call_count == 2
+        # Nada se envía dentro del barrido: solo se prepara y se encola.
+        env.email_adapter.send.assert_not_called()
+        assert tarea.apply_async.call_count == 2
         assert env.notification_repo.create_log.call_count == 2
 
         first = env.notification_repo.create_log.call_args_list[0].kwargs
-        assert first["status"] == NotificationStatus.SENT
+        assert first["status"] == NotificationStatus.PENDING
         assert first["type"] == NotificationType.PAE_NO_CLAIM
         assert first["institution_id"] == institution_id
         assert first["student_id"] == s1.id
         assert first["guardian_id"] == g1.id
         assert first["email_to"] == g1.email
-        assert first["error_message"] is None
-        assert first["sent_at"] is not None
+
+        # Escalonados: el segundo sale después del primero.
+        esperas = [c.kwargs["countdown"] for c in tarea.apply_async.call_args_list]
+        assert esperas[1] > esperas[0]
 
 
-async def test_email_failure_marks_failed_and_continues_next_student():
+async def test_el_fallo_de_un_correo_no_afecta_a_los_demas():
+    """Con el bucle anterior, un fallo se manejaba dentro del mismo job y el
+    lote seguía. Ahora la garantía es más fuerte y no depende de un `try`: cada
+    correo es su propia tarea de Celery, así que el que falla se registra FAILED
+    por su cuenta y no toca a los otros, que ya están encolados aparte."""
     s1, g1 = make_student("Ana", "Gómez"), make_guardian()
     s2, g2 = make_student("Luis", "Díaz"), make_guardian()
 
-    with NotifierEnv() as env:
+    with NotifierEnv() as env, patch("app.jobs.pae_jobs.send_pae_no_claim_email") as tarea:
         env.repo.count_deliveries_on.return_value = 10
         env.repo.get_no_claim_students_with_guardians.return_value = [(s1, g1), (s2, g2)]
-        # El primer envío falla; el lote no debe romperse.
-        env.email_adapter.send.side_effect = [RuntimeError("resend down"), None]
+        # Cada inserción devuelve una fila distinta, como en la BD real: el
+        # AsyncMock por defecto devolvería siempre el mismo objeto y el test no
+        # podría distinguir una notificación de otra.
+        env.notification_repo.create_log.side_effect = lambda **kw: MagicMock(id=uuid4())
 
         await env.notifier.notify_no_claims(uuid4(), DELIVERY_DATE)
 
-        assert env.notification_repo.create_log.call_count == 2
-        failed = env.notification_repo.create_log.call_args_list[0].kwargs
-        assert failed["status"] == NotificationStatus.FAILED
-        assert failed["error_message"] == "resend down"
-        assert failed["sent_at"] is None
-
-        ok = env.notification_repo.create_log.call_args_list[1].kwargs
-        assert ok["status"] == NotificationStatus.SENT
+        assert tarea.apply_async.call_count == 2
+        # Los ids de notificación encolados son distintos: cada tarea cierra su
+        # propia fila, así que ninguna puede pisar el resultado de otra.
+        ids = [c.args[0][0] for c in tarea.apply_async.call_args_list]
+        assert len(set(ids)) == 2
 
 
 async def test_late_claim_correction_sends_and_logs():

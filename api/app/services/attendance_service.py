@@ -260,9 +260,17 @@ class AttendanceService:
         # estudiante ya fue marcado como tardanza/presente, no envía nada.
         if class_period.period_order == 1:
             countdown = settings.attendance_grace_minutes * 60
-            for record in created:
-                if record.status == AttendanceStatus.ABSENT:
-                    notify_absence_first_hour.apply_async((str(record.id),), countdown=countdown)
+            # Escalonado: un salón entero puede dar 30 ausencias, y con el mismo
+            # `countdown` los 30 correos salían a la vez contra el límite de tasa
+            # del proveedor (los gratuitos admiten ~1-2 por segundo). El desfase
+            # es de segundos sobre una espera de 50 minutos: no cambia en nada
+            # cuándo se entera la familia, y evita que se pierdan los avisos.
+            espaciado = settings.notification_spacing_seconds
+            ausentes = [r for r in created if r.status == AttendanceStatus.ABSENT]
+            for i, record in enumerate(ausentes):
+                notify_absence_first_hour.apply_async(
+                    (str(record.id),), countdown=countdown + round(i * espaciado, 2)
+                )
 
         return [AttendanceRecordResponse.model_validate(r) for r in created]
 

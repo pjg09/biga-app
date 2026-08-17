@@ -53,6 +53,21 @@ class Settings(BaseSettings):
     resend_api_key: str
     email_from: str
 
+    # Reintento ante límites de tasa del proveedor (ver adapters/email/retrying.py).
+    # 3 intentos con base 0.6s cubren un pico corto sin bloquear al worker más de
+    # ~2s por correo en el peor caso.
+    email_retry_attempts: int = 4
+    email_retry_base_delay: float = 1.0
+    # Límite de tasa de Celery para las tareas de envío (formato "N/s", "N/m").
+    # Es lo único que coordina de verdad entre tareas: el `countdown` reparte la
+    # salida inicial, pero no sabe nada de los reintentos de las otras, que se
+    # cuelan en su ventana y vuelven a saturar al proveedor.
+    email_rate_limit: str = "1/s"
+    # Separación entre correos de un mismo lote. Los proveedores gratuitos
+    # admiten ~1-2 por segundo; encolarlos todos con el mismo `countdown` los
+    # dispara a la vez y el proveedor rechaza casi todos.
+    notification_spacing_seconds: float = 2.0
+
     # Solo se usan con email_provider=mailtrap.
     mailtrap_host: str = "sandbox.smtp.mailtrap.io"
     mailtrap_port: int = 2525
