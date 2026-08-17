@@ -4,19 +4,35 @@ import { adminService } from '../services/admin';
 import { studentService } from '../services/students';
 import { StudentsView } from './PAEDashboard';
 import { StudentPhoto } from './TeacherDashboard';
+import StatsView from './AdminStats';
 import '../styles/dashboard.css';
+// La sección PAE reutiliza las tarjetas de indicador y la tabla de Estadísticas.
+import '../styles/charts.css';
+import '../styles/stats.css';
+import '../styles/pae-admin.css';
 
 const ROLE_LABEL = { TEACHER: 'Docente', PAE_OPERATOR: 'Operador PAE', ADMIN: 'Administrador' };
 const ROLE_CLASS = { TEACHER: 'green', PAE_OPERATOR: 'yellow', ADMIN: 'blue' };
 const DAY_NAMES = { 1: 'Lunes', 2: 'Martes', 3: 'Miércoles', 4: 'Jueves', 5: 'Viernes' };
 const YEAR = new Date().getFullYear();
 
+/* Fecha ISO → "14 ago 2026". Se corta la cadena en vez de usar `new Date(iso)`:
+   con una fecha sin hora, el constructor la interpreta como UTC y en Bogotá
+   (-05) devuelve el día anterior. */
+const MESES_CORTOS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun',
+                      'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+const fechaCorta = (iso) => (iso
+  ? `${+iso.slice(8, 10)} ${MESES_CORTOS[+iso.slice(5, 7) - 1]} ${iso.slice(0, 4)}`
+  : '—');
+
 const NAV_TITLES = {
   overview:  'Resumen institucional',
   students:  'Estudiantes',
   staff:     'Personal',
   academic:  'Académico',
+  pae:       'PAE',
   schedule:  'Horarios',
+  stats:     'Estadísticas',
 };
 
 function greeting() {
@@ -101,14 +117,19 @@ export default function AdminDashboard() {
         <nav className="dash__nav" aria-label="Navegación">
           <div className="dash__nav-section">
             <p className="dash__nav-label">Panel</p>
-            <NavItem id="overview" active={activeNav} icon={<ChartIcon />}    label="Resumen"     onClick={setActiveNav} />
+            <NavItem id="overview" active={activeNav} icon={<ChartIcon />}    label="Resumen"     onClick={irPorMenu} />
           </div>
           <div className="dash__nav-section">
             <p className="dash__nav-label">Gestión</p>
-            <NavItem id="students" active={activeNav} icon={<UsersIcon />}    label="Estudiantes" onClick={setActiveNav} />
-            <NavItem id="staff"    active={activeNav} icon={<ShieldIcon />}   label="Personal"    onClick={setActiveNav} />
-            <NavItem id="academic" active={activeNav} icon={<ListIcon />}     label="Académico"   onClick={setActiveNav} />
-            <NavItem id="schedule" active={activeNav} icon={<CalendarIcon />} label="Horarios"    onClick={setActiveNav} />
+            <NavItem id="students" active={activeNav} icon={<UsersIcon />}    label="Estudiantes" onClick={irPorMenu} />
+            <NavItem id="staff"    active={activeNav} icon={<ShieldIcon />}   label="Personal"    onClick={irPorMenu} />
+            <NavItem id="academic" active={activeNav} icon={<ListIcon />}     label="Académico"   onClick={irPorMenu} />
+            <NavItem id="pae"      active={activeNav} icon={<PAEIcon />}      label="PAE"         onClick={irPorMenu} />
+            <NavItem id="schedule" active={activeNav} icon={<CalendarIcon />} label="Horarios"    onClick={irPorMenu} />
+          </div>
+          <div className="dash__nav-section">
+            <p className="dash__nav-label">Análisis</p>
+            <NavItem id="stats" active={activeNav} icon={<StatsIcon />} label="Estadísticas" onClick={irPorMenu} />
           </div>
         </nav>
 
@@ -186,24 +207,37 @@ function OverviewView({ onNavegar }) {
         <button className="btn--secondary" style={{ width: 'auto' }} onClick={load}>Actualizar</button>
       </div>
       <Section title="Población">
-        <Stat icon={<UsersIcon />} value={s.students_active} label="Estudiantes activos" />
-        <Stat icon={<UsersIcon />} value={s.staff_total} label="Personal" delta={`${s.teachers} docentes · ${s.pae_operators} PAE`} />
+        <Stat icon={<UsersIcon />} value={s.students_active} label="Estudiantes activos"
+          onClick={() => onNavegar('students')} irA="Estudiantes" />
+        <Stat icon={<UsersIcon />} value={s.staff_total} label="Personal"
+          delta={`${s.teachers} docentes · ${s.pae_operators} PAE`}
+          onClick={() => onNavegar('staff')} irA="Personal" />
       </Section>
       <Section title="PAE — hoy y esta semana">
-        <Stat icon={<ListIcon />}  value={s.pae_enrolled} label="Inscritos PAE" />
-        <Stat icon={<CheckIcon />} value={s.pae_delivered_today} label="Entregas hoy" delta={`${s.pae_claim_rate}% reclamado`} />
-        <Stat icon={<ChartIcon />} value={s.pae_delivered_week} label="Entregas esta semana" />
+        <Stat icon={<ListIcon />}  value={s.pae_enrolled} label="Inscritos PAE"
+          onClick={() => onNavegar('pae')} irA="PAE" />
+        <Stat icon={<CheckIcon />} value={s.pae_delivered_today} label="Entregas hoy"
+          delta={`${s.pae_claim_rate}% reclamado`}
+          onClick={() => onNavegar('stats', 'pae')} irA="Estadísticas › PAE" />
+        <Stat icon={<ChartIcon />} value={s.pae_delivered_week} label="Entregas esta semana"
+          onClick={() => onNavegar('stats', 'pae')} irA="Estadísticas › PAE" />
       </Section>
       <Section title="Asistencia de hoy">
-        <Stat icon={<CheckIcon />} value={s.attendance_present_today} label="Presentes" delta={`${s.attendance_rate_today}% asistencia`} />
-        <Stat icon={<ClockIcon />} value={s.attendance_late_today} label="Tardanzas" />
-        <Stat icon={<AlertIcon />} value={s.attendance_absent_today} label="Ausentes" />
-        <Stat icon={<MailIcon />}  value={s.attendance_justified_today} label="Justificadas" />
+        <Stat icon={<CheckIcon />} value={s.attendance_present_today} label="Presentes"
+          delta={`${s.attendance_rate_today}% asistencia`}
+          onClick={() => onNavegar('stats', 'asistencia')} irA="Estadísticas › Asistencia" />
+        <Stat icon={<ClockIcon />} value={s.attendance_late_today} label="Tardanzas"
+          onClick={() => onNavegar('stats', 'asistencia')} irA="Estadísticas › Asistencia" />
+        <Stat icon={<AlertIcon />} value={s.attendance_absent_today} label="Ausentes"
+          onClick={() => onNavegar('stats', 'asistencia')} irA="Estadísticas › Asistencia" />
+        <Stat icon={<MailIcon />}  value={s.attendance_justified_today} label="Justificadas"
+          onClick={() => onNavegar('stats', 'asistencia')} irA="Estadísticas › Asistencia" />
       </Section>
       <Section title="Salidas y convivencia">
         <Stat icon={<LogoutIcon />} value={s.departures_today} label="Salidas tempranas hoy" />
         <Stat icon={<ShieldIcon />} value={s.discipline_records} label="Registros de convivencia"
-          delta={`${s.discipline_leve} leve · ${s.discipline_moderada} mod · ${s.discipline_grave} grave`} />
+          delta={`${s.discipline_leve} leve · ${s.discipline_moderada} mod · ${s.discipline_grave} grave`}
+          onClick={() => onNavegar('stats', 'convivencia')} irA="Estadísticas › Convivencia" />
       </Section>
       <Section title="Notificaciones">
         <Stat icon={<MailIcon />}  value={s.notifications_sent} label="Enviadas" />
@@ -1107,45 +1141,377 @@ function MateriasView() {
   );
 }
 
+/* ── PAE › Inscritos ──────────────────────────────────────────────
+   Quiénes están admitidos al programa este año. La inscripción es una decisión
+   **administrativa**: el operador del PAE entrega raciones y ve el listado del
+   día, pero no decide quién entra (ver `docs/pae.md`), así que esta pantalla
+   vive en la consola del admin y sus endpoints exigen `require_admin`.
+
+   Dar de baja **no borra la inscripción**: apaga `is_active`. Las entregas ya
+   registradas encadenan su hash con el de la inscripción (capa 2 de la cadena
+   de integridad del PAE), así que borrarla invalidaría la auditoría de todo lo
+   que ese estudiante reclamó. Por lo mismo, reinscribir a alguien que estuvo de
+   baja **reactiva la fila existente** en vez de crear otra: `enrolled_at` es la
+   fecha real de ingreso al programa y no se reescribe. */
+function PAEView() {
+  const [data, setData] = useState(null);
+  const [incluirInactivos, setIncluirInactivos] = useState(false);
+  const [filtro, setFiltro] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [buscando, setBuscando] = useState(null);   // modal de inscripción
+  const [guardando, setGuardando] = useState(null); // student_id en curso
+  const { toast, showToast } = useToast();
+
+  const cargar = useCallback(async () => {
+    setLoading(true);
+    try { setData(await adminService.listPaeEnrollments({ includeInactive: incluirInactivos })); }
+    catch (e) { showToast(e.message, 'error'); }
+    finally { setLoading(false); }
+  }, [incluirInactivos, showToast]);
+  useEffect(() => { cargar(); }, [cargar]);
+
+  const inscribir = async (studentId, nombre) => {
+    setGuardando(studentId);
+    try {
+      await adminService.addPaeEnrollment(studentId);
+      showToast(`${nombre} inscrito al PAE`);
+      await cargar();
+    } catch (e) { showToast(e.message, 'error'); }
+    finally { setGuardando(null); }
+  };
+
+  const cambiarEstado = async (item, activar) => {
+    setGuardando(item.student_id);
+    try {
+      if (activar) await adminService.reactivatePaeEnrollment(item.student_id);
+      else await adminService.deactivatePaeEnrollment(item.student_id);
+      showToast(activar ? 'Inscripción reactivada' : 'Inscripción dada de baja');
+      await cargar();
+    } catch (e) { showToast(e.message, 'error'); }
+    finally { setGuardando(null); }
+  };
+
+  const norm = (t) => (t || '').toLowerCase();
+  const visibles = (data?.items ?? []).filter(i => {
+    if (!filtro.trim()) return true;
+    const q = norm(filtro);
+    return norm(`${i.first_name} ${i.last_name}`).includes(q)
+      || norm(i.document_number).includes(q)
+      || norm(`${i.grade_name || ''} ${i.group_name || ''}`).includes(q);
+  });
+  const yaInscritos = new Set((data?.items ?? []).filter(i => i.is_active).map(i => i.student_id));
+
+  if (loading && !data) return <div className="dash__empty"><Spinner /><span>Cargando inscritos…</span></div>;
+
+  return (
+    <>
+      <Toast toast={toast} />
+
+      <div className="sta-tiles pae-tiles">
+        <div className="tile">
+          <span className="tile__label">Inscritos activos</span>
+          <span className="tile__value">{data?.activos ?? 0}</span>
+          <span className="tile__delta tile__delta--none">Reciben ración este año</span>
+        </div>
+        <div className="tile">
+          <span className="tile__label">Dados de baja</span>
+          <span className="tile__value">{data?.inactivos ?? 0}</span>
+          <span className="tile__delta tile__delta--none">Conservan su histórico</span>
+        </div>
+        <div className="tile">
+          <span className="tile__label">Nunca reclamaron</span>
+          <span className="tile__value">{data?.sin_reclamar_nunca ?? 0}</span>
+          <span className="tile__delta tile__delta--none">Inscritos sin ninguna entrega</span>
+        </div>
+      </div>
+
+      <div className="hor-bar pae-bar">
+        <input className="dash__field-input pae-bar__search" type="search"
+          placeholder="Filtrar por nombre, documento o salón"
+          value={filtro} onChange={e => setFiltro(e.target.value)} aria-label="Filtrar inscritos" />
+        <span className="hor-bar__count">
+          {visibles.length} {visibles.length === 1 ? 'inscrito' : 'inscritos'}
+        </span>
+        <label className="dash__inactive-toggle">
+          <input type="checkbox" checked={incluirInactivos}
+            onChange={e => setIncluirInactivos(e.target.checked)} />
+          Ver dados de baja
+        </label>
+        <button type="button" className="btn--confirm pae-bar__btn"
+          onClick={() => setBuscando({ q: '', resultados: [], buscado: false })}>
+          Inscribir estudiante
+        </button>
+      </div>
+
+      {visibles.length === 0 ? (
+        <div className="card mat-empty">
+          <p className="mat-empty__title">
+            {data?.items?.length ? 'Ningún inscrito coincide con el filtro' : 'Todavía no hay inscritos al PAE'}
+          </p>
+          <p className="mat-empty__text">
+            {data?.items?.length
+              ? 'Prueba con otro nombre, documento o salón.'
+              : `Usa «Inscribir estudiante» para admitir al programa a un estudiante ya registrado. La inscripción queda firmada con la fecha de hoy y es la que habilita su ración diaria.`}
+          </p>
+        </div>
+      ) : (
+        <div className="card pae-tabla-card">
+          <div className="sta-tabla-scroll">
+            <table className="sta-tabla pae-tabla">
+              <thead>
+                <tr>
+                  <th>Estudiante</th><th>Salón</th><th>Inscrito desde</th>
+                  <th>Última ración</th><th>Estado</th><th className="num">Acción</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibles.map(i => (
+                  <tr key={i.student_id} className={i.is_active ? undefined : 'pae-fila--baja'}>
+                    <td>
+                      <div className="pae-estudiante">
+                        {i.photo_url
+                          ? <StudentPhoto src={i.photo_url} alt=""
+                              caption={`${i.first_name} ${i.last_name}`}
+                              className="dash__student-avatar" />
+                          : <div className="dash__student-avatar"
+                              style={{ background: '#e0e7ff', color: '#4f46e5' }}>
+                              {initials(i.first_name, i.last_name)}
+                            </div>}
+                        <span>
+                          <span className="sta-tabla__nombre">{i.first_name} {i.last_name}</span>
+                          <span className="sta-tabla__doc">{i.document_number}</span>
+                        </span>
+                      </div>
+                    </td>
+                    <td>{i.grade_name ? `${i.grade_name} ${i.group_name || ''}` : '— sin salón —'}</td>
+                    <td>{fechaCorta(i.enrolled_at)}</td>
+                    <td>
+                      {i.last_delivery
+                        ? fechaCorta(i.last_delivery)
+                        : <span className="pae-nunca">Nunca</span>}
+                    </td>
+                    <td>
+                      <span className={`pae-estado pae-estado--${i.is_active ? 'on' : 'off'}`}>
+                        {i.is_active ? 'Activo' : 'De baja'}
+                      </span>
+                      {!i.student_is_active && (
+                        <span className="pae-estado pae-estado--alerta">Estudiante inactivo</span>
+                      )}
+                    </td>
+                    <td className="num">
+                      <button type="button"
+                        className={i.is_active ? 'pae-accion pae-accion--baja' : 'pae-accion'}
+                        disabled={guardando === i.student_id}
+                        onClick={() => cambiarEstado(i, !i.is_active)}>
+                        {guardando === i.student_id
+                          ? '…'
+                          : i.is_active ? 'Dar de baja' : 'Reactivar'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {buscando && (
+        <PAEInscribirModal
+          estado={buscando} setEstado={setBuscando}
+          yaInscritos={yaInscritos} guardando={guardando}
+          onInscribir={inscribir} onCerrar={() => setBuscando(null)}
+        />
+      )}
+    </>
+  );
+}
+
+/* Buscador de estudiantes para inscribir. Usa `GET /students/search`, que
+   alcanza a toda la institución a propósito (ver CLAUDE.md): aquí hace falta,
+   porque se admite al programa a cualquier estudiante, no solo a los del salón
+   de quien consulta. */
+function PAEInscribirModal({ estado, setEstado, yaInscritos, guardando, onInscribir, onCerrar }) {
+  const [cargando, setCargando] = useState(false);
+
+  const buscar = async (e) => {
+    e.preventDefault();
+    setCargando(true);
+    try {
+      const r = await studentService.search(estado.q.trim());
+      setEstado(s => ({ ...s, resultados: r, buscado: true }));
+    } catch (err) {
+      setEstado(s => ({ ...s, resultados: [], buscado: true, error: err.message }));
+    } finally { setCargando(false); }
+  };
+
+  return (
+    <div className="dash__modal-overlay" onClick={onCerrar}>
+      <form className="dash__modal pae-modal" onSubmit={buscar} onClick={e => e.stopPropagation()}
+        role="dialog" aria-modal="true">
+        <p className="dash__modal-label">Inscribir estudiante al PAE</p>
+
+        <div className="pae-modal__search">
+          <input className="dash__field-input" autoFocus value={estado.q}
+            placeholder="Nombre o documento del estudiante"
+            onChange={e => setEstado(s => ({ ...s, q: e.target.value }))}
+            aria-label="Buscar estudiante" />
+          <button type="submit" className="btn--confirm pae-modal__btn" disabled={cargando}>
+            {cargando ? <Spinner color="white" size={16} /> : 'Buscar'}
+          </button>
+        </div>
+
+        <div className="pae-modal__results">
+          {!estado.buscado && (
+            <p className="sta-vacio">
+              Busca por nombre o documento. Solo aparecen estudiantes ya registrados:
+              para dar de alta a uno nuevo, usa Estudiantes › Nuevo estudiante.
+            </p>
+          )}
+          {estado.buscado && estado.resultados.length === 0 && (
+            <p className="sta-vacio">Ningún estudiante coincide con esa búsqueda.</p>
+          )}
+          {estado.resultados.map(r => {
+            const inscrito = yaInscritos.has(r.id);
+            return (
+              <div className="pae-resultado" key={r.id}>
+                {r.photo_url
+                  ? <StudentPhoto src={r.photo_url} alt="" caption={r.full_name}
+                      className="dash__student-avatar" />
+                  : <div className="dash__student-avatar"
+                      style={{ background: '#e0e7ff', color: '#4f46e5' }}>
+                      {r.full_name.split(' ').filter(Boolean).slice(0, 2).map(p => p[0]).join('')}
+                    </div>}
+                <span className="pae-resultado__datos">
+                  <span className="sta-tabla__nombre">{r.full_name}</span>
+                  <span className="sta-tabla__doc">
+                    {r.document_number}
+                    {r.grade_name ? ` · ${r.grade_name} ${r.group_name || ''}` : ' · sin salón'}
+                  </span>
+                </span>
+                {inscrito ? (
+                  <span className="pae-estado pae-estado--on">Ya inscrito</span>
+                ) : (
+                  <button type="button" className="pae-accion"
+                    disabled={guardando === r.id}
+                    onClick={() => onInscribir(r.id, r.full_name)}>
+                    {guardando === r.id ? '…' : 'Inscribir'}
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <p className="dash__form-hint">
+          La inscripción se firma con la fecha de hoy y habilita la ración diaria del estudiante
+          en el listado del operador. Si el estudiante ya estuvo inscrito y se le dio de baja,
+          se reactiva su inscripción original: la fecha de ingreso al programa no se reescribe.
+        </p>
+        <div className="dash__modal-actions">
+          <button type="button" className="btn--secondary" onClick={onCerrar}>Cerrar</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 /* ── Horarios ─────────────────────────────────────────────────────
-   Dos sub-secciones. **Rejilla** es el horario del salón: qué materia y qué
+   Dos sub-secciones. **Calendario** es el horario del salón: qué materia y qué
    docente en cada día y hora. **Docentes por salón** es `user_groups`, que es
    lo que de verdad decide qué clases ve un docente en "Mis clases de hoy"
    (Asistencia une ClassPeriod → UserGroup por salón). Están separadas porque
    responden preguntas distintas y confundirlas fue el problema del diseño
    anterior. */
 function ScheduleView() {
-  const [tab, setTab] = useState('rejilla');
+  const [tab, setTab] = useState('calendario');
   return (
     <>
       <div className="adm-tabs" role="tablist">
-        <button type="button" role="tab" aria-selected={tab === 'rejilla'}
-          className={`adm-tab${tab === 'rejilla' ? ' adm-tab--active' : ''}`}
-          onClick={() => setTab('rejilla')}>Rejilla semanal</button>
+        <button type="button" role="tab" aria-selected={tab === 'calendario'}
+          className={`adm-tab${tab === 'calendario' ? ' adm-tab--active' : ''}`}
+          onClick={() => setTab('calendario')}>Calendario semanal</button>
         <button type="button" role="tab" aria-selected={tab === 'docentes'}
           className={`adm-tab${tab === 'docentes' ? ' adm-tab--active' : ''}`}
           onClick={() => setTab('docentes')}>Docentes por salón</button>
       </div>
-      {tab === 'rejilla' ? <HorarioGrid /> : <TeacherAssignView />}
+      {tab === 'calendario' ? <HorarioCalendar /> : <TeacherAssignView />}
     </>
   );
 }
 
 const DAY_SHORT = { 1: 'Lun', 2: 'Mar', 3: 'Mié', 4: 'Jue', 5: 'Vie', 6: 'Sáb', 7: 'Dom' };
+const DAY_FULL = {
+  1: 'Lunes', 2: 'Martes', 3: 'Miércoles', 4: 'Jueves', 5: 'Viernes', 6: 'Sábado', 7: 'Domingo',
+};
 const hhmm = (t) => (t || '').slice(0, 5);
+const toMin = (t) => {
+  const [h, m] = hhmm(t).split(':').map(Number);
+  return h * 60 + m;
+};
+const toHHMM = (min) => {
+  const m = Math.max(0, Math.min(24 * 60 - 1, Math.round(min)));
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+};
+const durLabel = (mins) => {
+  if (mins < 60) return `${mins} min`;
+  const h = Math.floor(mins / 60), m = mins % 60;
+  return m ? `${h} h ${m} min` : `${h} h`;
+};
 
-/* Jornada por defecto al crear: 6 bloques de 50 min con descanso a media
-   mañana, que es la forma habitual en un colegio público de Medellín. */
-const DEFAULT_PERIODS = [
-  { period_order: 1, name: 'Primera hora', start_time: '07:00', end_time: '07:50' },
-  { period_order: 2, name: 'Segunda hora', start_time: '07:50', end_time: '08:40' },
-  { period_order: 3, name: 'Tercera hora', start_time: '08:40', end_time: '09:30' },
-  { period_order: 4, name: 'Cuarta hora', start_time: '10:00', end_time: '10:50' },
-  { period_order: 5, name: 'Quinta hora', start_time: '10:50', end_time: '11:40' },
-  { period_order: 6, name: 'Sexta hora', start_time: '11:40', end_time: '12:30' },
-];
+/* Píxeles por minuto del calendario. Es toda la idea de esta vista: el alto de
+   un bloque ES su duración, así que una clase de 100 minutos se ve el doble de
+   alta que una de 50 y el descanso de media mañana se ve como el hueco que es.
+   1.15 deja una clase de 50 min en ~58px, suficiente para materia + docente. */
+const PX_MIN = 1.15;
+/* Granularidad del click sobre un hueco. 15 min es lo que usa Google Calendar
+   y evita horas como 08:07 por un pixel de más. */
+const SNAP = 15;
+const NEW_BLOCK_MIN = 50;
 
-function HorarioGrid() {
+/* Reparte en columnas los bloques de un día que se pisan entre sí, como hace
+   Google Calendar. Un "clúster" es un grupo de bloques encadenados por solape;
+   dentro de él cada bloque toma la primera columna libre y todos se reparten el
+   ancho. Con datos sanos nunca hay clústeres de más de uno — pero la BD tenía un
+   solape real (ver la migración `f2d5a81c9e37`), así que dibujarlos encimados y
+   marcarlos es mejor que taparlos. */
+function layoutDay(items) {
+  const evs = [...items].sort((a, b) => a.s - b.s || a.e - b.e);
+  const out = [];
+  let cluster = [], clusterEnd = -Infinity;
+  const flush = () => {
+    if (!cluster.length) return;
+    const colEnds = [];
+    for (const ev of cluster) {
+      let ci = colEnds.findIndex(end => end <= ev.s);
+      if (ci === -1) { colEnds.push(ev.e); ci = colEnds.length - 1; }
+      else colEnds[ci] = ev.e;
+      ev.col = ci;
+    }
+    for (const ev of cluster) { ev.cols = colEnds.length; }
+    out.push(...cluster);
+    cluster = []; clusterEnd = -Infinity;
+  };
+  for (const ev of evs) {
+    if (cluster.length && ev.s >= clusterEnd) flush();
+    cluster.push(ev);
+    clusterEnd = Math.max(clusterEnd, ev.e);
+  }
+  flush();
+  return out;
+}
+
+/* ── Horarios › Calendario semanal ─────────────────────────────────
+   Vista tipo calendario: columnas = días, eje vertical = reloj real. Sustituye
+   a la rejilla de filas = `period_order`, donde todas las celdas medían igual
+   durase la clase 50 minutos o dos horas, el descanso no existía y la hora de
+   la cabecera de fila salía del primer día que la tuviera (mintiendo en cuanto
+   dos días no coincidían).
+
+   El `period_order` ya no se elige: lo deriva el backend de la hora de inicio
+   (migración `f2d5a81c9e37`). Acá solo se muestra el badge de 1ª hora, que es
+   la que dispara la notificación de inasistencia al acudiente. */
+function HorarioCalendar() {
   const [groups, setGroups] = useState([]);
   const [subjects, setSubjects] = useState([]);
   const [users, setUsers] = useState([]);
@@ -1637,6 +2003,32 @@ function CloseIcon({ size = 18 }) { return <svg width={size} height={size} viewB
 function EyeIcon()   { return <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>; }
 function PencilIcon() { return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>; }
 function SearchIcon() { return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>; }
+/* Barras ascendentes: la sección de análisis, distinta del ChartIcon del
+   Resumen para que no se confundan en la barra lateral. */
+/* Bandeja/plato: el PAE es alimentación escolar. */
+function PAEIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4 13h16a8 8 0 0 1-8 7 8 8 0 0 1-8-7z" />
+      <path d="M12 6v3M9 7.5v1.5M15 7.5v1.5" />
+      <path d="M3 20h18" />
+    </svg>
+  );
+}
+
+function StatsIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3 3v18h18" />
+      <rect x="7" y="12" width="3" height="6" rx="1" />
+      <rect x="12.5" y="8" width="3" height="10" rx="1" />
+      <rect x="18" y="4" width="3" height="14" rx="1" />
+    </svg>
+  );
+}
+
 function Spinner({ color = '#4f46e5', size = 20 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true" className="dash__spinner">

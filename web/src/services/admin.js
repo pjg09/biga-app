@@ -3,6 +3,14 @@ import { api } from './api';
 export const adminService = {
   getStats: () => api.get('/admin/stats'),
 
+  // Estadísticas por período. `days` es la ventana; el backend devuelve también
+  // las fechas reales del período para que las gráficas rotulen con ellas.
+  statsOverview:   (days = 30) => api.get(`/admin/stats/overview?days=${days}`),
+  statsAttendance: (days = 30) => api.get(`/admin/stats/attendance?days=${days}`),
+  statsPae:        (days = 30) => api.get(`/admin/stats/pae?days=${days}`),
+  statsDiscipline: (days = 90) => api.get(`/admin/stats/discipline?days=${days}`),
+  statsRisk:       (days = 30) => api.get(`/admin/stats/risk?days=${days}`),
+
   // Personal (usuarios)
   listUsers:  ({ includeInactive = false } = {}) =>
     api.get(`/admin/users${includeInactive ? '?include_inactive=true' : ''}`),
@@ -43,8 +51,15 @@ export const adminService = {
   // Edición completa: mismos campos que el alta, mismo atomicidad.
   updateStudentFull: (id, data) => api.put(`/admin/students/${id}`, data),
 
+  // PAE — inscritos (solo ADMIN; el operador opera el programa, no decide quién entra)
+  listPaeEnrollments: ({ includeInactive = false } = {}) =>
+    api.get(`/admin/pae/enrollments${includeInactive ? '?include_inactive=true' : ''}`),
+  addPaeEnrollment: (student_id) => api.post('/admin/pae/enrollments', { student_id }),
+  // Baja lógica: la fila nunca se borra porque las entregas encadenan su hash.
+  deactivatePaeEnrollment: (student_id) => api.del(`/admin/pae/enrollments/${student_id}`),
+  reactivatePaeEnrollment: (student_id) => api.post(`/admin/pae/enrollments/${student_id}/reactivate`),
+
   // Horarios
-  bulkCreateClassPeriods: (payload) => api.post('/admin/class-periods/bulk', payload),
   updateClassPeriod: (id, payload) => api.put(`/admin/class-periods/${id}`, payload),
   deleteClassPeriod: (id) => api.del(`/admin/class-periods/${id}`),
   listClassPeriods: (group_id) => api.get(`/admin/class-periods?group_id=${group_id}`),

@@ -1,0 +1,72 @@
+/* Sección PAE de la consola de admin (`PAEView` en AdminDashboard.jsx).
+   Reutiliza `.tile` de charts.css y `.sta-tabla` de stats.css: es la misma
+   familia visual que Estadísticas, y duplicar la tabla solo para esta pantalla
+   dejaría dos estilos que divergen al primer retoque. */
+
+.pae-tiles { margin-bottom: 16px; }
+
+.pae-bar { flex-wrap: wrap; }
+.pae-bar__search { flex: 1 1 280px; min-width: 0; }
+.dash .btn--confirm.pae-bar__btn {
+  flex: 0 0 auto; margin-left: auto; width: auto; white-space: nowrap;
+}
+
+.pae-tabla-card { padding: 6px 14px; }
+.pae-tabla { min-width: 780px; }
+.pae-estudiante { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.pae-estudiante > span { min-width: 0; }
+
+/* Fila dada de baja: se atenúa la foto y el salón, pero el nombre y el estado
+   se mantienen legibles — hay que poder leer a quién se dio de baja. */
+.pae-fila--baja .dash__student-avatar,
+.pae-fila--baja .pae-estudiante img { opacity: 0.5; }
+.pae-fila--baja td { background: #fbfafd; }
+
+.pae-estado {
+  display: inline-block; font-size: 0.73rem; font-weight: 800;
+  border-radius: 6px; padding: 3px 9px; white-space: nowrap;
+}
+.pae-estado--on  { background: var(--green-soft); color: var(--green-acc); }
+.pae-estado--off { background: #f3f2f9; color: var(--t2); }
+.pae-estado--alerta {
+  display: block; margin-top: 4px;
+  background: #fdecea; color: #a32d1e; font-weight: 700;
+}
+.pae-nunca { color: #a32d1e; font-weight: 700; }
+
+.pae-accion {
+  border: 1px solid var(--border); background: var(--surface); cursor: pointer;
+  font-family: inherit; font-size: 0.78rem; font-weight: 700; color: var(--green-acc);
+  padding: 6px 13px; border-radius: 8px; white-space: nowrap;
+  transition: border-color 0.13s, background 0.13s;
+}
+.pae-accion:hover { border-color: var(--green-acc); background: var(--green-soft); }
+.pae-accion:disabled { opacity: 0.55; cursor: default; }
+.pae-accion--baja { color: var(--t2); }
+.pae-accion--baja:hover { color: #a32d1e; border-color: #f0c4bc; background: #fdf6f4; }
+
+/* --- Modal de inscripción --- */
+.pae-modal { max-width: 620px; }
+.pae-modal__search { display: flex; gap: 8px; margin-bottom: 14px; }
+.pae-modal__search .dash__field-input { flex: 1 1 auto; min-width: 0; }
+.dash .btn--confirm.pae-modal__btn { flex: 0 0 auto; width: auto; padding: 0 20px; }
+
+/* Alto fijo: sin él, el modal salta de tamaño con cada búsqueda y el botón de
+   cerrar se mueve bajo el cursor. */
+.pae-modal__results {
+  max-height: 320px; overflow-y: auto;
+  margin-bottom: 14px; border: 1px solid var(--border); border-radius: 10px;
+  padding: 6px 12px;
+}
+.pae-resultado {
+  display: flex; align-items: center; gap: 11px;
+  padding: 10px 0; border-bottom: 1px solid var(--border);
+}
+.pae-resultado:last-child { border-bottom: none; }
+.pae-resultado__datos { flex: 1 1 auto; min-width: 0; }
+.pae-modal__results .sta-vacio { padding: 14px 2px; }
+
+@media (max-width: 640px) {
+  .pae-bar__search { flex: 1 1 100%; }
+  .dash .btn--confirm.pae-bar__btn { flex: 1 1 100%; margin-left: 0; }
+}
